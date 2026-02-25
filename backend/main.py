@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import jwt
 from datetime import datetime, timedelta
@@ -12,6 +13,17 @@ load_dotenv()
 
 # Initialize the core FastAPI application
 app = FastAPI(title="VibeFinderAI API", description="Core backend for music discovery and NLP integrations")
+
+# ---------------------------------------------------------
+# CORS Configuration (Allows frontend to talk to backend)
+# ---------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------------------------------------------------------
 # JWT Configuration 
