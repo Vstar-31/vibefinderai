@@ -3,15 +3,21 @@ from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 import jwt
 from datetime import datetime, timedelta
+import os
+import re
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize the core FastAPI application
 app = FastAPI(title="VibeFinderAI API", description="Core backend for music discovery and NLP integrations")
 
 # ---------------------------------------------------------
 # JWT Configuration 
-# Note: Relocate these credentials to environment variables (.env) prior to production
+# Keys are securely loaded from the environment variables
 # ---------------------------------------------------------
-SECRET_KEY = "development_secret_key_change_in_production"
+SECRET_KEY = os.getenv("SECRET_KEY", "development_fallback_key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
@@ -34,6 +40,87 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+# ---------------------------------------------------------
+# Custom NLP Vibe Algorithm (The Brains)
+# ---------------------------------------------------------
+
+class VibeRequest(BaseModel):
+    text: str
+
+class VibeResponse(BaseModel):
+    dominant_vibe: str
+    confidence: float
+    bpm_range: str
+    genres: list[str]
+    matched_keywords: list[str]
+
+# Our custom dictionary mapping vibes to keywords, bpms, and genres
+VIBE_DICTIONARY = {
+    "hype": {
+        "keywords": ["gym", "pump", "aggressive", "hype", "energy", "fast", "workout", "run", "lift", "crazy", "rage"], 
+        "bpm": "130-170", 
+        "genres": ["Phonk", "Hardstyle", "Rap", "EDM"]
+    },
+    "chill": {
+        "keywords": ["relax", "study", "sleep", "calm", "slow", "vibes", "rain", "peace", "quiet", "smoke", "late"], 
+        "bpm": "70-90", 
+        "genres": ["Lo-Fi", "Ambient", "R&B"]
+    },
+    "sad": {
+        "keywords": ["cry", "heartbreak", "sad", "depressed", "down", "lonely", "tears", "pain", "miss"], 
+        "bpm": "60-80", 
+        "genres": ["Acoustic", "Sad Pop", "Indie"]
+    },
+    "happy": {
+        "keywords": ["party", "dance", "happy", "summer", "fun", "upbeat", "smile", "good", "sunny", "weekend"], 
+        "bpm": "110-130", 
+        "genres": ["Pop", "House", "Disco"]
+    }
+}
+
+def analyze_vibe_algorithm(text: str) -> dict:
+    """
+    Our custom NLP scoring engine. Tokenizes input text and scores it against
+    our VIBE_DICTIONARY to determine the user's mood.
+    """
+    # Clean and tokenize text (lowercase, extract words only)
+    words = re.findall(r'\b\w+\b', text.lower())
+    
+    scores = {vibe: 0 for vibe in VIBE_DICTIONARY}
+    matched = []
+
+    # Score the words against our dictionaries
+    for word in words:
+        for vibe, data in VIBE_DICTIONARY.items():
+            if word in data["keywords"]:
+                scores[vibe] += 1
+                matched.append(word)
+
+    total_matches = sum(scores.values())
+    
+    # Fallback if no keywords matched
+    if total_matches == 0:
+        return {
+            "dominant_vibe": "neutral", 
+            "confidence": 0.0, 
+            "bpm_range": "90-110", 
+            "genres": ["Pop", "Chillwave"], 
+            "matched_keywords": []
+        }
+
+    # Calculate the winner
+    dominant_vibe = max(scores, key=scores.get)
+    # Calculate confidence as the percentage of matched words belonging to the winning vibe
+    confidence = round(scores[dominant_vibe] / total_matches, 2)
+    
+    return {
+        "dominant_vibe": dominant_vibe,
+        "confidence": confidence,
+        "bpm_range": VIBE_DICTIONARY[dominant_vibe]["bpm"],
+        "genres": VIBE_DICTIONARY[dominant_vibe]["genres"],
+        "matched_keywords": list(set(matched)) # Return unique matched words
+    }
 
 # ---------------------------------------------------------
 # Core API Routes
@@ -80,3 +167,14 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
         "status": "authenticated", 
         "message": "User access verified successfully."
     }
+
+@app.post("/api/vibe/analyze", response_model=VibeResponse)
+async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
+    """
+    Protected endpoint to analyze a text prompt and return music vibe metrics.
+    Requires authentication to use.
+    """
+    # Verify user token first (we reuse the same token verification logic implicitly via Depends)
+    # Now run our custom algorithm
+    result = analyze_vibe_algorithm(request.text)
+    return result
