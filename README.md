@@ -13,10 +13,10 @@ graph TD
     end
 
     %% --- Backend (Render) ---
-    subgraph Backend [Node.js/Express Backend - Render Free Tier]
+    subgraph Backend [Python/FastAPI Backend - Render Free Tier]
         API_Gateway{API Router}
         
-        Auth_Service[Auth Service\nSuperTokens/Passport]
+        Auth_Service[Auth Service\nFastAPI Security/JWT]
         
         AI_Orchestrator[LangChain Agent\nText2Tracks Engine]
         
