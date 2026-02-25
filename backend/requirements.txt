@@ -1,0 +1,11 @@
+# Core Web Framework
+fastapi>=0.103.0
+
+# ASGI Server for running FastAPI
+uvicorn[standard]>=0.23.2
+
+# JWT Authentication
+PyJWT>=2.8.0
+
+# Database ORM (Supabase/PostgreSQL)
+prisma>=0.11.0

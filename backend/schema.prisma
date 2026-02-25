@@ -1,0 +1,97 @@
+// ----------------------------------------------------------------
+// VibeFinderAI - Prisma Schema for Supabase (PostgreSQL)
+// ----------------------------------------------------------------
+
+generator client {
+  provider             = "prisma-client-python"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL") // PostgreSQL connection string provided by Supabase environment variable
+}
+
+// --- CORE USER ARCHITECTURE ---
+
+model User {
+  id              String          @id @default(uuid())
+  email           String          @unique
+  username        String          @unique
+  avatarUrl       String?
+  createdAt       DateTime        @default(now())
+  
+  // Relations
+  oauthIdentities OAuthIdentity[]
+  playlists       Playlist[]
+  forumPosts      ForumPost[]
+  comments        Comment[]
+}
+
+model OAuthIdentity {
+  id           String   @id @default(uuid())
+  providerName String   // Supported providers: "spotify", "apple_music"
+  providerId   String   // Unique identifier assigned by the OAuth provider
+  accessToken  String
+  refreshToken String?
+  userId       String
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([providerName, providerId]) // Ensures a specific provider account is linked to only one internal user entity
+}
+
+// --- MUSIC & DISCOVERY LAYER ---
+
+model Playlist {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  smartlink   String?  @unique // Cryptographic hash utilized for generating universal shareable URLs
+  userId      String
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tracks      Track[]
+}
+
+model Track {
+  id            String   @id @default(uuid())
+  spotifyId     String?  // Native Spotify track identifier for embedded web player integration
+  appleMusicId  String?  // Native Apple Music track identifier for embedded web player integration
+  isrc          String?  // International Standard Recording Code used for cross-platform track disambiguation
+  title         String
+  artist        String
+  playlistId    String
+  
+  playlist      Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+}
+
+// --- SOCIAL GRAPH & FORUM LAYER ---
+
+model ForumPost {
+  id        String    @id @default(uuid())
+  title     String
+  content   String
+  userId    String
+  createdAt DateTime  @default(now())
+  
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments  Comment[]
+}
+
+model Comment {
+  id          String    @id @default(uuid())
+  content     String
+  userId      String
+  postId      String
+  parentId    String?   // Optional reference to a parent comment to support hierarchical threaded replies
+  createdAt   DateTime  @default(now())
+  
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post        ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  // Defines the self-referential relationship for nested comment hierarchies
+  parent      Comment?  @relation("CommentToComment", fields: [parentId], references: [id])
+  replies     Comment[] @relation("CommentToComment")
+}
