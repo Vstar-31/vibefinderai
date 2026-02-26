@@ -14,6 +14,7 @@ import urllib.parse
 import json
 import asyncio
 import random
+import re
 
 # Import our modularized vibe engine
 import vibe_engine
@@ -80,10 +81,10 @@ class UserCreate(BaseModel):
 
 class VibeRequest(BaseModel):
     text: str
-    artist_focus: int = 25
-    genre_focus: int = 50
+    artist_focus: int = 50 # RESTORED
+    nicheness: int = 50    # ADDED
     bpm_focus: int = 50
-    # NEW: Front-end override filters
+    track_limit: int = 5
     use_secondary_vibe: bool = False
     override_genre: str | None = None
     override_artist: str | None = None
@@ -126,8 +127,8 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 # ---------------------------------------------------------
 # Free Music Fetchers (Last.fm + iTunes)
 # ---------------------------------------------------------
-def fetch_lastfm_tracks_sync(genre: str, limit: int = 50):
-    """Hits the free Last.fm API to pull trending tracks."""
+def fetch_lastfm_tracks_sync(genre: str, limit: int = 100):
+    """Hits the free Last.fm API to pull trending tracks. Limit up to 100 to widen the pool."""
     api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
     url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
     
@@ -141,7 +142,7 @@ def fetch_lastfm_tracks_sync(genre: str, limit: int = 50):
         print(f"Last.fm genre fetch failed: {e}")
         return []
 
-def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 50):
+def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 100):
     """Hits the free Last.fm API to pull a SPECIFIC artist's discography."""
     api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
     url = f"http://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist={urllib.parse.quote(artist)}&api_key={api_key}&format=json&limit={limit}"
@@ -173,10 +174,10 @@ def fetch_itunes_data_sync(title: str, artist: str):
     except: pass
     return {"preview_url": None, "cover_art": None}
 
-async def fetch_lastfm_tracks(genre: str, limit: int = 50):
+async def fetch_lastfm_tracks(genre: str, limit: int = 100):
     return await asyncio.to_thread(fetch_lastfm_tracks_sync, genre, limit)
 
-async def fetch_lastfm_artist_tracks(artist: str, limit: int = 50):
+async def fetch_lastfm_artist_tracks(artist: str, limit: int = 100):
     return await asyncio.to_thread(fetch_lastfm_artist_tracks_sync, artist, limit)
 
 async def fetch_itunes_preview(title: str, artist: str):
@@ -185,14 +186,13 @@ async def fetch_itunes_preview(title: str, artist: str):
 # ---------------------------------------------------------
 # The Mathematical AI (Knob Scoring Engine)
 # ---------------------------------------------------------
-def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict, limit: int = 5):
+def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict):
     """
     Refined scoring engine. Prioritizes exact matches for songs and artists
-    found in the user query, then layers the physical knob priorities.
+    found in the user query, then uses the new dedicated NICHENESS knob.
     """
     prompt_lower = request.text.lower()
     
-    # CRITICAL BUG FIX: Ensure None values become empty strings before lowercasing
     detected_song = (vibe_data.get("detected_song") or "").lower()
     detected_artist = (vibe_data.get("detected_artist") or "").lower()
     target_genre_override = (vibe_data.get("target_genre_override") or vibe_data.get("dominant_vibe", "")).lower()
@@ -213,35 +213,53 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
         if detected_song and (detected_song in title or title in detected_song):
             score += 100 
             
-        # 2. ARTIST MATCH (Knob based)
+        # 2. ARTIST MATCH (Tied to the restored Artist Knob)
         if (detected_artist and detected_artist == artist) or artist in prompt_lower:
-            score += 60 * (request.artist_focus / 50.0)
+            score += 40 * (request.artist_focus / 50.0)
             
-        # 3. VIBE / GENRE MATCH (Knob based)
-        # Check against our dynamic target genre (Dominant, Secondary, or Override)
+        # 3. VIBE / GENRE MATCH (Standardized since knob was removed)
         if target_genre_override in title or target_genre_override in artist:
-            score += 30 * (request.genre_focus / 50.0)
+            score += 30 
             
         for kw in vibe_data.get("matched_keywords", []):
             if kw.lower() in title or kw.lower() in artist:
-                score += 20 * (request.genre_focus / 50.0)
+                score += 20 
                 
         # 4. BPM MATCH (Marker based)
         markers = fast_markers if is_fast else slow_markers
         if any(m in title for m in markers):
             score += 30 * (request.bpm_focus / 50.0)
             
-        # 5. MAINSTREAM VS NICHE
-        knob_avg = (request.artist_focus + request.genre_focus + request.bpm_focus) / 3.0
-        popularity_bias = (i / len(tracks)) * 15 if len(tracks) > 0 else 0
-        score += popularity_bias if knob_avg > 60 else -popularity_bias
+        # 5. PURE NICHENESS KNOB (0 to 100)
+        popularity_bias = (i / len(tracks)) * 30 if len(tracks) > 0 else 0
+        nicheness_multiplier = (request.nicheness - 50) / 50.0
+        score += (popularity_bias * nicheness_multiplier)
         
         # Jitter to avoid static ties
         score += random.uniform(0, 1.5)
         scored_tracks.append((score, t))
         
     scored_tracks.sort(key=lambda x: x[0], reverse=True)
-    return [t[1] for t in scored_tracks[:limit]]
+    
+    # 6. DIVERSITY GUARD (Anti-Monopoly Secret Sauce)
+    final_selection = []
+    artist_counts = {}
+    for _, t in scored_tracks:
+        art = t.get("artist", "").lower()
+        
+        # If user didn't hard-override an artist, and their artist knob isn't cranked...
+        # Limit to 2 songs per artist so they actually get a diverse mix!
+        if not request.override_artist and request.artist_focus < 80:
+            if artist_counts.get(art, 0) >= 2:
+                continue 
+                
+        final_selection.append(t)
+        artist_counts[art] = artist_counts.get(art, 0) + 1
+        
+        if len(final_selection) >= request.track_limit:
+            break
+            
+    return final_selection
 
 # ---------------------------------------------------------
 # Core API Routes
@@ -278,45 +296,44 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 
 @app.post("/api/vibe/analyze", response_model=VibeResponse)
 async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
-    """Refined analysis route with deep entity scanning and Front-end Overrides."""
+    """Refined analysis route with deep entity scanning and Mapped Pools."""
     
     # 1. NLP Core Analysis
     vibe_data = vibe_engine.analyze_vibe_algorithm(
         text=request.text,
-        artist_focus=request.artist_focus,
-        genre_focus=request.genre_focus,
+        artist_focus=request.artist_focus, 
+        genre_focus=50, # Static default, genre is managed by Neural Engine
         bpm_focus=request.bpm_focus
     )
     
     prompt_lower = request.text.lower()
-    
-    # Check if the user bypassed the auto-scanner with a manual artist override
     detected_artist = request.override_artist
     detected_song = None
     
-    # 2. DEEP ENTITY SCAN (Only if they didn't manually override the artist)
+    # 2. DEEP ENTITY SCAN (FIXED: Regex Word Boundaries to stop IVE hallucination)
     if not detected_artist:
         try:
             db_artists = await db.artistdirectory.find_many()
             for a in db_artists:
                 artist_name = a.name.lower()
                 
-                # Check Artist Name Match
-                if artist_name in prompt_lower:
+                # \b forces a whole word match, so "ive" doesn't match "drives"
+                artist_pattern = rf'\b{re.escape(artist_name)}\b'
+                
+                if re.search(artist_pattern, prompt_lower):
                     detected_artist = a.name
                     if a.songs:
                         song_list = [s.strip().lower() for s in a.songs.split(",")]
                         for s in song_list:
-                            if s and s in prompt_lower:
+                            if s and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
                                 detected_song = s
                                 break
                     break
                     
-                # Check songs independently
                 elif a.songs:
                     song_list = [s.strip().lower() for s in a.songs.split(",")]
                     for s in song_list:
-                        if len(s) > 3 and s in prompt_lower:
+                        if len(s) > 3 and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
                             detected_artist = a.name
                             detected_song = s
                             break
@@ -328,7 +345,6 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     vibe_data["detected_song"] = detected_song
 
     # 3. DYNAMIC TARGET GENRE RESOLUTION
-    # Decide what our main "search intent" is for Last.fm and the Scoring Engine
     if request.override_genre:
         target_genre = request.override_genre
     elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
@@ -338,15 +354,31 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         
     vibe_data["target_genre_override"] = target_genre
 
-    # 4. SMART POOL FETCH
-    # Switch discography fetch if artist focus is relevant or explicitly forced
-    if detected_artist and (request.artist_focus >= 35 or request.override_artist):
-        raw_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=50)
+    # 4. SMART POOL FETCH (The Fix)
+    if request.override_artist:
+        # If they use the Pro Mode Bypass, we STILL pull 100% their tracks
+        raw_pool = await fetch_lastfm_artist_tracks(artist=request.override_artist, limit=100)
     else:
-        raw_pool = await fetch_lastfm_tracks(genre=target_genre, limit=50)
+        # Standard: Always fetch the broader genre so we have a solid mix
+        genre_pool = await fetch_lastfm_tracks(genre=target_genre, limit=100)
+        artist_pool = []
+        
+        # If an artist was detected, sprinkle 30 of their tracks into the pool!
+        if detected_artist and request.artist_focus > 25:
+            artist_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=30)
+            
+        # Mash them together and deduplicate
+        merged_pool = genre_pool + artist_pool
+        seen = set()
+        raw_pool = []
+        for t in merged_pool:
+            ident = f"{t['title'].lower()}|{t['artist'].lower()}"
+            if ident not in seen:
+                seen.add(ident)
+                raw_pool.append(t)
     
     # 5. MATHEMATICAL SCORING
-    best_tracks = filter_and_score_tracks(raw_pool, request, vibe_data, limit=5)
+    best_tracks = filter_and_score_tracks(raw_pool, request, vibe_data)
     
     # 6. PARALLEL PREVIEW SCRAPING
     itunes_tasks = [fetch_itunes_preview(t["title"], t["artist"]) for t in best_tracks]

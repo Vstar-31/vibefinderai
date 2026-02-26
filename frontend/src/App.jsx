@@ -411,9 +411,12 @@ export default function App() {
   const [isLoginView, setIsLoginView] = useState(true);
   const [authForm, setAuthForm]       = useState({ email: "", username: "", password: "" });
   const [vuLevel, setVuLevel]         = useState(0);
-  const [knobs, setKnobs]             = useState({ artist: 50, genre: 50, bpm: 50 });
   
-  // NEW: Override & Pro Mode State
+  // Restored Artist Knob, Replaced Genre Knob with Nicheness
+  const [knobs, setKnobs]             = useState({ artist: 50, nicheness: 50, bpm: 50 });
+  const [trackLimit, setTrackLimit]   = useState(5); 
+  
+  // Override & Pro Mode State
   const [showOverrides, setShowOverrides]     = useState(false);
   const [overrideArtist, setOverrideArtist]   = useState("");
   const [overrideGenre, setOverrideGenre]     = useState("");
@@ -515,9 +518,9 @@ export default function App() {
         body: JSON.stringify({ 
           text: prompt,
           artist_focus: Math.round(knobs.artist),
-          genre_focus: Math.round(knobs.genre),
+          nicheness: Math.round(knobs.nicheness), 
           bpm_focus: Math.round(knobs.bpm),
-          // NEW OVERRIDE PARAMS
+          track_limit: trackLimit,
           use_secondary_vibe: isSecondary,
           override_genre: overrideGenre.trim() || null,
           override_artist: overrideArtist.trim() || null
@@ -623,7 +626,7 @@ export default function App() {
                 <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
                   <div style={{ display: "flex", gap: "16px" }}>
                     <Knob label="Artist" value={knobs.artist} onChange={v => setKnobs(prev => ({...prev, artist: v}))} />
-                    <Knob label="Genre" value={knobs.genre} onChange={v => setKnobs(prev => ({...prev, genre: v}))} />
+                    <Knob label="Nicheness" value={knobs.nicheness} onChange={v => setKnobs(prev => ({...prev, nicheness: v}))} />
                     <Knob label="BPM" value={knobs.bpm} onChange={v => setKnobs(prev => ({...prev, bpm: v}))} />
                   </div>
                   <div style={{ marginLeft: "8px" }}>
@@ -639,7 +642,7 @@ export default function App() {
                 {!token && <div style={S.lockOverlay}><button onClick={() => setShowAuthModal(true)} style={S.lockBtn}><IconLock /> Authentication Required</button></div>}
               </div>
 
-              {/* ── NEW: PRO MODE OVERRIDES ── */}
+              {/* ── PRO MODE OVERRIDES ── */}
               <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
                 <button
                   onClick={() => setShowOverrides(!showOverrides)}
@@ -678,9 +681,38 @@ export default function App() {
                   </div>
                   <WaveformBars active={loading || !!playingTrack} count={22} vibeColor={activeColor} />
                 </div>
-                <button onClick={() => analyzeVibe(false)} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
-                  {loading && token ? <><div style={{ width: "14px", height: "14px", border: "2px solid rgba(251,191,36,0.3)", borderTopColor: "#fbbf24", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Analyzing…</> : <><IconPlay /> Run Analysis</>}
-                </button>
+                
+                {/* TRACK COUNT & RUN BUTTON CONTROLS */}
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tracks:</span>
+                    <div style={{ display: "flex", background: "rgba(10,5,2,0.6)", border: "1px solid rgba(120,80,20,0.3)", borderRadius: "6px", overflow: "hidden" }}>
+                      {[5, 10, 20, 50].map(num => (
+                        <button
+                          key={num}
+                          onClick={() => setTrackLimit(num)}
+                          disabled={!token || loading}
+                          style={{
+                            background: trackLimit === num ? "rgba(217,119,6,0.25)" : "transparent",
+                            color: trackLimit === num ? "#fde68a" : "rgba(180,140,80,0.6)",
+                            border: "none",
+                            padding: "8px 12px",
+                            fontSize: "11px",
+                            fontFamily: "'DM Mono', monospace",
+                            cursor: token && !loading ? "pointer" : "default",
+                            transition: "all 0.2s"
+                          }}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button onClick={() => analyzeVibe(false)} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
+                    {loading && token ? <><div style={{ width: "14px", height: "14px", border: "2px solid rgba(251,191,36,0.3)", borderTopColor: "#fbbf24", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Analyzing…</> : <><IconPlay /> Run Analysis</>}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -703,7 +735,7 @@ export default function App() {
                   <ConfidenceMeter value={useSecondaryVibe ? result.secondary_confidence : result.confidence} vibeColor={activeColor} />
                   <div style={S.cardSub}>Confidence: {Math.round((useSecondaryVibe ? result.secondary_confidence : result.confidence) * 100)}%</div>
                   
-                  {/* NEW: THE "PIVOT" BUTTON */}
+                  {/* PIVOT BUTTON */}
                   {result.secondary_vibe && !useSecondaryVibe && (
                     <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
                       <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>Secondary Signature Detected</span>
@@ -727,27 +759,54 @@ export default function App() {
 
                 <div className="panel-card" style={{ ...S.resultCard, justifyContent: "flex-start", paddingTop: "28px" }}>
                   <span style={S.cardLabel}>Engine State</span>
+                  <span style={{ fontSize: "9px", color: "rgba(180,140,80,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "-4px" }}>[ Click Genres to Hard-Filter ]</span>
+                  
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px", width: "100%", alignItems: "center" }}>
                     {result.detected_artist && <span className="freq-tag" style={{ color: activeColor, borderColor: `${activeColor}44`, background: `${activeColor}11` }}>LOCKED: {result.detected_artist}</span>}
                     {result.detected_song && <span className="freq-tag" style={{ color: "#fde68a", borderColor: "rgba(253,230,138,0.4)" }}>TRACK: {result.detected_song}</span>}
                     {overrideGenre && <span className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.4)" }}>OVERRIDE: {overrideGenre}</span>}
-                    {(!result.detected_artist && !result.detected_song && !overrideGenre) && (
-                       result.genres.map(g => (<span key={g} className="freq-tag" style={{ color: "rgba(180,140,80,0.7)", borderColor: `rgba(180,140,80,0.3)` }}>{g}</span>))
-                    )}
+                    
+                    {/* NEW: GENRE CHECKBOX BUTTONS */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", justifyContent: "center", marginTop: "4px" }}>
+                        {result.genres.map(g => {
+                            const isSelected = overrideGenre.toLowerCase() === g.toLowerCase();
+                            return (
+                                <button
+                                    key={g}
+                                    onClick={() => setOverrideGenre(isSelected ? "" : g)}
+                                    className="freq-tag dial-btn"
+                                    title={isSelected ? "Remove Filter" : `Filter strictly by ${g}`}
+                                    style={{
+                                        color: isSelected ? "#1a0e04" : "rgba(180,140,80,0.7)",
+                                        borderColor: isSelected ? "#d97706" : "rgba(180,140,80,0.3)",
+                                        background: isSelected ? "#d97706" : "transparent",
+                                        cursor: "pointer",
+                                        boxShadow: isSelected ? "0 0 10px rgba(217,119,6,0.5)" : "none",
+                                        transition: "all 0.2s ease"
+                                    }}
+                                >
+                                    {isSelected ? `✓ ${g}` : g}
+                                </button>
+                            );
+                        })}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* ── NEW DUAL AUDIO PLAYER UI ── */}
+              {/* ── GENERATED PLAYLIST UI ── */}
               {result.tracks && result.tracks.length > 0 && (
                 <div className="panel-card screws" style={{ padding: "24px", marginTop: "16px" }}>
                   <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(120,80,20,0.015) 10px, rgba(120,80,20,0.015) 11px)", pointerEvents: "none", borderRadius: "16px" }} />
                   <div style={{ position: "relative" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-                      <IconDisc />
-                      <span style={S.cardLabel}>Generated Playlist // 100% Free Engine</span>
-                      <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)` }} />
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <IconDisc />
+                        <span style={S.cardLabel}>Generated Playlist // 100% Free Engine</span>
+                      </div>
+                      <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>{result.tracks.length} TRACKS</span>
                     </div>
+                    <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px" }} />
                     
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                       {result.tracks.map((track, i) => {
@@ -814,16 +873,37 @@ export default function App() {
                 </div>
               )}
 
+              {/* NEURAL BREAKDOWN WITH CLICKABLE FILTERS */}
               <div className="panel-card" style={{ padding: "24px", marginTop: "16px" }}>
                 <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 11px, rgba(120,80,20,0.025) 11px, rgba(120,80,20,0.025) 12px)", pointerEvents: "none", borderRadius: "16px" }} />
                 <div style={{ position: "relative" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-                    <span style={S.cardLabel}>Neural Match Breakdown</span>
-                    <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)` }} />
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={S.cardLabel}>Neural Match Breakdown</span>
+                    </div>
                   </div>
+                  <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px", width: "100%" }} />
+                  
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                     {result.matched_keywords.length > 0
-                      ? result.matched_keywords.map(kw => (<span key={kw} style={{ padding: "5px 12px", background: "rgba(8,5,2,0.8)", border: `1px solid ${activeColor}33`, borderRadius: "6px", fontSize: "11px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.75)", letterSpacing: "0.05em", transition: "border-color 0.2s" }}>#{kw}</span>))
+                      ? result.matched_keywords.map(kw => {
+                          return (
+                            <span 
+                              key={kw} 
+                              style={{ 
+                                padding: "5px 12px", 
+                                background: "rgba(8,5,2,0.8)", 
+                                border: `1px solid ${activeColor}33`, 
+                                borderRadius: "6px", 
+                                fontSize: "11px", 
+                                fontFamily: "'DM Mono', monospace", 
+                                color: "rgba(180,140,80,0.75)", 
+                                letterSpacing: "0.05em", 
+                              }}>
+                                #{kw}
+                            </span>
+                          );
+                        })
                       : <span style={{ fontSize: "12px", color: "rgba(120,80,20,0.5)", fontStyle: "italic" }}>Universal mood detected — falling back to ambient processing.</span>
                     }
                   </div>
