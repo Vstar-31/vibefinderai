@@ -3,13 +3,14 @@
 // ----------------------------------------------------------------
 
 generator client {
-  provider             = "prisma-client-py" // FIX: Changed from prisma-client-python
+  provider             = "prisma-client-py"
   recursive_type_depth = 5
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL") // PostgreSQL connection string provided by Supabase environment variable
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // ADDED: Required by Supabase for building tables
 }
 
 // --- CORE USER ARCHITECTURE ---
@@ -18,11 +19,10 @@ model User {
   id              String          @id @default(uuid())
   email           String          @unique
   username        String          @unique
-  hashedPassword  String?         // ADDED: For secure local email/password auth
+  hashedPassword  String?         
   avatarUrl       String?
   createdAt       DateTime        @default(now())
   
-  // Relations
   oauthIdentities OAuthIdentity[]
   playlists       Playlist[]
   forumPosts      ForumPost[]
@@ -31,15 +31,15 @@ model User {
 
 model OAuthIdentity {
   id           String   @id @default(uuid())
-  providerName String   // Supported providers: "spotify", "apple_music"
-  providerId   String   // Unique identifier assigned by the OAuth provider
+  providerName String   
+  providerId   String   
   accessToken  String
   refreshToken String?
   userId       String
   
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  @@unique([providerName, providerId]) // Ensures a specific provider account is linked to only one internal user entity
+  @@unique([providerName, providerId]) 
 }
 
 // --- MUSIC & DISCOVERY LAYER ---
@@ -48,7 +48,7 @@ model Playlist {
   id          String   @id @default(uuid())
   title       String
   description String?
-  smartlink   String?  @unique // Cryptographic hash utilized for generating universal shareable URLs
+  smartlink   String?  @unique 
   userId      String
   createdAt   DateTime @default(now())
   
@@ -58,9 +58,9 @@ model Playlist {
 
 model Track {
   id            String   @id @default(uuid())
-  spotifyId     String?  // Native Spotify track identifier for embedded web player integration
-  appleMusicId  String?  // Native Apple Music track identifier for embedded web player integration
-  isrc          String?  // International Standard Recording Code used for cross-platform track disambiguation
+  spotifyId     String?  
+  appleMusicId  String?  
+  isrc          String?  
   title         String
   artist        String
   playlistId    String
@@ -86,13 +86,12 @@ model Comment {
   content     String
   userId      String
   postId      String
-  parentId    String?   // Optional reference to a parent comment to support hierarchical threaded replies
+  parentId    String?   
   createdAt   DateTime  @default(now())
   
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   post        ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
   
-  // Defines the self-referential relationship for nested comment hierarchies
   parent      Comment?  @relation("CommentToComment", fields: [parentId], references: [id])
   replies     Comment[] @relation("CommentToComment")
 }

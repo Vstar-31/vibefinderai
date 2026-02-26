@@ -11,4 +11,7 @@ PyJWT>=2.8.0
 prisma>=0.11.0
 
 #Password Hashing & Security
+bcrypt==3.2.2
 passlib[bcrypt]>=1.7.4
+#Form Data Parsing (Required for OAuth2 Login)
+python-multipart>=0.0.9

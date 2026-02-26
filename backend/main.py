@@ -50,13 +50,14 @@ app.add_middleware(
 # ---------------------------------------------------------
 # Security & Auth Configuration
 # ---------------------------------------------------------
-SECRET_KEY = os.getenv("SECRET_KEY", "development_fallback_key")
+SECRET_KEY = os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
 # Setup Bcrypt for hashing passwords securely
+# Note: Using bcrypt version 3.2.2 for passlib compatibility
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class Token(BaseModel):
@@ -69,10 +70,18 @@ class UserCreate(BaseModel):
     password: str
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    """
+    Verifies a password against a hash.
+    Truncates to 72 bytes to prevent bcrypt ValueError crashes.
+    """
+    return pwd_context.verify(plain_password[:72], hashed_password)
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    """
+    Hashes a password using bcrypt.
+    Truncates to 72 bytes to prevent bcrypt ValueError crashes.
+    """
+    return pwd_context.hash(password[:72])
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
@@ -97,7 +106,6 @@ class VibeResponse(BaseModel):
     genres: list[str]
     matched_keywords: list[str]
 
-# Our custom dictionary mapping vibes to keywords, bpms, and genres
 VIBE_DICTIONARY = {
     "hype": {
         "keywords": ["gym", "pump", "aggressive", "hype", "energy", "fast", "workout", "run", "lift", "crazy", "rage"], 
@@ -122,17 +130,10 @@ VIBE_DICTIONARY = {
 }
 
 def analyze_vibe_algorithm(text: str) -> dict:
-    """
-    Our custom NLP scoring engine. Tokenizes input text and scores it against
-    our VIBE_DICTIONARY to determine the user's mood.
-    """
-    # Clean and tokenize text (lowercase, extract words only)
     words = re.findall(r'\b\w+\b', text.lower())
-    
     scores = {vibe: 0 for vibe in VIBE_DICTIONARY}
     matched = []
 
-    # Score the words against our dictionaries
     for word in words:
         for vibe, data in VIBE_DICTIONARY.items():
             if word in data["keywords"]:
@@ -141,7 +142,6 @@ def analyze_vibe_algorithm(text: str) -> dict:
 
     total_matches = sum(scores.values())
     
-    # Fallback if no keywords matched
     if total_matches == 0:
         return {
             "dominant_vibe": "neutral", 
@@ -151,9 +151,7 @@ def analyze_vibe_algorithm(text: str) -> dict:
             "matched_keywords": []
         }
 
-    # Calculate the winner
     dominant_vibe = max(scores, key=scores.get)
-    # Calculate confidence as the percentage of matched words belonging to the winning vibe
     confidence = round(scores[dominant_vibe] / total_matches, 2)
     
     return {
@@ -161,7 +159,7 @@ def analyze_vibe_algorithm(text: str) -> dict:
         "confidence": confidence,
         "bpm_range": VIBE_DICTIONARY[dominant_vibe]["bpm"],
         "genres": VIBE_DICTIONARY[dominant_vibe]["genres"],
-        "matched_keywords": list(set(matched)) # Return unique matched words
+        "matched_keywords": list(set(matched))
     }
 
 # ---------------------------------------------------------
@@ -170,9 +168,6 @@ def analyze_vibe_algorithm(text: str) -> dict:
 
 @app.get("/")
 async def root():
-    """
-    Health check endpoint to verify API operational status.
-    """
     return {"message": "VibeFinderAI API is operational."}
 
 @app.post("/auth/register", status_code=status.HTTP_201_CREATED)
@@ -192,7 +187,7 @@ async def register_user(user: UserCreate):
     if existing_user:
         raise HTTPException(status_code=400, detail="Email or username already registered")
     
-    # 2. Hash the password securely
+    # 2. Hash the password securely (with 72-byte truncation)
     hashed_pwd = get_password_hash(user.password)
     
     # 3. Save to database
@@ -214,7 +209,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     # 1. Find user by username
     user = await db.user.find_unique(where={"username": form_data.username})
     
-    # 2. Verify existence and password
+    # 2. Verify existence and password (with truncation check)
     if not user or not user.hashedPassword:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -239,11 +234,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.get("/users/me")
 async def read_users_me(token: str = Depends(oauth2_scheme)):
-    """
-    Protected endpoint example requiring a valid JWT bearer token.
-    Validates token signature and expiration before granting access.
-    Fetches the actual user from the database.
-    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
@@ -254,7 +244,6 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     
-    # Fetch actual user from DB to prove it works
     user = await db.user.find_unique(where={"id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User not found in database")
@@ -268,11 +257,4 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 
 @app.post("/api/vibe/analyze", response_model=VibeResponse)
 async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
-    """
-    Protected endpoint to analyze a text prompt and return music vibe metrics.
-    Requires authentication to use.
-    """
-    # Verify user token first (we reuse the same token verification logic implicitly via Depends)
-    # Now run our custom algorithm
-    result = analyze_vibe_algorithm(request.text)
-    return result
+    return analyze_vibe_algorithm(request.text)
