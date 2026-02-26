@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------
 
 generator client {
-  provider             = "prisma-client-python"
+  provider             = "prisma-client-py" // FIX: Changed from prisma-client-python
   recursive_type_depth = 5
 }
 
@@ -18,6 +18,7 @@ model User {
   id              String          @id @default(uuid())
   email           String          @unique
   username        String          @unique
+  hashedPassword  String?         // ADDED: For secure local email/password auth
   avatarUrl       String?
   createdAt       DateTime        @default(now())
   

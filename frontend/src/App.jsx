@@ -38,7 +38,7 @@ export default function App() {
       formData.append('username', 'dev_bro');
       formData.append('password', 'password123');
 
-      const res = await fetch('http://127.0.0.1:8000/auth/token', {
+      const res = await fetch('/auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData,
@@ -55,7 +55,7 @@ export default function App() {
     try {
       setLoading(true);
       setError('');
-      const res = await fetch('http://127.0.0.1:8000/api/vibe/analyze', {
+      const res = await fetch('/api/vibe/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

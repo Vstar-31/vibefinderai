@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import jwt
@@ -7,12 +7,34 @@ from datetime import datetime, timedelta
 import os
 import re
 from dotenv import load_dotenv
+from passlib.context import CryptContext
+from contextlib import asynccontextmanager
+from prisma import Prisma
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Initialize the core FastAPI application
-app = FastAPI(title="VibeFinderAI API", description="Core backend for music discovery and NLP integrations")
+# ---------------------------------------------------------
+# Database Initialization (Prisma)
+# ---------------------------------------------------------
+db = Prisma()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifecycle manager for FastAPI. Connects to the Prisma DB 
+    on startup and cleanly disconnects on shutdown.
+    """
+    await db.connect()
+    yield
+    await db.disconnect()
+
+# Initialize the core FastAPI application with the lifespan hook
+app = FastAPI(
+    title="VibeFinderAI API", 
+    description="Core backend for music discovery and NLP integrations",
+    lifespan=lifespan
+)
 
 # ---------------------------------------------------------
 # CORS Configuration (Allows frontend to talk to backend)
@@ -26,8 +48,7 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------
-# JWT Configuration 
-# Keys are securely loaded from the environment variables
+# Security & Auth Configuration
 # ---------------------------------------------------------
 SECRET_KEY = os.getenv("SECRET_KEY", "development_fallback_key")
 ALGORITHM = "HS256"
@@ -35,23 +56,32 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
+# Setup Bcrypt for hashing passwords securely
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 class Token(BaseModel):
     access_token: str
     token_type: str
 
+class UserCreate(BaseModel):
+    email: str
+    username: str
+    password: str
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    """
-    Generates a JSON Web Token for user authentication and session management.
-    """
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
-    
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # ---------------------------------------------------------
 # Custom NLP Vibe Algorithm (The Brains)
@@ -145,15 +175,64 @@ async def root():
     """
     return {"message": "VibeFinderAI API is operational."}
 
+@app.post("/auth/register", status_code=status.HTTP_201_CREATED)
+async def register_user(user: UserCreate):
+    """
+    Creates a new user with a hashed password in the database.
+    """
+    # 1. Check if user already exists
+    existing_user = await db.user.find_first(
+        where={
+            "OR": [
+                {"email": user.email},
+                {"username": user.username}
+            ]
+        }
+    )
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email or username already registered")
+    
+    # 2. Hash the password securely
+    hashed_pwd = get_password_hash(user.password)
+    
+    # 3. Save to database
+    new_user = await db.user.create(
+        data={
+            "email": user.email,
+            "username": user.username,
+            "hashedPassword": hashed_pwd
+        }
+    )
+    return {"message": "User registered successfully", "user_id": new_user.id}
+
+
 @app.post("/auth/token", response_model=Token)
-async def login_for_access_token():
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """
-    Mock authentication endpoint for the initial development phase.
-    To be replaced with database-backed Supabase/OAuth verification in Phase 2.
+    Verifies user credentials against the database and returns a JWT.
     """
+    # 1. Find user by username
+    user = await db.user.find_unique(where={"username": form_data.username})
+    
+    # 2. Verify existence and password
+    if not user or not user.hashedPassword:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    if not verify_password(form_data.password, user.hashedPassword):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    # 3. Generate token using their actual DB user ID
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": "development_user_123"}, 
+        data={"sub": user.id}, 
         expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
@@ -163,6 +242,7 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
     """
     Protected endpoint example requiring a valid JWT bearer token.
     Validates token signature and expiration before granting access.
+    Fetches the actual user from the database.
     """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -174,10 +254,16 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     
+    # Fetch actual user from DB to prove it works
+    user = await db.user.find_unique(where={"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found in database")
+        
     return {
-        "user_id": user_id, 
-        "status": "authenticated", 
-        "message": "User access verified successfully."
+        "user_id": user.id, 
+        "username": user.username,
+        "email": user.email,
+        "status": "authenticated"
     }
 
 @app.post("/api/vibe/analyze", response_model=VibeResponse)

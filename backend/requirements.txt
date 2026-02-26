@@ -9,3 +9,6 @@ PyJWT>=2.8.0
 
 # Database ORM (Supabase/PostgreSQL)
 prisma>=0.11.0
+
+#Password Hashing & Security
+passlib[bcrypt]>=1.7.4
