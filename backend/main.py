@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 from passlib.context import CryptContext
 from contextlib import asynccontextmanager
 from prisma import Prisma
+import urllib.request
+import urllib.parse
+import json
+import asyncio
 
 # Import our modularized vibe engine
 import vibe_engine
@@ -79,12 +83,21 @@ class VibeRequest(BaseModel):
     genre_focus: int = 50
     bpm_focus: int = 50
 
+class TrackInfo(BaseModel):
+    title: str
+    artist: str
+    spotify_uri: str
+    apple_uri: str
+
 class VibeResponse(BaseModel):
     dominant_vibe: str
     confidence: float
     bpm_range: str
     genres: list[str]
     matched_keywords: list[str]
+    secondary_vibe: str | None = None
+    secondary_confidence: float = 0.0
+    tracks: list[TrackInfo] = []
 
 # ---------------------------------------------------------
 # Auth Helpers
@@ -102,6 +115,59 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+# ---------------------------------------------------------
+# Phase 2: Core Music APIs (Last.fm & Deep Links)
+# ---------------------------------------------------------
+def fetch_lastfm_tracks_sync(genre: str, limit: int = 5):
+    """
+    Hits the free Last.fm API to pull trending tracks for a specific genre,
+    then generates the Cross-Platform URIs (Spotify Deep Links) to bypass paywalls.
+    """
+    # Using a fallback generic key if none is provided in .env
+    api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
+    url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
+    
+    fallback_tracks = [
+        {"title": "Nightcrawler", "artist": "Travis Scott", "spotify_uri": "spotify:search:Nightcrawler%20Travis%20Scott", "apple_uri": "music://search?term=Nightcrawler%20Travis%20Scott"},
+        {"title": "Resonance", "artist": "HOME", "spotify_uri": "spotify:search:Resonance%20HOME", "apple_uri": "music://search?term=Resonance%20HOME"},
+        {"title": "Goth", "artist": "Sidewalks and Skeletons", "spotify_uri": "spotify:search:Goth%20Sidewalks%20and%20Skeletons", "apple_uri": "music://search?term=Goth%20Sidewalks%20and%20Skeletons"}
+    ]
+
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            tracks = data.get("tracks", {}).get("track", [])
+            
+            if not tracks:
+                return fallback_tracks
+
+            result = []
+            for t in tracks:
+                title = t.get("name")
+                artist = t.get("artist", {}).get("name")
+                
+                # The "Muscle" -> Generating exact Spotify App URIs
+                search_query = urllib.parse.quote(f"{title} {artist}")
+                spotify_uri = f"spotify:search:{search_query}"
+                apple_uri = f"music://search?term={search_query}" # Future proofing for Phase 2 Apple Music
+                
+                result.append({
+                    "title": title, 
+                    "artist": artist, 
+                    "spotify_uri": spotify_uri, 
+                    "apple_uri": apple_uri
+                })
+            return result
+    except Exception as e:
+        print(f"Last.fm fetch failed ({e}). Returning fallback offline tracks.")
+        return fallback_tracks
+
+async def fetch_lastfm_tracks(genre: str, limit: int = 5):
+    """Async wrapper so we don't block the FastAPI event loop."""
+    return await asyncio.to_thread(fetch_lastfm_tracks_sync, genre, limit)
+
 
 # ---------------------------------------------------------
 # Core API Routes
@@ -187,11 +253,24 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 
 @app.post("/api/vibe/analyze", response_model=VibeResponse)
 async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
-    """Routes the analyze request to the modularized vibe engine."""
-    # The baton is passed with the new analog knob priorities!
-    return vibe_engine.analyze_vibe_algorithm(
+    """Routes the analyze request to the modularized vibe engine and fetches playlist data."""
+    
+    # 1. Run the AI Acoustic Intelligence Engine
+    vibe_data = vibe_engine.analyze_vibe_algorithm(
         text=request.text,
         artist_focus=request.artist_focus,
         genre_focus=request.genre_focus,
         bpm_focus=request.bpm_focus
     )
+    
+    # 2. Extract best genre for the query
+    genres = vibe_data.get("genres", [])
+    target_genre = genres[0] if genres else "electronic"
+    
+    # 3. Hit the Last.fm Brain to fetch tracks (Phase 2!)
+    tracks = await fetch_lastfm_tracks(genre=target_genre, limit=5)
+    
+    # 4. Inject tracks into response payload
+    vibe_data["tracks"] = tracks
+    
+    return vibe_data

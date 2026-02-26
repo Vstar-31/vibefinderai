@@ -8,6 +8,7 @@ const IconUser    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="
 const IconMail    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>;
 const IconX       = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
 const IconWave    = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>;
+const IconDisc    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>;
 
 /* ─── WAVEFORM VISUALISER ────────────────────────────────────── */
 function WaveformBars({ active, count = 28 }) {
@@ -335,7 +336,7 @@ function GlobalStyles() {
 
       .dial-btn {
         cursor: pointer;
-        transition: transform 0.12s, box-shadow 0.12s;
+        transition: transform 0.12s, box-shadow 0.12s, border-color 0.2s;
         border: none;
         outline: none;
       }
@@ -946,6 +947,55 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* ── NEW: PHASE 2 GENERATED PLAYLIST UI ── */}
+              {result.tracks && result.tracks.length > 0 && (
+                <div className="panel-card screws" style={{ padding: "24px", marginTop: "16px" }}>
+                  <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(120,80,20,0.015) 10px, rgba(120,80,20,0.015) 11px)", pointerEvents: "none", borderRadius: "16px" }} />
+                  <div style={{ position: "relative" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                      <IconDisc />
+                      <span style={S.cardLabel}>Generated Playlist // Phase 2</span>
+                      <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)` }} />
+                    </div>
+                    
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {result.tracks.map((track, i) => (
+                        <div key={i} style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "14px 18px", background: "rgba(8,5,2,0.6)",
+                          border: `1px solid rgba(120,80,20,0.25)`, borderRadius: "10px",
+                          transition: "all 0.2s"
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = activeColor; e.currentTarget.style.transform = "translateX(4px)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(120,80,20,0.25)"; e.currentTarget.style.transform = "translateX(0)"; }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span style={{ fontSize: "15px", fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif" }}>{track.title}</span>
+                            <span style={{ fontSize: "11px", color: "rgba(180,140,80,0.7)", letterSpacing: "0.05em" }}>{track.artist}</span>
+                          </div>
+                          
+                          <a 
+                            href={track.spotify_uri} 
+                            className="dial-btn"
+                            style={{ 
+                              ...S.authBtn(false), 
+                              padding: "8px 16px", 
+                              textDecoration: "none",
+                              background: "rgba(29, 185, 84, 0.15)", // Spotify green tint
+                              borderColor: "rgba(29, 185, 84, 0.4)",
+                              color: "#1db954",
+                              boxShadow: "0 0 10px rgba(29, 185, 84, 0.1)"
+                            }} 
+                          >
+                            <IconPlay /> Play
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="panel-card" style={{ padding: "24px", marginTop: "16px" }}>
                 <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 11px, rgba(120,80,20,0.025) 11px, rgba(120,80,20,0.025) 12px)", pointerEvents: "none", borderRadius: "16px" }} />
