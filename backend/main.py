@@ -89,6 +89,13 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 # Bcrypt context - pinned for passlib compatibility
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+COMMON_WORDS_BLACKLIST = {
+        "alone", "beautiful", "water", "time", "burn", "lights", 
+        "independent", "deep", "passion", "holiday", "eve", "chicago", 
+        "slow", "love", "night", "good", "bad", "happy", "sad", "summer", 
+        "rain", "coffee", "drive", "party", "chill", "focus", "work", 
+        "sleep", "wake", "morning", "midnight", "fire", "magic", "dream"
+    }
 # ---------------------------------------------------------
 # Pydantic Models
 # ---------------------------------------------------------
