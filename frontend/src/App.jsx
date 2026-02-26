@@ -9,12 +9,11 @@ const IconMail    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="
 const IconX       = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
 const IconWave    = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>;
 
-/* ─── WAVEFORM VISUALISER (pure CSS bars) ────────────────────── */
+/* ─── WAVEFORM VISUALISER ────────────────────────────────────── */
 function WaveformBars({ active, count = 28 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "32px" }}>
       {Array.from({ length: count }).map((_, i) => {
-        const h = active ? Math.random() * 28 + 4 : 8;
         const delay = (i * 40) % 700;
         return (
           <div
@@ -120,7 +119,7 @@ function Oscilloscope({ active }) {
       display: "flex",
       alignItems: "center",
       gap: "8px",
-      cursor: "help" // UX Improvement
+      cursor: "help"
     }}>
       <span style={{ fontSize: "9px", fontFamily: "monospace", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>OSC</span>
       <canvas ref={canvasRef} width={180} height={36} style={{ display: "block" }} />
@@ -215,27 +214,28 @@ function AudioInput({ icon, ...props }) {
 
 /* ─── INTERACTIVE KNOB ───────────────────────────────────────── */
 function Knob({ label, value, onChange }) {
-  const knobRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [startY, setStartY] = useState(0);
-  const [startVal, setStartVal] = useState(0);
-
-  const handleMouseDown = (e) => {
-    setIsDragging(true);
-    setStartY(e.clientY);
-    setStartVal(value);
-  };
+  const [localVal, setLocalVal] = useState(value);
+  // Store the precise click start point and the value at that moment
+  const dragStart = useRef({ x: 0, y: 0, val: 0 });
 
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (!isDragging) return;
-      const deltaY = startY - e.clientY;
-      // 1 pixel = 1 unit of priority
-      let newVal = startVal + deltaY;
+      
+      // Pure X-Axis Logic: Moving mouse RIGHT increases, LEFT decreases.
+      const deltaX = e.clientX - dragStart.current.x;
+      
+      // Calculate new value (bumped sensitivity to 0.8 for smooth horizontal turning)
+      let newVal = dragStart.current.val + (deltaX * 0.8);
+      
       if (newVal > 100) newVal = 100;
       if (newVal < 0) newVal = 0;
+      
+      setLocalVal(newVal);
       onChange(newVal);
     };
+
     const handleMouseUp = () => setIsDragging(false);
 
     if (isDragging) {
@@ -246,21 +246,64 @@ function Knob({ label, value, onChange }) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, startY, startVal, onChange]);
+  }, [isDragging, onChange]);
 
-  // Map 0-100 to rotation degrees (-135 to 135)
-  const rotation = -135 + (value / 100) * 270;
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    // Lock in the start position
+    dragStart.current = { x: e.clientX, y: e.clientY, val: localVal };
+  };
+
+  // Render authentic clock-like markers around the dial (11 ticks = 0% to 100%)
+  const renderTicks = () => {
+    const ticks = [];
+    const totalTicks = 11; // 0, 10, 20... 100
+    for (let i = 0; i < totalTicks; i++) {
+      const pct = i / (totalTicks - 1);
+      const deg = -135 + (pct * 270);
+      const isActive = pct * 100 <= localVal;
+      
+      // Make 0%, 50%, and 100% ticks thicker and longer like a watch face
+      const isMajor = i === 0 || i === 5 || i === 10;
+
+      ticks.push(
+        <div key={i} style={{
+          position: 'absolute',
+          top: '50%', left: '50%',
+          width: isMajor ? '2px' : '1.5px',
+          height: isMajor ? '8px' : '5px',
+          background: isActive ? 'rgba(217,119,6,0.95)' : 'rgba(180,140,80,0.25)',
+          boxShadow: isActive ? '0 0 6px rgba(217,119,6,0.6)' : 'none',
+          transform: `translate(-50%, -50%) rotate(${deg}deg) translateY(-23px)`,
+          borderRadius: '1px',
+          transition: 'all 0.15s ease'
+        }} />
+      );
+    }
+    return ticks;
+  };
+
+  const rotation = -135 + (localVal / 100) * 270;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
-      <div
-        ref={knobRef}
-        onMouseDown={handleMouseDown}
-        className="knob"
-        style={{ transform: `rotate(${rotation}deg)`, cursor: isDragging ? 'grabbing' : 'grab' }}
-        title={`${label} Priority: ${Math.round(value)}%`}
-      />
-      <span style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em", textTransform: "uppercase", userSelect: "none" }}>{label}</span>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
+      <div style={{ position: 'relative', width: '56px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {renderTicks()}
+        <div
+          onMouseDown={handleMouseDown}
+          className="knob"
+          style={{ 
+            transform: `rotate(${rotation}deg)`, 
+            cursor: isDragging ? 'grabbing' : 'pointer', 
+            position: 'absolute', 
+            zIndex: 2,
+            width: '32px', height: '32px',
+            boxShadow: isDragging ? '0 6px 12px rgba(0,0,0,0.9), inset 0 1px 2px rgba(255,200,80,0.3)' : ''
+          }}
+          title={`${label} Priority: ${Math.round(localVal)}%`}
+        />
+      </div>
+      <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.6)", letterSpacing: "0.15em", textTransform: "uppercase", userSelect: "none", fontWeight: 600 }}>{label}</span>
     </div>
   );
 }
@@ -340,11 +383,10 @@ function GlobalStyles() {
       .pulsing { animation: pulse-glow 1.8s ease-in-out infinite; }
 
       .knob {
-        width: 36px; height: 36px; border-radius: 50%;
+        border-radius: 50%;
         background: radial-gradient(circle at 35% 35%, #5a3a18, #1a0e04);
         border: 2px solid rgba(120,80,20,0.5);
         box-shadow: 0 3px 8px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,200,80,0.1);
-        position: relative; cursor: help; flex-shrink: 0;
         display: flex; align-items: center; justify-content: center;
       }
       .knob::after {
@@ -792,36 +834,33 @@ export default function App() {
 
           {/* ── INPUT PANEL ─── */}
           <div className="panel-card screws" style={{ padding: "28px", marginBottom: "24px" }}>
-            {/* horizontal groove lines */}
             <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(120,80,20,0.03) 7px, rgba(120,80,20,0.03) 8px)", pointerEvents: "none", borderRadius: "16px" }} />
 
             <div style={{ position: "relative" }}>
-              {/* Panel top row */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px", flexWrap: "wrap", gap: "12px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                  <div style={{ display: "flex", gap: "12px" }}>
-                    {/* Live Interactive Knobs */}
-                    <Knob label="Artist" value={knobs.artist} onChange={v => setKnobs({...knobs, artist: v})} />
-                    <Knob label="Genre" value={knobs.genre} onChange={v => setKnobs({...knobs, genre: v})} />
-                    <Knob label="BPM" value={knobs.bpm} onChange={v => setKnobs({...knobs, bpm: v})} />
+              {/* Panel top row w/ Knobs */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+                  <div style={{ display: "flex", gap: "16px" }}>
+                    <Knob label="Artist" value={knobs.artist} onChange={v => setKnobs(prev => ({...prev, artist: v}))} />
+                    <Knob label="Genre" value={knobs.genre} onChange={v => setKnobs(prev => ({...prev, genre: v}))} />
+                    <Knob label="BPM" value={knobs.bpm} onChange={v => setKnobs(prev => ({...prev, bpm: v}))} />
                   </div>
-                  <div style={{ marginLeft: "4px" }}>
-                    <div style={{ fontSize: "13px", fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: "#e8d5a3", letterSpacing: "0.04em" }}>Describe the Vibe</div>
+                  <div style={{ marginLeft: "8px" }}>
+                    <div style={{ fontSize: "15px", fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: "#e8d5a3", letterSpacing: "0.04em" }}>Describe the Vibe</div>
                     <div style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase" }}>// Acoustic descriptor input</div>
                   </div>
                 </div>
                 <VuMeter value={vuLevel} vibeColor={activeColor} />
               </div>
 
-              {/* Textarea */}
               <div style={S.textareaWrap}>
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder={"Ex: Late night drive through rain-slicked streets, JBL 4343s, single malt in hand..."}
+                  placeholder={"Ex: Late night drive through rain-slicked streets, Travis Scott on the radio..."}
                   style={S.textarea}
                   disabled={!token || loading}
-                  onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}33`; }}
+                  onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }}
                   onBlur={e => { e.target.style.borderColor = "rgba(120,80,20,0.35)"; e.target.style.boxShadow = "none"; }}
                 />
                 {!token && (
@@ -833,7 +872,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Bottom row */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", flexWrap: "wrap", gap: "12px" }}>
                 <div style={S.signalRow}>
                   <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
@@ -861,15 +899,13 @@ export default function App() {
           {/* ── RESULTS ─── */}
           {result && (
             <div id="results-section" className="animate-in" style={{ scrollMarginTop: "24px" }}>
-              {/* Results header */}
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", paddingLeft: "4px" }}>
-                <div style={{ width: "24px", height: "1px", background: activeColor }} />
+                <div style={{ width: "24px", height: "1px", background: `${activeColor}88` }} />
                 <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)" }}>Analysis Complete</span>
-                <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}88, transparent)` }} />
+                <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}66, transparent)` }} />
               </div>
 
               <div style={S.grid}>
-                {/* Dominant Vibe with Secondary Signature Fallback */}
                 <div className="panel-card" style={S.resultCard}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
                     <IconWave />
@@ -879,7 +915,6 @@ export default function App() {
                   <ConfidenceMeter value={result.confidence} vibeColor={activeColor} />
                   <div style={S.cardSub}>Confidence: {Math.round(result.confidence * 100)}%</div>
                   
-                  {/* Secondary Signature Display */}
                   {result.secondary_vibe && (
                     <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "4px" }}>
                       <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>Secondary Signature</span>
@@ -890,7 +925,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* BPM */}
                 <div className="panel-card" style={S.resultCard}>
                   <div style={{ marginBottom: "4px" }}>
                     <Vinyl spinning={true} labelColor={activeColor} />
@@ -903,7 +937,6 @@ export default function App() {
                   <div style={S.cardSub}>Rhythmic Pulse</div>
                 </div>
 
-                {/* Genres */}
                 <div className="panel-card" style={{ ...S.resultCard, justifyContent: "flex-start", paddingTop: "28px" }}>
                   <span style={S.cardLabel}>Genre Mapping</span>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center", marginTop: "10px" }}>
@@ -914,27 +947,18 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Keyword breakdown */}
               <div className="panel-card" style={{ padding: "24px", marginTop: "16px" }}>
                 <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 11px, rgba(120,80,20,0.025) 11px, rgba(120,80,20,0.025) 12px)", pointerEvents: "none", borderRadius: "16px" }} />
                 <div style={{ position: "relative" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
                     <span style={S.cardLabel}>Neural Match Breakdown</span>
-                    <div style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, rgba(120,80,20,0.5), transparent)" }} />
+                    <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)` }} />
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                     {result.matched_keywords.length > 0
                       ? result.matched_keywords.map(kw => (
                         <span key={kw} style={{
-                          padding: "5px 12px",
-                          background: "rgba(8,5,2,0.8)",
-                          border: `1px solid ${activeColor}44`,
-                          borderRadius: "6px",
-                          fontSize: "11px",
-                          fontFamily: "'DM Mono', monospace",
-                          color: "rgba(180,140,80,0.85)",
-                          letterSpacing: "0.05em",
-                          transition: "border-color 0.2s",
+                          padding: "5px 12px", background: "rgba(8,5,2,0.8)", border: `1px solid ${activeColor}33`, borderRadius: "6px", fontSize: "11px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.75)", letterSpacing: "0.05em", transition: "border-color 0.2s",
                         }}>
                           #{kw}
                         </span>
@@ -945,13 +969,12 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Footer tape reel decorative strip */}
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "28px", opacity: 0.4 }}>
                 <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: activeColor }} />
                 </div>
                 <div style={{ flex: 1, height: "6px", borderRadius: "3px", background: "rgba(80,50,10,0.4)", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: "100%", background: `repeating-linear-gradient(90deg, ${activeColor}66 0px, ${activeColor}66 2px, transparent 2px, transparent 10px)` }} />
+                  <div style={{ height: "100%", width: "100%", background: `repeating-linear-gradient(90deg, ${activeColor}33 0px, ${activeColor}33 2px, transparent 2px, transparent 10px)` }} />
                 </div>
                 <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: activeColor }} />

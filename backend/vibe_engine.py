@@ -915,6 +915,7 @@ VIBE_MAP: dict[str, dict] = {
             "illuminati hotties", "soccer mommy",
             "juice wrld", "xxxtentacion", "lil peep", "quinn xcii",
             "emo rap", "iann dior", "rod wave", "morray",
+            "joji", "mitski", "d4vd", "conan gray", "stephen dawes",
         ],
         "bpm": "60-105",
         "genres": ["Sad Pop", "Indie Folk", "Emo", "Sad R&B", "Alt-Pop", "Singer-Songwriter"],
@@ -1119,8 +1120,8 @@ VIBE_MAP: dict[str, dict] = {
 # =============================================================================
 #  SCORING WEIGHTS
 # =============================================================================
-WEIGHT_ARTIST  = 5.0   # Explicit artist mention is very strong signal
-WEIGHT_PHRASE  = 4.0   # Multi-word idiomatic phrases
+WEIGHT_ARTIST  = 2.0   # Explicit artist mention is a strong signal
+WEIGHT_PHRASE  = 3.0   # Multi-word idiomatic phrases
 WEIGHT_KEYWORD = 2.5   # Single emotional descriptors
 WEIGHT_CONTEXT = 1.0   # Setting / scenario mentions
 WEIGHT_SYNONYM = 1.8   # Synonym expansion hits (slightly lower confidence)
@@ -1353,10 +1354,8 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
                 else:
                     scores[vibe] += (WEIGHT_CONTEXT * gen_mult)
                     matched_tokens.append(ctx)
-                    
+
     # ── EXPLICIT BPM PARSING (Tied to BPM Knob) ───────────────────────────────
-    # If the user literally types a BPM (e.g., "140 bpm", "120bpm"), we use the BPM knob 
-    # to aggressively boost vibes that fit that tempo.
     bpm_match = re.search(r'(\d{2,3})\s*bpm', lower_text)
     if bpm_match:
         target_bpm = int(bpm_match.group(1))
@@ -1365,7 +1364,7 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
             if "-" in bpm_str:
                 min_b, max_b = map(int, bpm_str.split('-'))
                 if min_b <= target_bpm <= max_b:
-                    scores[v] += (5.0 * bpm_mult) # Big boost if it fits the requested BPM
+                    scores[v] += (5.0 * bpm_mult)
                     if f"{target_bpm}bpm" not in matched_tokens:
                         matched_tokens.append(f"{target_bpm}bpm")
 
