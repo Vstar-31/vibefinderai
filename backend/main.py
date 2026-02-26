@@ -15,12 +15,31 @@ import json
 import asyncio
 import random
 import re
+import logging
+import sys
 
 # Import our modularized vibe engine
 import vibe_engine
 
 # Load environment variables
 load_dotenv()
+
+# ---------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------
+logger = logging.getLogger("VibeFinderEngine")
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+file_handler = logging.FileHandler("vibefinder_engine.log", encoding="utf-8")
+file_handler.setLevel(logging.INFO) # Detailed data flows quietly into the text file
+
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setLevel(logging.WARNING) # Terminal ONLY shows warnings/errors to prevent clutter!
+
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+logger.handlers = [file_handler, stream_handler]
 
 # ---------------------------------------------------------
 # Database Initialization (Prisma)
@@ -33,8 +52,11 @@ async def lifespan(app: FastAPI):
     Lifecycle manager for FastAPI. Connects to the Prisma DB 
     on startup and cleanly disconnects on shutdown.
     """
+    logger.info("Initializing Supabase (Prisma) connection...")
     await db.connect()
+    logger.info("Database connected successfully. Engine online.")
     yield
+    logger.info("Engine shutting down. Disconnecting database...")
     await db.disconnect()
 
 # Initialize core app with lifespan hook
@@ -127,7 +149,6 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 # ---------------------------------------------------------
 # Free Music Fetchers (Last.fm + iTunes)
 # ---------------------------------------------------------
-# Upgraded API limit to 200 to ensure we never run out of tracks when filtering!
 def fetch_lastfm_tracks_sync(genre: str, limit: int = 200):
     """Hits the free Last.fm API to pull trending tracks."""
     api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
@@ -140,7 +161,7 @@ def fetch_lastfm_tracks_sync(genre: str, limit: int = 200):
             tracks = data.get("tracks", {}).get("track", [])
             return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
     except Exception as e:
-        print(f"Last.fm genre fetch failed: {e}")
+        logger.error(f"Last.fm genre fetch failed for '{genre}': {e}")
         return []
 
 def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 200):
@@ -155,7 +176,21 @@ def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 200):
             tracks = data.get("toptracks", {}).get("track", [])
             return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
     except Exception as e:
-        print(f"Last.fm artist fetch failed: {e}")
+        logger.error(f"Last.fm artist fetch failed for '{artist}': {e}")
+        return []
+
+def fetch_lastfm_track_search_sync(query: str, limit: int = 100):
+    """FALLBACK: Directly searches Last.fm for literal track names if AI confidence is shot."""
+    api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
+    url = f"http://ws.audioscrobbler.com/2.0/?method=track.search&track={urllib.parse.quote(query)}&api_key={api_key}&format=json&limit={limit}"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            tracks = data.get("results", {}).get("trackmatches", {}).get("track", [])
+            return [{"title": t.get("name"), "artist": t.get("artist")} for t in tracks]
+    except Exception as e:
+        logger.error(f"Last.fm direct track search failed for '{query}': {e}")
         return []
 
 def fetch_itunes_data_sync(title: str, artist: str):
@@ -172,7 +207,8 @@ def fetch_itunes_data_sync(title: str, artist: str):
                     "preview_url": track.get("previewUrl"),
                     "cover_art": track.get("artworkUrl100")
                 }
-    except: pass
+    except Exception as e: 
+        logger.warning(f"iTunes API preview fetch failed for '{title}' by '{artist}': {e}")
     return {"preview_url": None, "cover_art": None}
 
 async def fetch_lastfm_tracks(genre: str, limit: int = 200):
@@ -180,6 +216,9 @@ async def fetch_lastfm_tracks(genre: str, limit: int = 200):
 
 async def fetch_lastfm_artist_tracks(artist: str, limit: int = 200):
     return await asyncio.to_thread(fetch_lastfm_artist_tracks_sync, artist, limit)
+
+async def fetch_lastfm_track_search(query: str, limit: int = 100):
+    return await asyncio.to_thread(fetch_lastfm_track_search_sync, query, limit)
 
 async def fetch_itunes_preview(title: str, artist: str):
     return await asyncio.to_thread(fetch_itunes_data_sync, title, artist)
@@ -196,7 +235,7 @@ def get_base_title(title: str) -> str:
     t = t.split(" ft")[0]
     return t.strip()
 
-def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict):
+def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict, is_fallback: bool = False):
     """
     Refined scoring engine. Prioritizes exact matches, strips Remixes, 
     and perfectly enforces the user's Track Limit.
@@ -219,7 +258,11 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict)
         artist = t.get("artist", "").lower()
         score = 0.0
         
-        # 1. EXACT SONG MATCH (The ultimate priority)
+        # In fallback mode, the tracks are already exact matches, give them a baseline boost
+        if is_fallback:
+            score += 50
+        
+        # 1. EXACT SONG MATCH
         if detected_song and (detected_song in title or title in detected_song):
             score += 100 
             
@@ -240,8 +283,7 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict)
         if any(m in title for m in markers):
             score += 30 * (request.bpm_focus / 50.0)
             
-        # REMIX EXCLUSION: If they didn't specifically ask for fast/club music, heavily penalize remixes.
-        # This pushes the original "SLOW DANCING IN THE DARK" way above the 50 remix versions.
+        # REMIX EXCLUSION
         if "remix" in title or "edit" in title or "instrumental" in title:
             score -= 15
             
@@ -250,7 +292,6 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict)
         nicheness_multiplier = (request.nicheness - 50) / 50.0
         score += (popularity_bias * nicheness_multiplier)
         
-        # Jitter to avoid static ties
         score += random.uniform(0, 1.5)
         scored_tracks.append((score, t))
         
@@ -267,7 +308,6 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict)
         base_t = get_base_title(t.get("title", ""))
         track_ident = f"{art}|{base_t}"
         
-        # Strict Deduplication (Instantly kills "Joji - Slow Dancing In The Dark - Remix" if original is already selected)
         if track_ident in seen_base_titles:
             continue
             
@@ -285,9 +325,7 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict)
         if len(final_selection) >= request.track_limit:
             break
             
-    # 7. THE FALLBACK LOOP (Guarantees Track Limit)
-    # If the diversity guard aggressively threw out too many tracks and left you with only 15 instead of 20, 
-    # we dip back into the highest-scoring skipped tracks to fulfill your exact order.
+    # 7. THE FALLBACK LOOP
     if len(final_selection) < request.track_limit:
         for t in skipped_for_diversity:
             final_selection.append(t)
@@ -310,14 +348,17 @@ async def register_user(user: UserCreate):
     if existing_user: raise HTTPException(status_code=400, detail="Identity already exists")
     hashed_pwd = get_password_hash(user.password)
     new_user = await db.user.create(data={"email": user.email, "username": user.username, "hashedPassword": hashed_pwd})
+    logger.info(f"New user registered: {user.username}")
     return {"message": "Success", "user_id": new_user.id}
 
 @app.post("/auth/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await db.user.find_unique(where={"username": form_data.username})
     if not user or not verify_password(form_data.password, user.hashedPassword):
+        logger.warning(f"Failed login attempt for username: {form_data.username}")
         raise HTTPException(status_code=401, detail="Unauthorized")
     token = create_access_token(data={"sub": user.id})
+    logger.info(f"User authenticated: {form_data.username}")
     return {"access_token": token, "token_type": "bearer"}
 
 @app.get("/users/me")
@@ -331,13 +372,16 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 
 @app.post("/api/vibe/analyze", response_model=VibeResponse)
 async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
-    """Refined analysis route with deep entity scanning and Mapped Pools."""
+    """Refined analysis route with zero-results fallback logic and telemetry."""
+    
+    logger.info(f"--- NEW REQUEST: Analyzing Vibe ---")
+    logger.info(f"Prompt: '{request.text}' | Limit: {request.track_limit}")
     
     # 1. NLP Core Analysis
     vibe_data = vibe_engine.analyze_vibe_algorithm(
         text=request.text,
         artist_focus=request.artist_focus, 
-        genre_focus=50, # Static default, genre is managed by Neural Engine
+        genre_focus=50,
         bpm_focus=request.bpm_focus
     )
     
@@ -345,36 +389,36 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     detected_artist = request.override_artist
     detected_song = None
     
-    # 2. DEEP ENTITY SCAN (Regex Word Boundaries to stop IVE hallucination)
+    # 2. DEEP ENTITY SCAN
     if not detected_artist:
         try:
             db_artists = await db.artistdirectory.find_many()
             for a in db_artists:
                 artist_name = a.name.lower()
-                
-                # \b forces a whole word match, so "ive" doesn't match "drives"
                 artist_pattern = rf'\b{re.escape(artist_name)}\b'
                 
                 if re.search(artist_pattern, prompt_lower):
                     detected_artist = a.name
+                    logger.info(f"Entity Scanner Locked Artist: {detected_artist}")
                     if a.songs:
                         song_list = [s.strip().lower() for s in a.songs.split(",")]
                         for s in song_list:
                             if s and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
                                 detected_song = s
+                                logger.info(f"Entity Scanner Locked Song: {detected_song}")
                                 break
                     break
-                    
                 elif a.songs:
                     song_list = [s.strip().lower() for s in a.songs.split(",")]
                     for s in song_list:
                         if len(s) > 3 and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
                             detected_artist = a.name
                             detected_song = s
+                            logger.info(f"Entity Scanner Locked Song independently: {detected_song} by {detected_artist}")
                             break
                     if detected_artist: break
         except Exception as e: 
-            print(f"Entity Scan Error: {e}")
+            logger.error(f"Entity Scan Database Error: {e}")
             
     vibe_data["detected_artist"] = detected_artist
     vibe_data["detected_song"] = detected_song
@@ -382,27 +426,40 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     # 3. DYNAMIC TARGET GENRE RESOLUTION
     if request.override_genre:
         target_genre = request.override_genre
+        logger.info(f"Pro Mode OVERRIDE applied. Target Genre forced to: {target_genre}")
     elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
-        target_genre = vibe_data["secondary_vibe"]
+        sec_vibe_name = vibe_data["secondary_vibe"]
+        mapped_genres = vibe_engine.VIBE_MAP.get(sec_vibe_name, {}).get("genres", [sec_vibe_name])
+        target_genre = mapped_genres[0]
+        logger.info(f"PIVOT ACTIVE: Switched to Secondary Vibe -> {target_genre}")
     else:
         target_genre = vibe_data.get("genres", ["electronic"])[0]
+        logger.info(f"Standard AI Resolution: Dominant Genre -> {target_genre}")
         
     vibe_data["target_genre_override"] = target_genre
 
-    # 4. SMART POOL FETCH
-    if request.override_artist:
-        # If they use the Pro Mode Bypass, we STILL pull 100% their tracks
+    # 4. SMART POOL FETCH & GRACEFUL FALLBACK
+    is_fallback = False
+    
+    if vibe_data.get("confidence", 0.0) < 0.25 and not detected_artist and not request.override_genre:
+        is_fallback = True
+        logger.warning(f"Engine Confidence Critical ({vibe_data.get('confidence')} < 0.25). Triggering Fallback Protocol!")
+        vibe_data["dominant_vibe"] = "Direct Search" 
+        vibe_data["secondary_vibe"] = "Fallback Mode"
+        raw_pool = await fetch_lastfm_track_search(request.text, limit=100)
+        logger.info(f"Fallback Search returned {len(raw_pool)} tracks.")
+        
+    elif request.override_artist:
+        logger.info(f"Fetching direct discography for overridden artist: {request.override_artist}")
         raw_pool = await fetch_lastfm_artist_tracks(artist=request.override_artist, limit=200)
     else:
-        # Standard: Always fetch the broader genre so we have a solid mix
+        logger.info(f"Fetching primary genre pool for: {target_genre}")
         genre_pool = await fetch_lastfm_tracks(genre=target_genre, limit=200)
         artist_pool = []
-        
-        # If an artist was detected, sprinkle 50 of their tracks into the pool!
         if detected_artist and request.artist_focus > 25:
+            logger.info(f"Injecting discography blend for detected artist: {detected_artist}")
             artist_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=50)
             
-        # Mash them together and deduplicate
         merged_pool = genre_pool + artist_pool
         seen = set()
         raw_pool = []
@@ -411,11 +468,29 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             if ident not in seen:
                 seen.add(ident)
                 raw_pool.append(t)
+        logger.info(f"Merged deduplicated pool size: {len(raw_pool)} tracks.")
+                
+    # 🚨 ZERO RESULTS SAFETY NET 🚨
+    if not raw_pool:
+        logger.warning("Zero Results Triggered. Firing HTTP 404 to Frontend.")
+        raise HTTPException(
+            status_code=404, 
+            detail="Signal lost: Zero results found. 📡 Please rephrase your query. (Note: Our acoustic engine currently processes English descriptors, specific genres, and known artists best.)"
+        )
     
     # 5. MATHEMATICAL SCORING
-    best_tracks = filter_and_score_tracks(raw_pool, request, vibe_data)
+    logger.info("Executing mathematical sorting and diversity guards...")
+    best_tracks = filter_and_score_tracks(raw_pool, request, vibe_data, is_fallback=is_fallback)
+    
+    if not best_tracks:
+        logger.warning("Scoring eliminated all tracks. Firing HTTP 404.")
+        raise HTTPException(
+            status_code=404, 
+            detail="Signal lost: No tracks passed the strict filters. Try lowering Nicheness or adjusting your prompt."
+        )
     
     # 6. PARALLEL PREVIEW SCRAPING
+    logger.info(f"Scraping Apple Music previews concurrently for top {len(best_tracks)} tracks...")
     itunes_tasks = [fetch_itunes_preview(t["title"], t["artist"]) for t in best_tracks]
     previews = await asyncio.gather(*itunes_tasks)
     
@@ -432,4 +507,5 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         })
         
     vibe_data["tracks"] = final_tracks
+    logger.info(f"--- SUCCESS: Returning {len(final_tracks)} tracks to client ---")
     return vibe_data
