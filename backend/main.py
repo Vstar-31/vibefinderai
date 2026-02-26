@@ -389,7 +389,16 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     detected_artist = request.override_artist
     detected_song = None
     
-    # 2. DEEP ENTITY SCAN
+    # 2. DEEP ENTITY SCAN (Anti-Hijack Guard Added)
+    # Prevents common adjectives/nouns from triggering a standalone song lock
+    COMMON_WORDS_BLACKLIST = {
+        "alone", "beautiful", "water", "time", "burn", "lights", 
+        "independent", "deep", "passion", "holiday", "eve", "chicago", 
+        "slow", "love", "night", "good", "bad", "happy", "sad", "summer", 
+        "rain", "coffee", "drive", "party", "chill", "focus", "work", 
+        "sleep", "wake", "morning", "midnight", "fire", "magic", "dream"
+    }
+    
     if not detected_artist:
         try:
             db_artists = await db.artistdirectory.find_many()
@@ -411,7 +420,8 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                 elif a.songs:
                     song_list = [s.strip().lower() for s in a.songs.split(",")]
                     for s in song_list:
-                        if len(s) > 3 and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
+                        # NEW GUARD: Only lock if the song is >3 chars AND not in the blacklist!
+                        if len(s) > 3 and s not in COMMON_WORDS_BLACKLIST and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
                             detected_artist = a.name
                             detected_song = s
                             logger.info(f"Entity Scanner Locked Song independently: {detected_song} by {detected_artist}")

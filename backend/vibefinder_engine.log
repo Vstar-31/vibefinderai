@@ -1,8 +1,28 @@
-2026-02-27 01:42:32 [INFO] VibeFinderEngine: Initializing Supabase (Prisma) connection...
-2026-02-27 01:42:34 [INFO] VibeFinderEngine: Database connected successfully. Engine online.
-2026-02-27 01:42:34 [INFO] VibeFinderEngine: Engine shutting down. Disconnecting database...
-2026-02-27 01:42:35 [INFO] VibeFinderEngine: Initializing Supabase (Prisma) connection...
-2026-02-27 01:42:37 [INFO] VibeFinderEngine: Database connected successfully. Engine online.
-2026-02-27 01:42:37 [INFO] VibeFinderEngine: Engine shutting down. Disconnecting database...
-2026-02-27 01:42:38 [INFO] VibeFinderEngine: Initializing Supabase (Prisma) connection...
-2026-02-27 01:42:40 [INFO] VibeFinderEngine: Database connected successfully. Engine online.
+2026-02-27 01:47:01 [INFO] VibeFinderEngine: Initializing Supabase (Prisma) connection...
+2026-02-27 01:47:03 [INFO] VibeFinderEngine: Database connected successfully. Engine online.
+2026-02-27 01:47:58 [INFO] VibeFinderEngine: --- NEW REQUEST: Analyzing Vibe ---
+2026-02-27 01:47:58 [INFO] VibeFinderEngine: Prompt: 'Final test 100: everything at once — euphoric sunrise festival rave after a heartbreak, feeling alive again for the first time' | Limit: 20
+2026-02-27 01:48:00 [INFO] VibeFinderEngine: Entity Scanner Locked Song independently: sunrise by Norah Jones
+2026-02-27 01:48:00 [INFO] VibeFinderEngine: Standard AI Resolution: Dominant Genre -> Dance Pop
+2026-02-27 01:48:00 [INFO] VibeFinderEngine: Fetching primary genre pool for: Dance Pop
+2026-02-27 01:48:01 [INFO] VibeFinderEngine: Injecting discography blend for detected artist: Norah Jones
+2026-02-27 01:48:01 [INFO] VibeFinderEngine: Merged deduplicated pool size: 250 tracks.
+2026-02-27 01:48:01 [INFO] VibeFinderEngine: Executing mathematical sorting and diversity guards...
+2026-02-27 01:48:01 [INFO] VibeFinderEngine: Scraping Apple Music previews concurrently for top 20 tracks...
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Humble Me' by 'Norah Jones': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'She' by 'Selena Gomez': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'DOWN' by 'Tini': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Bad - 2012 Remaster' by 'Michael Jackson': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'I Wanna Dance with Somebody (Who Loves Me)' by 'Whitney Houston': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'I Want Your Love' by 'Atomic Kitten': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Sci-Fi' by 'Tainy': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Bad Decisions' by 'Ariana Grande': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Numb' by 'Usher': HTTP Error 403: Forbidden
+2026-02-27 01:48:02 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Hung Up (SDP Extended Dub)' by 'Madonna': HTTP Error 403: Forbidden
+2026-02-27 01:48:03 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'NoNoNo' by 'A Pink': HTTP Error 403: Forbidden
+2026-02-27 01:48:03 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Rockin’' by 'The Weeknd': HTTP Error 403: Forbidden
+2026-02-27 01:48:03 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Hallucinate' by 'Dua Lipa': HTTP Error 403: Forbidden
+2026-02-27 01:48:03 [INFO] VibeFinderEngine: --- SUCCESS: Returning 20 tracks to client ---
+2026-02-27 01:49:38 [INFO] VibeFinderEngine: Engine shutting down. Disconnecting database...
+2026-02-27 01:49:39 [INFO] VibeFinderEngine: Initializing Supabase (Prisma) connection...
+2026-02-27 01:49:40 [INFO] VibeFinderEngine: Database connected successfully. Engine online.
