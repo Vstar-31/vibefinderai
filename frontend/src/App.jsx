@@ -434,7 +434,7 @@ export default function App() {
     tropical: '#14b8a6', industrial: '#6b7280', desi: '#e11d48', neutral: '#d97706'
   };
 
-  const activeColor = result ? (vibeColors[result.dominant_vibe] || vibeColors.neutral) : vibeColors.neutral;
+  const activeColor = result ? (vibeColors[useSecondaryVibe ? result.secondary_vibe : result.dominant_vibe] || vibeColors.neutral) : vibeColors.neutral;
 
   /* Initialize Audio Object */
   useEffect(() => {
@@ -503,14 +503,13 @@ export default function App() {
 
   const handleLogout = () => { setToken(null); setResult(null); setPrompt(""); setVuLevel(0); };
 
-  // Note: analyzeVibe now supports taking a direct parameter to force a pivot to the secondary vibe
-  const analyzeVibe = async (forceSecondary = false) => {
+  // FIX: Properly accept a target state so we can toggle in both directions!
+  const analyzeVibe = async (targetSecondaryState = useSecondaryVibe) => {
     if (!prompt.trim()) return;
     try {
       setLoading(true); setError("");
       
-      const isSecondary = forceSecondary || useSecondaryVibe;
-      if (forceSecondary) setUseSecondaryVibe(true);
+      setUseSecondaryVibe(targetSecondaryState);
 
       const res = await fetch("/api/vibe/analyze", {
         method: "POST",
@@ -521,7 +520,7 @@ export default function App() {
           nicheness: Math.round(knobs.nicheness), 
           bpm_focus: Math.round(knobs.bpm),
           track_limit: trackLimit,
-          use_secondary_vibe: isSecondary,
+          use_secondary_vibe: targetSecondaryState,
           override_genre: overrideGenre.trim() || null,
           override_artist: overrideArtist.trim() || null
         }),
@@ -709,7 +708,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button onClick={() => analyzeVibe(false)} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
+                  <button onClick={() => analyzeVibe(useSecondaryVibe)} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
                     {loading && token ? <><div style={{ width: "14px", height: "14px", border: "2px solid rgba(251,191,36,0.3)", borderTopColor: "#fbbf24", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Analyzing…</> : <><IconPlay /> Run Analysis</>}
                   </button>
                 </div>
@@ -735,16 +734,18 @@ export default function App() {
                   <ConfidenceMeter value={useSecondaryVibe ? result.secondary_confidence : result.confidence} vibeColor={activeColor} />
                   <div style={S.cardSub}>Confidence: {Math.round((useSecondaryVibe ? result.secondary_confidence : result.confidence) * 100)}%</div>
                   
-                  {/* PIVOT BUTTON */}
-                  {result.secondary_vibe && !useSecondaryVibe && (
+                  {/* FIX: BI-DIRECTIONAL PIVOT BUTTON */}
+                  {(result.secondary_vibe || useSecondaryVibe) && (
                     <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
-                      <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>Secondary Signature Detected</span>
+                      <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>
+                        {useSecondaryVibe ? "Primary Signature Available" : "Secondary Signature Detected"}
+                      </span>
                       <button 
-                        onClick={() => analyzeVibe(true)}
+                        onClick={() => analyzeVibe(!useSecondaryVibe)}
                         className="dial-btn"
-                        style={{ background: "rgba(20,10,5,0.6)", border: `1px dashed ${vibeColors[result.secondary_vibe]}66`, padding: "6px 12px", borderRadius: "6px", color: vibeColors[result.secondary_vibe] || "#e8d5a3", fontSize: "11px", fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "6px", width: "100%", justifyContent: "center" }}
+                        style={{ background: "rgba(20,10,5,0.6)", border: `1px dashed ${vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe]}66`, padding: "6px 12px", borderRadius: "6px", color: vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe] || "#e8d5a3", fontSize: "11px", fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "6px", width: "100%", justifyContent: "center" }}
                       >
-                        Pivot Engine to: <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "13px", fontStyle: "italic" }}>{result.secondary_vibe}</span>
+                        Pivot Engine to: <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "13px", fontStyle: "italic" }}>{useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe}</span>
                       </button>
                     </div>
                   )}
