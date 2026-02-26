@@ -100,6 +100,8 @@ class VibeResponse(BaseModel):
     matched_keywords: list[str]
     secondary_vibe: str | None = None
     secondary_confidence: float = 0.0
+    detected_artist: str | None = None
+    detected_song: str | None = None
     tracks: list[TrackInfo] = []
 
 # ---------------------------------------------------------
@@ -118,40 +120,37 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # ---------------------------------------------------------
-# The 100% Free Music Fetchers (Last.fm + iTunes)
+# Free Music Fetchers (Last.fm + iTunes)
 # ---------------------------------------------------------
 def fetch_lastfm_tracks_sync(genre: str, limit: int = 50):
     """Hits the free Last.fm API to pull trending tracks."""
     api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
     url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
     
-    fallback_tracks = [
-        {"title": "Nightcrawler", "artist": "Travis Scott"},
-        {"title": "Resonance", "artist": "HOME"},
-        {"title": "Goth", "artist": "Sidewalks and Skeletons"},
-        {"title": "After Hours", "artist": "The Weeknd"},
-        {"title": "Genesis", "artist": "Grimes"}
-    ]
-
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode())
             tracks = data.get("tracks", {}).get("track", [])
-            
-            if not tracks:
-                return fallback_tracks
-
-            result = []
-            for t in tracks:
-                result.append({
-                    "title": t.get("name"), 
-                    "artist": t.get("artist", {}).get("name")
-                })
-            return result
+            return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
     except Exception as e:
-        print(f"Last.fm fetch failed ({e}). Returning fallback offline tracks.")
-        return fallback_tracks
+        print(f"Last.fm genre fetch failed: {e}")
+        return []
+
+def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 50):
+    """Hits the free Last.fm API to pull a SPECIFIC artist's discography."""
+    api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
+    url = f"http://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist={urllib.parse.quote(artist)}&api_key={api_key}&format=json&limit={limit}"
+    
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            tracks = data.get("toptracks", {}).get("track", [])
+            return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
+    except Exception as e:
+        print(f"Last.fm artist fetch failed: {e}")
+        return []
 
 def fetch_itunes_data_sync(title: str, artist: str):
     """Silently hits the free iTunes API to grab the .m4a preview & cover art."""
@@ -167,13 +166,14 @@ def fetch_itunes_data_sync(title: str, artist: str):
                     "preview_url": track.get("previewUrl"),
                     "cover_art": track.get("artworkUrl100")
                 }
-    except Exception as e:
-        print(f"iTunes API failed for {title}: {e}")
-    
+    except: pass
     return {"preview_url": None, "cover_art": None}
 
 async def fetch_lastfm_tracks(genre: str, limit: int = 50):
     return await asyncio.to_thread(fetch_lastfm_tracks_sync, genre, limit)
+
+async def fetch_lastfm_artist_tracks(artist: str, limit: int = 50):
+    return await asyncio.to_thread(fetch_lastfm_artist_tracks_sync, artist, limit)
 
 async def fetch_itunes_preview(title: str, artist: str):
     return await asyncio.to_thread(fetch_itunes_data_sync, title, artist)
@@ -183,18 +183,18 @@ async def fetch_itunes_preview(title: str, artist: str):
 # ---------------------------------------------------------
 def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict, limit: int = 5):
     """
-    Takes a massive pool of 50 tracks and physically scores them based on the 
-    user's raw text and the precise values of the UI Knobs.
+    Refined scoring engine. Prioritizes exact matches for songs and artists
+    found in the user query, then layers the physical knob priorities.
     """
     prompt_lower = request.text.lower()
-    keywords = [k.lower() for k in vibe_data.get("matched_keywords", [])]
-    dominant = vibe_data.get("dominant_vibe", "").lower()
-    bpm_range = vibe_data.get("bpm_range", "90-120")
+    detected_song = vibe_data.get("detected_song", "").lower()
+    detected_artist = vibe_data.get("detected_artist", "").lower()
     
-    # Identify acoustic target markers based on the NLP engine's BPM reading
-    is_fast = "120" in bpm_range or "140" in bpm_range or "160" in bpm_range
-    fast_markers = ["remix", "mix", "edit", "vip", "club", "bootleg", "mashup", "fast", "speed"]
-    slow_markers = ["acoustic", "slowed", "reverb", "chill", "lofi", "unplugged", "ambient", "slow"]
+    bpm_range = vibe_data.get("bpm_range", "90-120")
+    is_fast = any(x in bpm_range for x in ["120", "140", "160"])
+    
+    fast_markers = ["remix", "mix", "edit", "club", "fast", "speed", "drum"]
+    slow_markers = ["acoustic", "slowed", "reverb", "chill", "lofi", "ambient", "slow"]
     
     scored_tracks = []
     for i, t in enumerate(tracks):
@@ -202,47 +202,34 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
         artist = t.get("artist", "").lower()
         score = 0.0
         
-        # 1. ARTIST FOCUS MATCH (Did they type the artist's name in the prompt?)
-        if artist in prompt_lower or title in prompt_lower:
-            # Massive boost heavily multiplied by the Artist Knob
-            score += 50 * (request.artist_focus / 50.0)
+        # 1. EXACT SONG MATCH (The ultimate priority)
+        if detected_song and (detected_song in title or title in detected_song):
+            score += 100 
             
-        # 2. GENRE / VIBE MATCH (Do the track names match the vibe keywords?)
-        if dominant in title or dominant in artist:
-            score += 30 * (request.genre_focus / 50.0)
-        for kw in keywords:
-            if kw in title or kw in artist:
+        # 2. ARTIST MATCH (Knob based)
+        if (detected_artist and detected_artist == artist) or artist in prompt_lower:
+            score += 60 * (request.artist_focus / 50.0)
+            
+        # 3. VIBE / GENRE MATCH (Knob based)
+        for kw in vibe_data.get("matched_keywords", []):
+            if kw.lower() in title or kw.lower() in artist:
                 score += 20 * (request.genre_focus / 50.0)
                 
-        # 3. BPM FOCUS MATCH (Simulate tempo via title acoustic markers)
-        if request.bpm_focus > 50:
-            markers = fast_markers if is_fast else slow_markers
-            if any(m in title for m in markers):
-                score += 40 * (request.bpm_focus / 50.0)
-        
-        # 4. MAINSTREAM VS NICHE SLIDER
-        # High knobs = user wants deep, specific cuts. Low knobs = user wants mainstream top 10 hits.
-        popularity_penalty = (i / len(tracks)) * 20 if len(tracks) > 0 else 0
-        knob_avg = (request.artist_focus + request.genre_focus + request.bpm_focus) / 3.0
-        
-        if knob_avg > 60:
-            # Reward tracks deeper in the 50-track list
-            score += popularity_penalty 
-        else:
-            # Reward the top mainstream tracks at the top of the list
-            score -= popularity_penalty
+        # 4. BPM MATCH (Marker based)
+        markers = fast_markers if is_fast else slow_markers
+        if any(m in title for m in markers):
+            score += 30 * (request.bpm_focus / 50.0)
             
-        # Inject microscopic random jitter so identical 0.0 scores don't yield the exact same tracks
-        score += random.uniform(0, 2)
+        # 5. MAINSTREAM VS NICHE
+        knob_avg = (request.artist_focus + request.genre_focus + request.bpm_focus) / 3.0
+        popularity_bias = (i / len(tracks)) * 15 if len(tracks) > 0 else 0
+        score += popularity_bias if knob_avg > 60 else -popularity_bias
         
+        score += random.uniform(0, 1.5)
         scored_tracks.append((score, t))
         
-    # Sort by the final mathematical score, descending!
     scored_tracks.sort(key=lambda x: x[0], reverse=True)
-    
-    # Slice the absolute best 5
     return [t[1] for t in scored_tracks[:limit]]
-
 
 # ---------------------------------------------------------
 # Core API Routes
@@ -254,59 +241,34 @@ async def root():
 
 @app.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register_user(user: UserCreate):
-    existing_user = await db.user.find_first(
-        where={
-            "OR": [
-                {"email": user.email},
-                {"username": user.username}
-            ]
-        }
-    )
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email or username already registered")
-    
+    existing_user = await db.user.find_first(where={"OR": [{"email": user.email}, {"username": user.username}]})
+    if existing_user: raise HTTPException(status_code=400, detail="Identity already exists")
     hashed_pwd = get_password_hash(user.password)
-    new_user = await db.user.create(
-        data={"email": user.email, "username": user.username, "hashedPassword": hashed_pwd}
-    )
-    return {"message": "User registered successfully", "user_id": new_user.id}
+    new_user = await db.user.create(data={"email": user.email, "username": user.username, "hashedPassword": hashed_pwd})
+    return {"message": "Success", "user_id": new_user.id}
 
 @app.post("/auth/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await db.user.find_unique(where={"username": form_data.username})
-    
-    if not user or not user.hashedPassword or not verify_password(form_data.password, user.hashedPassword):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(data={"sub": user.id}, expires_delta=access_token_expires)
-    return {"access_token": access_token, "token_type": "bearer"}
+    if not user or not verify_password(form_data.password, user.hashedPassword):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    token = create_access_token(data={"sub": user.id})
+    return {"access_token": token, "token_type": "bearer"}
 
 @app.get("/users/me")
 async def read_users_me(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Could not validate credentials")
-    
-    user = await db.user.find_unique(where={"id": user_id})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    return {"user_id": user.id, "username": user.username, "email": user.email, "status": "authenticated"}
+        user_id = payload.get("sub")
+        user = await db.user.find_unique(where={"id": user_id})
+        return user
+    except: raise HTTPException(status_code=401)
 
 @app.post("/api/vibe/analyze", response_model=VibeResponse)
 async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
-    """Routes the analyze request to NLP and pulls free music data concurrently."""
+    """Refined analysis route with deep entity scanning for Artists and Songs."""
     
-    # 1. NLP Engine - The knobs adjust the math inside this function!
+    # 1. NLP Core Analysis
     vibe_data = vibe_engine.analyze_vibe_algorithm(
         text=request.text,
         artist_focus=request.artist_focus,
@@ -314,30 +276,65 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         bpm_focus=request.bpm_focus
     )
     
-    genres = vibe_data.get("genres", [])
-    target_genre = genres[0] if genres else "electronic"
+    prompt_lower = request.text.lower()
+    detected_artist = None
+    detected_song = None
     
-    # 2. Grab a massive pool of 50 raw tracks from Last.fm
-    raw_pool = await fetch_lastfm_tracks(genre=target_genre, limit=50)
+    # 2. DEEP ENTITY SCAN (Database cross-reference)
+    try:
+        db_artists = await db.artistdirectory.find_many()
+        for a in db_artists:
+            # Check Artist Name
+            if a.name.lower() in prompt_lower:
+                detected_artist = a.name
+                # Check for specific songs mentioned under this artist
+                if a.songs:
+                    song_list = [s.strip().lower() for s in a.songs.split(",")]
+                    for s in song_list:
+                        if s in prompt_lower:
+                            detected_song = s
+                            break
+                break
+            # Check songs independently if artist name wasn't mentioned
+            elif a.songs:
+                song_list = [s.strip().lower() for s in a.songs.split(",")]
+                for s in song_list:
+                    if len(s) > 3 and s in prompt_lower: # len > 3 to avoid accidental single-word matches
+                        detected_artist = a.name
+                        detected_song = s
+                        break
+            if detected_artist: break
+    except: pass
+        
+    vibe_data["detected_artist"] = detected_artist
+    vibe_data["detected_song"] = detected_song
+
+    # 3. SMART POOL FETCH
+    # If we found an artist AND the knob is cranked, pull their discography
+    if detected_artist and request.artist_focus >= 35:
+        raw_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=50)
+    else:
+        # Fallback to pure genre matching
+        target_genre = vibe_data.get("genres", ["electronic"])[0]
+        raw_pool = await fetch_lastfm_tracks(genre=target_genre, limit=50)
     
-    # 3. Mathematically score and filter the 50 tracks down to the best 5 using the UI knobs!
+    # 4. MATHEMATICAL SCORING
     best_tracks = filter_and_score_tracks(raw_pool, request, vibe_data, limit=5)
     
-    # 4. Concurrently fetch the Apple Music 30-sec previews for the WINNING tracks
+    # 5. PARALLEL PREVIEW SCRAPING
     itunes_tasks = [fetch_itunes_preview(t["title"], t["artist"]) for t in best_tracks]
-    itunes_results = await asyncio.gather(*itunes_tasks)
+    previews = await asyncio.gather(*itunes_tasks)
     
-    # 5. Assemble the final track list with Both Options (Deep Links + iTunes Player)
+    # 6. PAYLOAD ASSEMBLY
     final_tracks = []
     for i, t in enumerate(best_tracks):
-        search_query = urllib.parse.quote(f"{t['title']} {t['artist']}")
+        q = urllib.parse.quote(f"{t['title']} {t['artist']}")
         final_tracks.append({
-            "title": t["title"],
-            "artist": t["artist"],
-            "spotify_uri": f"spotify:search:{search_query}",
-            "apple_uri": f"music://search?term={search_query}",
-            "preview_url": itunes_results[i]["preview_url"],
-            "cover_art": itunes_results[i]["cover_art"]
+            "title": t["title"], "artist": t["artist"],
+            "spotify_uri": f"spotify:search:{q}",
+            "apple_uri": f"music://search?term={q}",
+            "preview_url": previews[i]["preview_url"],
+            "cover_art": previews[i]["cover_art"]
         })
         
     vibe_data["tracks"] = final_tracks
