@@ -20,3 +20,8 @@ build/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+#personal files
+features.md
+filesystem.md
+phases.md
