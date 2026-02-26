@@ -1,369 +1,862 @@
-import React, { useState } from 'react';
+import { useState, useEffect, useRef } from "react";
 
-// Custom SVG Icons
-const IconZap = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.71 14.71 4l-1.64 6.18L20 9.29 9.29 20l1.64-6.18L4 14.71z"/></svg>);
-const IconLock = () => (<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>);
-const IconUnlock = () => (<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>);
-const IconPlay = () => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>);
-const IconActivity = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>);
-const IconMusic = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>);
-const IconHash = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></svg>);
-const IconUser = () => (<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);
-const IconMail = () => (<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>);
-const IconX = () => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>);
+/* ─── SVG ICONS ─────────────────────────────────────────────── */
+const IconLock    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+const IconUnlock  = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>;
+const IconPlay    = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>;
+const IconUser    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+const IconMail    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>;
+const IconX       = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
+const IconWave    = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>;
 
-export default function App() {
-  // Core App State
-  const [token, setToken] = useState(null);
-  const [prompt, setPrompt] = useState('');
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  // Auth Modal State
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [isLoginView, setIsLoginView] = useState(true);
-  const [authForm, setAuthForm] = useState({ email: '', username: '', password: '' });
-
-  // Handle Input Changes for Auth
-  const handleAuthChange = (e) => {
-    setAuthForm({ ...authForm, [e.target.name]: e.target.value });
-  };
-
-  // Secure Registration & Login Flow
-  const submitAuth = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    try {
-      // 1. If registering, hit the create user endpoint first
-      if (!isLoginView) {
-        const regRes = await fetch('/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: authForm.email,
-            username: authForm.username,
-            password: authForm.password
-          })
-        });
-
-        if (!regRes.ok) {
-          const errData = await regRes.json();
-          throw new Error(errData.detail || 'Registration failed');
+/* ─── WAVEFORM VISUALISER (pure CSS bars) ────────────────────── */
+function WaveformBars({ active, count = 28 }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "32px" }}>
+      {Array.from({ length: count }).map((_, i) => {
+        const h = active ? Math.random() * 28 + 4 : 8;
+        const delay = (i * 40) % 700;
+        return (
+          <div
+            key={i}
+            style={{
+              width: "3px",
+              height: active ? undefined : "8px",
+              minHeight: "4px",
+              maxHeight: "32px",
+              borderRadius: "2px",
+              background: active
+                ? `hsl(${38 + i * 1.2}, 80%, ${48 + (i % 4) * 5}%)`
+                : "rgba(180,140,80,0.25)",
+              animationName: active ? "barDance" : "none",
+              animationDuration: `${350 + (i % 7) * 80}ms`,
+              animationDelay: `${delay}ms`,
+              animationTimingFunction: "ease-in-out",
+              animationIterationCount: "infinite",
+              animationDirection: "alternate",
+            }}
+          />
+        );
+      })}
+      <style>{`
+        @keyframes barDance {
+          from { height: 4px; }
+          to   { height: 30px; }
         }
+      `}</style>
+    </div>
+  );
+}
+
+/* ─── VU METER ───────────────────────────────────────────────── */
+function VuMeter({ value = 0 }) {
+  const segments = 14;
+  const lit = Math.round(value * segments);
+  return (
+    <div style={{ display: "flex", gap: "2px", alignItems: "flex-end" }}>
+      {Array.from({ length: segments }).map((_, i) => {
+        const isLit = i < lit;
+        const isRed = i >= 11;
+        const isYellow = i >= 8 && i < 11;
+        return (
+          <div key={i} style={{
+            width: "6px",
+            height: `${10 + i * 1.5}px`,
+            borderRadius: "2px",
+            background: isLit
+              ? isRed ? "#ef4444" : isYellow ? "#f59e0b" : "#d97706"
+              : "rgba(120,80,20,0.2)",
+            boxShadow: isLit && !isRed ? "0 0 6px rgba(217,119,6,0.6)" : isLit ? "0 0 6px rgba(239,68,68,0.6)" : "none",
+            transition: "background 0.1s, box-shadow 0.1s",
+          }} />
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── OSCILLOSCOPE CANVAS ────────────────────────────────────── */
+function Oscilloscope({ active }) {
+  const canvasRef = useRef(null);
+  const frameRef  = useRef(null);
+  const tRef      = useRef(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, W, H);
+      ctx.strokeStyle = active ? "rgba(217,119,6,0.85)" : "rgba(120,80,20,0.25)";
+      ctx.lineWidth = active ? 1.5 : 1;
+      ctx.shadowBlur = active ? 8 : 0;
+      ctx.shadowColor = "rgba(217,119,6,0.6)";
+      ctx.beginPath();
+      for (let x = 0; x < W; x++) {
+        const t = tRef.current;
+        const y = active
+          ? H / 2 + Math.sin((x / W) * Math.PI * 4 + t * 0.05) * 14
+            + Math.sin((x / W) * Math.PI * 9 + t * 0.08) * 6
+            + Math.sin((x / W) * Math.PI * 17 + t * 0.03) * 3
+          : H / 2 + Math.sin((x / W) * Math.PI * 2) * 3;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      if (active) tRef.current++;
+      frameRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [active]);
+
+  return (
+    <div style={{
+      background: "rgba(8,5,2,0.8)",
+      border: "1px solid rgba(120,80,20,0.4)",
+      borderRadius: "8px",
+      padding: "6px 10px",
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+    }}>
+      <span style={{ fontSize: "9px", fontFamily: "monospace", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>OSC</span>
+      <canvas ref={canvasRef} width={180} height={36} style={{ display: "block" }} />
+    </div>
+  );
+}
+
+/* ─── VINYL SPINNER ──────────────────────────────────────────── */
+function Vinyl({ spinning }) {
+  return (
+    <div style={{
+      width: "52px", height: "52px", borderRadius: "50%",
+      background: "conic-gradient(from 0deg, #1a1008, #2e1f0d, #1a1008, #2e1f0d, #1a1008, #2e1f0d, #1a1008, #2e1f0d)",
+      boxShadow: "0 0 0 2px rgba(180,140,80,0.3), 0 4px 16px rgba(0,0,0,0.7)",
+      position: "relative", flexShrink: 0,
+      animationName: spinning ? "spin" : "none",
+      animationDuration: "2.4s",
+      animationTimingFunction: "linear",
+      animationIterationCount: "infinite",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        width: "14px", height: "14px", borderRadius: "50%",
+        background: "radial-gradient(circle, #c8922a 40%, #7a4f12 100%)",
+        boxShadow: "0 0 6px rgba(200,146,42,0.5)",
+      }} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+/* ─── CONFIDENCE METER ───────────────────────────────────────── */
+function ConfidenceMeter({ value }) {
+  return (
+    <div style={{ width: "100%" }}>
+      <div style={{
+        height: "6px", borderRadius: "3px",
+        background: "rgba(80,50,10,0.4)",
+        overflow: "hidden", marginTop: "12px",
+        boxShadow: "inset 0 1px 3px rgba(0,0,0,0.5)",
+      }}>
+        <div style={{
+          height: "100%",
+          width: `${value * 100}%`,
+          background: "linear-gradient(90deg, #92400e, #d97706, #fbbf24)",
+          borderRadius: "3px",
+          boxShadow: "0 0 10px rgba(217,119,6,0.5)",
+          transition: "width 1.2s cubic-bezier(0.23,1,0.32,1)",
+        }} />
+      </div>
+    </div>
+  );
+}
+
+/* ─── INPUT FIELD ────────────────────────────────────────────── */
+function AudioInput({ icon, ...props }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <div style={{
+        position: "absolute", top: "50%", left: "14px",
+        transform: "translateY(-50%)",
+        color: "rgba(180,140,80,0.5)", pointerEvents: "none",
+      }}>
+        {icon}
+      </div>
+      <input
+        {...props}
+        style={{
+          width: "100%", boxSizing: "border-box",
+          background: "rgba(8,5,2,0.7)",
+          border: "1px solid rgba(120,80,20,0.4)",
+          borderRadius: "8px",
+          padding: "10px 14px 10px 40px",
+          color: "#e8d5a3",
+          fontFamily: "'DM Mono', 'Fira Code', monospace",
+          fontSize: "13px",
+          outline: "none",
+          transition: "border-color 0.2s, box-shadow 0.2s",
+        }}
+        onFocus={e => {
+          e.target.style.borderColor = "rgba(217,119,6,0.7)";
+          e.target.style.boxShadow = "0 0 0 2px rgba(217,119,6,0.15)";
+        }}
+        onBlur={e => {
+          e.target.style.borderColor = "rgba(120,80,20,0.4)";
+          e.target.style.boxShadow = "none";
+        }}
+      />
+    </div>
+  );
+}
+
+/* ─── GLOBAL STYLES INJECTOR ─────────────────────────────────── */
+function GlobalStyles() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Cormorant+Garamond:wght@400;600&display=swap');
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: #0a0602;
+        background-image:
+          radial-gradient(ellipse 80% 60% at 50% -10%, rgba(120,60,10,0.18) 0%, transparent 70%),
+          url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+        min-height: 100vh;
+        color: #e8d5a3;
+        font-family: 'DM Mono', monospace;
       }
 
-      // 2. Fetch the actual JWT Token (Runs for both Login and right after Registration)
-      const formData = new URLSearchParams();
-      formData.append('username', authForm.username);
-      formData.append('password', authForm.password);
+      ::selection { background: rgba(217,119,6,0.25); color: #fde68a; }
 
-      const logRes = await fetch('/auth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData,
+      input::placeholder { color: rgba(180,140,80,0.25); }
+      textarea::placeholder { color: rgba(180,140,80,0.25); }
+      textarea { resize: none; }
+
+      .dial-btn {
+        cursor: pointer;
+        transition: transform 0.12s, box-shadow 0.12s;
+        border: none;
+        outline: none;
+      }
+      .dial-btn:hover  { transform: scale(1.04); }
+      .dial-btn:active { transform: scale(0.97); }
+
+      .panel-card {
+        background: linear-gradient(160deg, rgba(28,18,6,0.9) 0%, rgba(14,9,3,0.95) 100%);
+        border: 1px solid rgba(120,80,20,0.35);
+        border-radius: 16px;
+        position: relative;
+        overflow: hidden;
+      }
+      .panel-card::before {
+        content: '';
+        position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(255,200,80,0.03) 0%, transparent 50%);
+        pointer-events: none;
+        border-radius: inherit;
+      }
+
+      .screws::before, .screws::after {
+        content: '';
+        position: absolute;
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: radial-gradient(circle, #4a3010 40%, #1a0e04 100%);
+        border: 1px solid rgba(120,80,20,0.4);
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.8);
+        z-index: 1;
+      }
+      .screws::before { top: 10px; left: 10px; }
+      .screws::after  { top: 10px; right: 10px; }
+
+      @keyframes fadeSlide {
+        from { opacity: 0; transform: translateY(18px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .animate-in { animation: fadeSlide 0.5s ease forwards; }
+
+      @keyframes pulse-glow {
+        0%, 100% { box-shadow: 0 0 4px rgba(217,119,6,0.4); }
+        50%       { box-shadow: 0 0 12px rgba(217,119,6,0.8); }
+      }
+      .pulsing { animation: pulse-glow 1.8s ease-in-out infinite; }
+
+      .knob {
+        width: 36px; height: 36px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, #5a3a18, #1a0e04);
+        border: 2px solid rgba(120,80,20,0.5);
+        box-shadow: 0 3px 8px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,200,80,0.1);
+        position: relative; cursor: pointer; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .knob::after {
+        content: '';
+        width: 2px; height: 10px;
+        background: rgba(217,119,6,0.9);
+        border-radius: 1px;
+        position: absolute; top: 4px;
+        box-shadow: 0 0 4px rgba(217,119,6,0.6);
+      }
+
+      .freq-tag {
+        padding: 4px 10px;
+        background: rgba(120,60,10,0.2);
+        border: 1px solid rgba(180,120,40,0.25);
+        border-radius: 20px;
+        font-size: 11px;
+        font-family: 'DM Mono', monospace;
+        letter-spacing: 0.08em;
+        color: rgba(217,160,60,0.8);
+        text-transform: uppercase;
+      }
+    `}</style>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MAIN APP
+═══════════════════════════════════════════════════════════════ */
+export default function App() {
+  const [token, setToken]             = useState(null);
+  const [prompt, setPrompt]           = useState("");
+  const [result, setResult]           = useState(null);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState("");
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isLoginView, setIsLoginView] = useState(true);
+  const [authForm, setAuthForm]       = useState({ email: "", username: "", password: "" });
+  const [vuLevel, setVuLevel]         = useState(0);
+  const vuRef = useRef(null);
+
+  /* Animate VU meter while loading */
+  useEffect(() => {
+    if (loading) {
+      vuRef.current = setInterval(() => {
+        setVuLevel(0.3 + Math.random() * 0.65);
+      }, 120);
+    } else {
+      clearInterval(vuRef.current);
+      setVuLevel(result ? 0.72 : 0);
+    }
+    return () => clearInterval(vuRef.current);
+  }, [loading, result]);
+
+  const handleAuthChange = (e) => setAuthForm({ ...authForm, [e.target.name]: e.target.value });
+
+  const submitAuth = async (e) => {
+    e.preventDefault();
+    setLoading(true); setError("");
+    try {
+      if (!isLoginView) {
+        const regRes = await fetch("/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: authForm.email, username: authForm.username, password: authForm.password }),
+        });
+        if (!regRes.ok) { const d = await regRes.json(); throw new Error(d.detail || "Registration failed"); }
+      }
+      const fd = new URLSearchParams();
+      fd.append("username", authForm.username); fd.append("password", authForm.password);
+      const logRes = await fetch("/auth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: fd,
       });
-
-      if (!logRes.ok) throw new Error('Invalid credentials, bro');
-      
+      if (!logRes.ok) throw new Error("Authentication failed — check credentials");
       const data = await logRes.json();
       setToken(data.access_token);
-      
-      // Cleanup UI
       setShowAuthModal(false);
-      setAuthForm({ email: '', username: '', password: '' });
+      setAuthForm({ email: "", username: "", password: "" });
       setIsLoginView(true);
-
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   };
 
-  const handleLogout = () => {
-    setToken(null);
-    setResult(null);
-    setPrompt('');
-  };
+  const handleLogout = () => { setToken(null); setResult(null); setPrompt(""); setVuLevel(0); };
 
-  // Hit the custom AI vibe analyzer (Using Vite Proxy /api/vibe/analyze)
   const analyzeVibe = async () => {
     if (!prompt.trim()) return;
     try {
-      setLoading(true);
-      setError('');
-      const res = await fetch('/api/vibe/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
+      setLoading(true); setError("");
+      const res = await fetch("/api/vibe/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ text: prompt }),
       });
-      if (res.status === 401) {
-        handleLogout();
-        throw new Error('Session expired. Log in again!');
-      }
-      if (!res.ok) throw new Error('Analysis failed');
+      if (res.status === 401) { handleLogout(); throw new Error("Session expired — re-authenticate"); }
+      if (!res.ok) throw new Error("Analysis failed");
       const data = await res.json();
       setResult(data);
-    } catch (err) { 
-      setError(err.message); 
-    } finally { 
-      setLoading(false); 
-    }
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  };
+
+  /* ── STYLES (inline for portability) ── */
+  const S = {
+    root: {
+      minHeight: "100vh",
+      padding: "24px 16px 60px",
+      fontFamily: "'DM Mono', monospace",
+    },
+    inner: { maxWidth: "860px", margin: "0 auto" },
+
+    /* Header */
+    header: {
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      paddingBottom: "24px",
+      borderBottom: "1px solid rgba(120,80,20,0.3)",
+      marginBottom: "32px",
+    },
+    logoWrap: { display: "flex", alignItems: "center", gap: "14px" },
+    logoDisc: {
+      width: "42px", height: "42px", borderRadius: "50%",
+      background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008, #2e1a0a, #1a1008)",
+      border: "2px solid rgba(180,140,80,0.4)",
+      boxShadow: "0 0 18px rgba(120,60,10,0.4), inset 0 0 10px rgba(0,0,0,0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      flexShrink: 0,
+    },
+    logoDiscInner: {
+      width: "10px", height: "10px", borderRadius: "50%",
+      background: "radial-gradient(circle, #d97706, #7a4f12)",
+    },
+    logoText: {
+      fontFamily: "'Playfair Display', serif",
+      fontSize: "22px", fontWeight: 900,
+      color: "#e8d5a3",
+      letterSpacing: "-0.01em",
+      lineHeight: 1.1,
+    },
+    logoSub: {
+      fontSize: "10px",
+      fontFamily: "'DM Mono', monospace",
+      color: "rgba(180,140,80,0.5)",
+      letterSpacing: "0.25em",
+      textTransform: "uppercase",
+    },
+
+    /* Auth btn */
+    authBtn: (hasToken) => ({
+      display: "flex", alignItems: "center", gap: "8px",
+      padding: "8px 18px",
+      borderRadius: "8px",
+      fontFamily: "'DM Mono', monospace",
+      fontSize: "12px",
+      fontWeight: 500,
+      letterSpacing: "0.08em",
+      textTransform: "uppercase",
+      cursor: "pointer",
+      transition: "all 0.2s",
+      background: hasToken ? "rgba(40,20,5,0.8)" : "linear-gradient(135deg, #92400e, #d97706)",
+      color: hasToken ? "rgba(180,140,80,0.7)" : "#fef3c7",
+      border: hasToken ? "1px solid rgba(120,80,20,0.4)" : "1px solid rgba(251,191,36,0.3)",
+      boxShadow: hasToken ? "none" : "0 0 20px rgba(217,119,6,0.25)",
+    }),
+
+    /* Signal status */
+    signalRow: { display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" },
+    signalDot: (on) => ({
+      width: "7px", height: "7px", borderRadius: "50%",
+      background: on ? "#d97706" : "rgba(80,50,10,0.5)",
+      boxShadow: on ? "0 0 8px rgba(217,119,6,0.8)" : "none",
+      flexShrink: 0,
+    }),
+    signalLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)" },
+
+    /* Error */
+    errorBox: {
+      display: "flex", alignItems: "center", gap: "10px",
+      padding: "12px 16px",
+      background: "rgba(60,10,10,0.5)",
+      border: "1px solid rgba(180,40,40,0.3)",
+      borderRadius: "10px",
+      color: "#f87171",
+      fontSize: "12px",
+      marginBottom: "20px",
+    },
+
+    /* Textarea */
+    textareaWrap: { position: "relative" },
+    textarea: {
+      width: "100%",
+      height: "130px",
+      background: "rgba(5,3,1,0.8)",
+      border: "1px solid rgba(120,80,20,0.35)",
+      borderRadius: "10px",
+      padding: "16px",
+      color: "#e8d5a3",
+      fontFamily: "'DM Mono', monospace",
+      fontSize: "14px",
+      lineHeight: "1.6",
+      outline: "none",
+      transition: "border-color 0.2s, box-shadow 0.2s",
+    },
+    lockOverlay: {
+      position: "absolute", inset: 0,
+      background: "rgba(5,3,1,0.75)",
+      backdropFilter: "blur(4px)",
+      borderRadius: "10px",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 10,
+    },
+    lockBtn: {
+      display: "flex", alignItems: "center", gap: "8px",
+      padding: "10px 22px",
+      background: "rgba(20,12,4,0.9)",
+      border: "1px solid rgba(180,120,40,0.35)",
+      borderRadius: "30px",
+      color: "rgba(180,140,80,0.8)",
+      fontSize: "12px",
+      cursor: "pointer",
+      letterSpacing: "0.1em",
+      textTransform: "uppercase",
+      fontFamily: "'DM Mono', monospace",
+      transition: "border-color 0.2s, color 0.2s",
+    },
+
+    /* Run btn */
+    runBtn: (disabled) => ({
+      display: "flex", alignItems: "center", gap: "10px",
+      padding: "12px 28px",
+      background: disabled
+        ? "rgba(50,30,8,0.4)"
+        : "linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%)",
+      border: "1px solid " + (disabled ? "rgba(80,50,10,0.3)" : "rgba(251,191,36,0.3)"),
+      borderRadius: "10px",
+      color: disabled ? "rgba(120,80,20,0.5)" : "#fef3c7",
+      fontFamily: "'DM Mono', monospace",
+      fontSize: "12px",
+      fontWeight: 500,
+      letterSpacing: "0.15em",
+      textTransform: "uppercase",
+      cursor: disabled ? "not-allowed" : "pointer",
+      boxShadow: disabled ? "none" : "0 4px 20px rgba(180,100,10,0.3)",
+      transition: "all 0.2s",
+    }),
+
+    /* Result cards */
+    grid: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+      gap: "16px",
+    },
+    resultCard: {
+      padding: "24px",
+      display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
+      gap: "8px",
+    },
+    cardLabel: { fontSize: "10px", letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(180,140,80,0.45)" },
+    cardValue: {
+      fontFamily: "'Playfair Display', serif",
+      fontSize: "30px", fontWeight: 700,
+      color: "#fde68a",
+      textShadow: "0 0 20px rgba(217,119,6,0.3)",
+    },
+    cardSub: { fontSize: "11px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em" },
+
+    /* Modal */
+    modalOverlay: {
+      position: "fixed", inset: 0, zIndex: 50,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "16px",
+      background: "rgba(4,2,1,0.88)",
+      backdropFilter: "blur(8px)",
+    },
+    modal: {
+      width: "100%", maxWidth: "420px",
+      padding: "36px 32px 28px",
+      position: "relative",
+    },
+    modalTitle: {
+      fontFamily: "'Playfair Display', serif",
+      fontSize: "24px", fontWeight: 900,
+      color: "#fde68a",
+      marginBottom: "8px",
+    },
+    modalSub: { fontSize: "11px", color: "rgba(180,140,80,0.45)", letterSpacing: "0.1em", marginBottom: "28px" },
+    formLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)", marginBottom: "6px", display: "block" },
+    submitBtn: {
+      width: "100%", padding: "12px",
+      marginTop: "24px",
+      background: "linear-gradient(135deg, #92400e, #d97706)",
+      border: "1px solid rgba(251,191,36,0.25)",
+      borderRadius: "8px",
+      color: "#fef3c7",
+      fontFamily: "'DM Mono', monospace",
+      fontSize: "12px",
+      fontWeight: 500,
+      letterSpacing: "0.18em",
+      textTransform: "uppercase",
+      cursor: "pointer",
+      boxShadow: "0 4px 20px rgba(180,100,10,0.3)",
+      transition: "opacity 0.2s",
+    },
   };
 
   return (
-    <div className="min-h-screen bg-black text-neutral-100 p-4 md:p-12 font-sans selection:bg-indigo-500/30 overflow-x-hidden relative">
-      
-      {/* ----------------- AUTH MODAL OVERLAY ----------------- */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 w-full max-w-md shadow-2xl relative">
-            
-            <button 
-              onClick={() => setShowAuthModal(false)}
-              className="absolute top-6 right-6 text-neutral-500 hover:text-white transition-colors"
-            >
-              <IconX />
-            </button>
+    <>
+      <GlobalStyles />
+      <div style={S.root}>
 
-            <div className="flex items-center gap-3 mb-8">
-              <div className="p-2 bg-indigo-600/20 rounded-xl text-indigo-400">
-                <IconZap />
-              </div>
-              <h2 className="text-2xl font-black uppercase tracking-tight">
-                {isLoginView ? 'System Access' : 'Initialize User'}
-              </h2>
-            </div>
-
-            {error && (
-              <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-sm font-medium">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={submitAuth} className="space-y-4">
-              {!isLoginView && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-neutral-500 ml-1">Email</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-neutral-500">
-                      <IconMail />
-                    </div>
-                    <input 
-                      type="email" name="email" value={authForm.email} onChange={handleAuthChange} required={!isLoginView}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 pl-12 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
-                      placeholder="hacker@vibes.com"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-neutral-500 ml-1">Username</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-neutral-500">
-                    <IconUser />
-                  </div>
-                  <input 
-                    type="text" name="username" value={authForm.username} onChange={handleAuthChange} required
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 pl-12 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
-                    placeholder="dev_bro"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-neutral-500 ml-1">Password</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-neutral-500">
-                    <IconLock />
-                  </div>
-                  <input 
-                    type="password" name="password" value={authForm.password} onChange={handleAuthChange} required
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 pl-12 pr-4 text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
-                    placeholder="••••••••"
-                  />
-                </div>
-              </div>
-
-              <button 
-                type="submit" disabled={loading}
-                className="w-full py-3.5 mt-6 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50"
-              >
-                {loading ? 'Processing...' : (isLoginView ? 'Authenticate' : 'Create Identity')}
-              </button>
-            </form>
-
-            <div className="mt-6 text-center">
-              <button 
-                type="button"
-                onClick={() => { setIsLoginView(!isLoginView); setError(''); setAuthForm({email:'', username:'', password:''}); }}
-                className="text-sm text-neutral-500 hover:text-indigo-400 transition-colors"
-              >
-                {isLoginView ? "Need an account? Initialize one." : "Already have access? Authenticate."}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* ------------------------------------------------------ */}
-
-
-      <div className="max-w-4xl mx-auto space-y-12">
-        
-        {/* Header */}
-        <header className="flex items-center justify-between pb-8 border-b border-neutral-800/50">
-          <div className="flex items-center gap-4 group cursor-default">
-            <div className="p-3 bg-indigo-600/20 rounded-2xl text-indigo-400 group-hover:scale-110 transition-transform duration-300 shadow-[0_0_20px_rgba(79,70,229,0.2)]">
-              <IconZap />
-            </div>
-            <h1 className="text-3xl font-black tracking-tighter uppercase">
-              VibeFinder<span className="text-indigo-500">AI</span>
-            </h1>
-          </div>
-          
-          <button 
-            onClick={token ? handleLogout : () => setShowAuthModal(true)}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all active:scale-95 ${
-              token 
-                ? 'bg-neutral-900 text-neutral-400 border border-neutral-800 hover:bg-neutral-800' 
-                : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20'
-            }`}
-          >
-            {token ? <IconUnlock /> : <IconLock />}
-            {token ? 'Log Out' : 'Sign In'}
-          </button>
-        </header>
-
-        {error && !showAuthModal && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl flex items-center gap-3 animate-in fade-in zoom-in duration-300">
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            {error}
-          </div>
-        )}
-
-        {/* Input Card */}
-        <section className="relative group">
-          <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl blur opacity-10 group-hover:opacity-20 transition duration-1000 group-hover:duration-200" />
-          <div className="relative bg-neutral-900/50 border border-neutral-800/50 backdrop-blur-xl rounded-3xl p-8 shadow-2xl">
-            <h2 className="text-xl font-bold mb-6 text-neutral-200 flex items-center gap-3">
-              <IconMusic /> Describe the Vibe
-            </h2>
-            
-            <div className="relative">
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Ex: 'Hardcore workout hype for heavy lifting'..."
-                className="w-full h-44 bg-neutral-950/50 border border-neutral-800 rounded-2xl p-6 text-lg text-neutral-200 placeholder-neutral-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/40 resize-none transition-all"
-                disabled={!token || loading}
-              />
-              {!token && (
-                <div className="absolute inset-0 bg-neutral-950/60 backdrop-blur-[4px] rounded-2xl flex items-center justify-center z-20">
-                  <button 
-                    onClick={() => setShowAuthModal(true)}
-                    className="bg-neutral-900 border border-neutral-800 px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl hover:border-indigo-500/50 transition-colors cursor-pointer"
-                  >
-                    <IconLock />
-                    <span className="font-bold text-neutral-400 hover:text-indigo-400 transition-colors">Authentication Required</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 flex justify-between items-center">
-              <div className="flex items-center gap-2 text-neutral-500">
-                <div className={`w-2 h-2 rounded-full ${token ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-neutral-700'}`} />
-                <span className="text-xs font-bold uppercase tracking-widest">{token ? 'System Ready' : 'System Offline'}</span>
-              </div>
+        {/* ── AUTH MODAL ─────────────────────────────────────── */}
+        {showAuthModal && (
+          <div style={S.modalOverlay}>
+            <div className="panel-card screws animate-in" style={S.modal}>
               <button
-                onClick={analyzeVibe}
-                disabled={!token || loading || !prompt.trim()}
-                className="flex items-center gap-3 px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-2xl shadow-indigo-600/30 active:scale-95"
+                onClick={() => setShowAuthModal(false)}
+                style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", color: "rgba(180,140,80,0.4)", cursor: "pointer" }}
               >
-                {loading && token ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <span>Run Algorithm</span>
-                    <IconPlay />
-                  </>
-                )}
+                <IconX />
               </button>
-            </div>
-          </div>
-        </section>
 
-        {/* Dashboard */}
-        {result && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
-            
-            <div className="bg-neutral-900/40 border border-neutral-800/50 rounded-3xl p-8 flex flex-col items-center text-center group transition-all hover:bg-neutral-800/40">
-              <div className="p-4 bg-blue-500/10 rounded-2xl mb-4 text-blue-400 group-hover:scale-110 transition-transform duration-300">
-                <IconActivity />
-              </div>
-              <p className="text-neutral-500 text-xs font-bold uppercase tracking-widest mb-2">Dominant Vibe</p>
-              <h3 className="text-3xl font-black capitalize text-white">{result.dominant_vibe}</h3>
-              <div className="w-full bg-neutral-800 h-2 rounded-full mt-6 overflow-hidden">
-                <div 
-                  className="bg-blue-500 h-full rounded-full shadow-[0_0_12px_rgba(59,130,246,0.5)]" 
-                  style={{ width: `${result.confidence * 100}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-neutral-500 mt-3 font-bold uppercase tracking-widest">Confidence: {Math.round(result.confidence * 100)}%</p>
-            </div>
+              {/* decorative groove lines */}
+              <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(120,80,20,0.04) 5px, rgba(120,80,20,0.04) 6px)", borderRadius: "16px", pointerEvents: "none" }} />
 
-            <div className="bg-neutral-900/40 border border-neutral-800/50 rounded-3xl p-8 flex flex-col items-center text-center group transition-all hover:bg-neutral-800/40">
-              <div className="p-4 bg-emerald-500/10 rounded-2xl mb-4 text-emerald-400 group-hover:scale-110 transition-transform duration-300">
-                <IconMusic />
-              </div>
-              <p className="text-neutral-500 text-xs font-bold uppercase tracking-widest mb-2">Target Tempo</p>
-              <h3 className="text-3xl font-black text-white">{result.bpm_range} <span className="text-sm text-neutral-500">BPM</span></h3>
-              <p className="text-[10px] text-neutral-500 mt-3 font-bold uppercase tracking-widest">Rhythmic Pulse</p>
-            </div>
+              <div style={{ position: "relative" }}>
+                <p style={S.modalTitle}>{isLoginView ? "Signal Authenticated" : "New Listener"}</p>
+                <p style={S.modalSub}>{isLoginView ? "// ACCESS CONTROL SYSTEM" : "// REGISTER NEW ACCOUNT"}</p>
 
-            <div className="bg-neutral-900/40 border border-neutral-800/50 rounded-3xl p-8 flex flex-col items-center text-center group transition-all hover:bg-neutral-800/40">
-              <div className="p-4 bg-purple-500/10 rounded-2xl mb-4 text-purple-400 group-hover:scale-110 transition-transform duration-300">
-                <IconHash />
-              </div>
-              <p className="text-neutral-500 text-xs font-bold uppercase tracking-widest mb-2">Genre Mapping</p>
-              <div className="flex flex-wrap gap-2 justify-center mt-2">
-                {result.genres.map(genre => (
-                  <span key={genre} className="px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-lg text-[10px] font-black border border-indigo-500/20 uppercase">
-                    {genre}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* Keyword breakdown */}
-            <div className="md:col-span-3 bg-neutral-900/30 border border-neutral-800/50 rounded-3xl p-8 overflow-hidden relative">
-              <div className="absolute top-0 right-0 p-8 opacity-[0.02] -rotate-12 scale-[3]">
-                <IconZap />
-              </div>
-              <p className="text-xs text-neutral-500 mb-4 font-bold uppercase tracking-[0.2em]">Neural Match Breakdown:</p>
-              <div className="flex flex-wrap gap-3">
-                {result.matched_keywords.length > 0 ? (
-                  result.matched_keywords.map(kw => (
-                    <span key={kw} className="px-4 py-2 bg-neutral-950 border border-neutral-800 text-neutral-300 rounded-xl text-xs font-bold hover:border-indigo-500/50 transition-colors">
-                      #{kw}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-neutral-600 text-sm italic">Universal mood detected. Falling back to ambient processing.</span>
+                {error && (
+                  <div style={{ ...S.errorBox, marginBottom: "20px" }}>
+                    <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", flexShrink: 0 }} />
+                    {error}
+                  </div>
                 )}
+
+                <form onSubmit={submitAuth} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                  {!isLoginView && (
+                    <div>
+                      <label style={S.formLabel}>Email Address</label>
+                      <AudioInput icon={<IconMail />} type="email" name="email" value={authForm.email} onChange={handleAuthChange} required placeholder="listener@analog.audio" />
+                    </div>
+                  )}
+                  <div>
+                    <label style={S.formLabel}>Username</label>
+                    <AudioInput icon={<IconUser />} type="text" name="username" value={authForm.username} onChange={handleAuthChange} required placeholder="audiophile_001" />
+                  </div>
+                  <div>
+                    <label style={S.formLabel}>Passphrase</label>
+                    <AudioInput icon={<IconLock />} type="password" name="password" value={authForm.password} onChange={handleAuthChange} required placeholder="••••••••••••" />
+                  </div>
+                  <button type="submit" disabled={loading} className="dial-btn" style={{ ...S.submitBtn, opacity: loading ? 0.5 : 1 }}>
+                    {loading ? "Handshaking..." : isLoginView ? "Authenticate" : "Initialize Account"}
+                  </button>
+                </form>
+
+                <p style={{ textAlign: "center", marginTop: "18px", fontSize: "11px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.05em" }}>
+                  {isLoginView ? "No account? " : "Have access? "}
+                  <button
+                    type="button"
+                    onClick={() => { setIsLoginView(!isLoginView); setError(""); setAuthForm({ email: "", username: "", password: "" }); }}
+                    style={{ background: "none", border: "none", color: "#d97706", cursor: "pointer", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}
+                  >
+                    {isLoginView ? "Register" : "Sign in"}
+                  </button>
+                </p>
               </div>
             </div>
-
           </div>
         )}
+
+        {/* ── INNER LAYOUT ───────────────────────────────────── */}
+        <div style={S.inner}>
+
+          {/* ── HEADER ─── */}
+          <header style={S.header}>
+            <div style={S.logoWrap}>
+              <div style={S.logoDisc}><div style={S.logoDiscInner} /></div>
+              <div>
+                <div style={S.logoText}>VibeFinder</div>
+                <div style={S.logoSub}>Acoustic Intelligence Engine</div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+              <Oscilloscope active={loading} />
+              <button
+                onClick={token ? handleLogout : () => setShowAuthModal(true)}
+                className="dial-btn"
+                style={S.authBtn(!!token)}
+              >
+                {token ? <IconUnlock /> : <IconLock />}
+                {token ? "Disconnect" : "Authenticate"}
+              </button>
+            </div>
+          </header>
+
+          {/* ── ERROR ─── */}
+          {error && !showAuthModal && (
+            <div style={S.errorBox} className="animate-in">
+              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", flexShrink: 0, animation: "pulse-glow 1.2s infinite" }} />
+              {error}
+            </div>
+          )}
+
+          {/* ── INPUT PANEL ─── */}
+          <div className="panel-card screws" style={{ padding: "28px", marginBottom: "24px" }}>
+            {/* horizontal groove lines */}
+            <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(120,80,20,0.03) 7px, rgba(120,80,20,0.03) 8px)", pointerEvents: "none", borderRadius: "16px" }} />
+
+            <div style={{ position: "relative" }}>
+              {/* Panel top row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px", flexWrap: "wrap", gap: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <div className="knob" />
+                    <div className="knob" style={{ transform: "rotate(45deg)" }} />
+                    <div className="knob" style={{ transform: "rotate(-30deg)" }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "13px", fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: "#e8d5a3", letterSpacing: "0.04em" }}>Describe the Vibe</div>
+                    <div style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase" }}>// Acoustic descriptor input</div>
+                  </div>
+                </div>
+                <VuMeter value={vuLevel} />
+              </div>
+
+              {/* Textarea */}
+              <div style={S.textareaWrap}>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder={"Ex: Late night drive through rain-slicked streets, JBL 4343s, single malt in hand..."}
+                  style={S.textarea}
+                  disabled={!token || loading}
+                  onFocus={e => { e.target.style.borderColor = "rgba(217,119,6,0.6)"; e.target.style.boxShadow = "0 0 0 2px rgba(217,119,6,0.12)"; }}
+                  onBlur={e => { e.target.style.borderColor = "rgba(120,80,20,0.35)"; e.target.style.boxShadow = "none"; }}
+                />
+                {!token && (
+                  <div style={S.lockOverlay}>
+                    <button onClick={() => setShowAuthModal(true)} style={S.lockBtn}>
+                      <IconLock /> Authentication Required
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", flexWrap: "wrap", gap: "12px" }}>
+                <div style={S.signalRow}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+                    <div style={S.signalDot(!!token)} className={token ? "pulsing" : ""} />
+                    <span style={S.signalLabel}>{token ? "Signal Active" : "No Signal"}</span>
+                  </div>
+                  <WaveformBars active={loading} count={22} />
+                </div>
+
+                <button
+                  onClick={analyzeVibe}
+                  disabled={!token || loading || !prompt.trim()}
+                  className="dial-btn"
+                  style={S.runBtn(!token || loading || !prompt.trim())}
+                >
+                  {loading && token
+                    ? <><div style={{ width: "14px", height: "14px", border: "2px solid rgba(251,191,36,0.3)", borderTopColor: "#fbbf24", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Analyzing…</>
+                    : <><IconPlay /> Run Analysis</>
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── RESULTS ─── */}
+          {result && (
+            <div className="animate-in">
+              {/* Results header */}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", paddingLeft: "4px" }}>
+                <div style={{ width: "24px", height: "1px", background: "rgba(217,119,6,0.5)" }} />
+                <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)" }}>Analysis Complete</span>
+                <div style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, rgba(217,119,6,0.4), transparent)" }} />
+              </div>
+
+              <div style={S.grid}>
+                {/* Dominant Vibe */}
+                <div className="panel-card" style={S.resultCard}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                    <IconWave />
+                    <span style={S.cardLabel}>Dominant Vibe</span>
+                  </div>
+                  <div style={S.cardValue}>{result.dominant_vibe}</div>
+                  <ConfidenceMeter value={result.confidence} />
+                  <div style={S.cardSub}>Confidence: {Math.round(result.confidence * 100)}%</div>
+                </div>
+
+                {/* BPM */}
+                <div className="panel-card" style={S.resultCard}>
+                  <div style={{ marginBottom: "4px" }}>
+                    <Vinyl spinning={true} />
+                  </div>
+                  <span style={S.cardLabel}>Target Tempo</span>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={S.cardValue}>{result.bpm_range}</span>
+                    <span style={{ fontSize: "13px", color: "rgba(180,140,80,0.5)" }}>BPM</span>
+                  </div>
+                  <div style={S.cardSub}>Rhythmic Pulse</div>
+                </div>
+
+                {/* Genres */}
+                <div className="panel-card" style={{ ...S.resultCard, justifyContent: "flex-start", paddingTop: "28px" }}>
+                  <span style={S.cardLabel}>Genre Mapping</span>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center", marginTop: "10px" }}>
+                    {result.genres.map(g => (
+                      <span key={g} className="freq-tag">{g}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Keyword breakdown */}
+              <div className="panel-card" style={{ padding: "24px", marginTop: "16px" }}>
+                <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 11px, rgba(120,80,20,0.025) 11px, rgba(120,80,20,0.025) 12px)", pointerEvents: "none", borderRadius: "16px" }} />
+                <div style={{ position: "relative" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                    <span style={S.cardLabel}>Neural Match Breakdown</span>
+                    <div style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, rgba(120,80,20,0.5), transparent)" }} />
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {result.matched_keywords.length > 0
+                      ? result.matched_keywords.map(kw => (
+                        <span key={kw} style={{
+                          padding: "5px 12px",
+                          background: "rgba(8,5,2,0.8)",
+                          border: "1px solid rgba(120,80,20,0.3)",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          fontFamily: "'DM Mono', monospace",
+                          color: "rgba(180,140,80,0.75)",
+                          letterSpacing: "0.05em",
+                          transition: "border-color 0.2s",
+                        }}>
+                          #{kw}
+                        </span>
+                      ))
+                      : <span style={{ fontSize: "12px", color: "rgba(120,80,20,0.5)", fontStyle: "italic" }}>Universal mood detected — falling back to ambient processing.</span>
+                    }
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer tape reel decorative strip */}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "28px", opacity: 0.4 }}>
+                <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "rgba(120,80,20,0.6)" }} />
+                </div>
+                <div style={{ flex: 1, height: "6px", borderRadius: "3px", background: "rgba(80,50,10,0.4)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: "100%", background: "repeating-linear-gradient(90deg, rgba(120,80,20,0.4) 0px, rgba(120,80,20,0.4) 2px, transparent 2px, transparent 10px)" }} />
+                </div>
+                <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "rgba(120,80,20,0.6)" }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
       </div>
-    </div>
+    </>
   );
 }
