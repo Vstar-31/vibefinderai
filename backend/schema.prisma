@@ -68,6 +68,17 @@ model Track {
   playlist      Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
 }
 
+// --- INTELLIGENCE LAYER (NEW) ---
+
+model ArtistDirectory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  genres    String   // e.g., "lo-fi, r&b, alternative"
+  niche     String?  // e.g., "sadboy"
+  songs     String?  // NEW: comma-separated top songs for direct matching
+  createdAt DateTime @default(now())
+}
+
 // --- SOCIAL GRAPH & FORUM LAYER ---
 
 model ForumPost {
@@ -91,7 +102,4 @@ model Comment {
   
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   post        ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
-  
-  parent      Comment?  @relation("CommentToComment", fields: [parentId], references: [id])
-  replies     Comment[] @relation("CommentToComment")
 }
