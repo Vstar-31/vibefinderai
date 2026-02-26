@@ -213,6 +213,58 @@ function AudioInput({ icon, ...props }) {
   );
 }
 
+/* ─── INTERACTIVE KNOB ───────────────────────────────────────── */
+function Knob({ label, value, onChange }) {
+  const knobRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startY, setStartY] = useState(0);
+  const [startVal, setStartVal] = useState(0);
+
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    setStartY(e.clientY);
+    setStartVal(value);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+      const deltaY = startY - e.clientY;
+      // 1 pixel = 1 unit of priority
+      let newVal = startVal + deltaY;
+      if (newVal > 100) newVal = 100;
+      if (newVal < 0) newVal = 0;
+      onChange(newVal);
+    };
+    const handleMouseUp = () => setIsDragging(false);
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, startY, startVal, onChange]);
+
+  // Map 0-100 to rotation degrees (-135 to 135)
+  const rotation = -135 + (value / 100) * 270;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+      <div
+        ref={knobRef}
+        onMouseDown={handleMouseDown}
+        className="knob"
+        style={{ transform: `rotate(${rotation}deg)`, cursor: isDragging ? 'grabbing' : 'grab' }}
+        title={`${label} Priority: ${Math.round(value)}%`}
+      />
+      <span style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em", textTransform: "uppercase", userSelect: "none" }}>{label}</span>
+    </div>
+  );
+}
+
 /* ─── GLOBAL STYLES INJECTOR ─────────────────────────────────── */
 function GlobalStyles() {
   return (
@@ -332,6 +384,7 @@ export default function App() {
   const [isLoginView, setIsLoginView] = useState(true);
   const [authForm, setAuthForm]       = useState({ email: "", username: "", password: "" });
   const [vuLevel, setVuLevel]         = useState(0);
+  const [knobs, setKnobs]             = useState({ artist: 50, genre: 50, bpm: 50 });
   const vuRef = useRef(null);
 
   // Expanded Vibe Colors to match backend UI overhaul
@@ -412,7 +465,12 @@ export default function App() {
       const res = await fetch("/api/vibe/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ text: prompt }),
+        body: JSON.stringify({ 
+          text: prompt,
+          artist_focus: Math.round(knobs.artist),
+          genre_focus: Math.round(knobs.genre),
+          bpm_focus: Math.round(knobs.bpm)
+        }),
       });
       if (res.status === 401) { handleLogout(); throw new Error("Session expired — re-authenticate"); }
       if (!res.ok) throw new Error("Analysis failed");
@@ -740,14 +798,14 @@ export default function App() {
             <div style={{ position: "relative" }}>
               {/* Panel top row */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px", flexWrap: "wrap", gap: "12px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    {/* Tooltips added to knobs */}
-                    <div className="knob" title="Acoustic Calibration (Auto-Tuned by AI)" />
-                    <div className="knob" style={{ transform: "rotate(45deg)" }} title="Acoustic Calibration (Auto-Tuned by AI)" />
-                    <div className="knob" style={{ transform: "rotate(-30deg)" }} title="Acoustic Calibration (Auto-Tuned by AI)" />
+                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <div style={{ display: "flex", gap: "12px" }}>
+                    {/* Live Interactive Knobs */}
+                    <Knob label="Artist" value={knobs.artist} onChange={v => setKnobs({...knobs, artist: v})} />
+                    <Knob label="Genre" value={knobs.genre} onChange={v => setKnobs({...knobs, genre: v})} />
+                    <Knob label="BPM" value={knobs.bpm} onChange={v => setKnobs({...knobs, bpm: v})} />
                   </div>
-                  <div>
+                  <div style={{ marginLeft: "4px" }}>
                     <div style={{ fontSize: "13px", fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: "#e8d5a3", letterSpacing: "0.04em" }}>Describe the Vibe</div>
                     <div style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase" }}>// Acoustic descriptor input</div>
                   </div>

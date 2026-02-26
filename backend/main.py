@@ -75,6 +75,9 @@ class UserCreate(BaseModel):
 
 class VibeRequest(BaseModel):
     text: str
+    artist_focus: int = 50
+    genre_focus: int = 50
+    bpm_focus: int = 50
 
 class VibeResponse(BaseModel):
     dominant_vibe: str
@@ -185,5 +188,10 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 @app.post("/api/vibe/analyze", response_model=VibeResponse)
 async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
     """Routes the analyze request to the modularized vibe engine."""
-    # The baton is passed!
-    return vibe_engine.analyze_vibe_algorithm(request.text)
+    # The baton is passed with the new analog knob priorities!
+    return vibe_engine.analyze_vibe_algorithm(
+        text=request.text,
+        artist_focus=request.artist_focus,
+        genre_focus=request.genre_focus,
+        bpm_focus=request.bpm_focus
+    )

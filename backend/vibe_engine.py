@@ -1260,15 +1260,20 @@ def _intensity_multiplier(text: str, match_start: int, window_chars: int = 35) -
 #  MAIN ANALYSIS ENGINE  (v4.1)
 # =============================================================================
 
-def analyze_vibe_algorithm(text: str) -> dict:
+def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int = 50, bpm_focus: int = 50) -> dict:
     """
-    Vibe Analysis Engine v4.1 — Calibrated Edition
+    Vibe Analysis Engine v4.1 — Calibrated Edition w/ UI Priority Knobs
     """
 
     lower_text = text.lower()
     tokens = _tokenize(text)
     scores: dict[str, float] = defaultdict(float)
     matched_tokens: list[str] = []
+
+    # -- Calculate dynamic multipliers based on UI Knobs (50 is baseline 1.0x) --
+    art_mult = artist_focus / 50.0
+    gen_mult = genre_focus / 50.0
+    bpm_mult = bpm_focus / 50.0
 
     # ── STEP 0: ANTI-VIBE DETECTION ──────────────────────────────────────────
     anti_vibes = _detect_anti_vibes(lower_text)
@@ -1278,14 +1283,14 @@ def analyze_vibe_algorithm(text: str) -> dict:
     for canonical, count in synonym_hits.items():
         for vibe, data in VIBE_MAP.items():
             if canonical == vibe or canonical in data.get("keywords", []) or canonical in data.get("context", []):
-                scores[vibe] += WEIGHT_SYNONYM * count
+                scores[vibe] += (WEIGHT_SYNONYM * count * gen_mult)
                 matched_tokens.append(f"~{canonical}")
 
     # ── STEP 2: MULTI-WORD PHRASE MATCHING ────────────────────────────────────
     for vibe, data in VIBE_MAP.items():
         for phrase in data.get("phrases", []):
             if phrase in lower_text:
-                scores[vibe] += WEIGHT_PHRASE
+                scores[vibe] += (WEIGHT_PHRASE * gen_mult)
                 matched_tokens.append(phrase)
 
     # ── STEP 3: ARTIST MATCHING + SPAN MASKING ────────────────────────────────
@@ -1299,7 +1304,7 @@ def analyze_vibe_algorithm(text: str) -> dict:
             else:
                 hit = bool(_wb(artist).search(masked_text))
             if hit:
-                scores[vibe] += WEIGHT_ARTIST
+                scores[vibe] += (WEIGHT_ARTIST * art_mult)
                 matched_tokens.append(artist)
                 masked_text = masked_text.replace(artist, " " * len(artist), 1)
 
@@ -1317,10 +1322,10 @@ def analyze_vibe_algorithm(text: str) -> dict:
                     idx = len(tokens)
 
                 if _check_negation(tokens, idx):
-                    scores[vibe] += WEIGHT_KEYWORD * NEGATION_MULT
+                    scores[vibe] += (WEIGHT_KEYWORD * NEGATION_MULT * gen_mult)
                 else:
                     intensity = _intensity_multiplier(lower_text, m.start())
-                    scores[vibe] += WEIGHT_KEYWORD * intensity
+                    scores[vibe] += (WEIGHT_KEYWORD * intensity * gen_mult)
                     matched_tokens.append(kw)
 
     # ── STEP 5: CONTEXT MATCHING — word-boundary safe ─────────────────────────
@@ -1344,10 +1349,25 @@ def analyze_vibe_algorithm(text: str) -> dict:
                     idx = len(tokens)
 
                 if _check_negation(tokens, idx):
-                    scores[vibe] += WEIGHT_CONTEXT * NEGATION_MULT
+                    scores[vibe] += (WEIGHT_CONTEXT * NEGATION_MULT * gen_mult)
                 else:
-                    scores[vibe] += WEIGHT_CONTEXT
+                    scores[vibe] += (WEIGHT_CONTEXT * gen_mult)
                     matched_tokens.append(ctx)
+                    
+    # ── EXPLICIT BPM PARSING (Tied to BPM Knob) ───────────────────────────────
+    # If the user literally types a BPM (e.g., "140 bpm", "120bpm"), we use the BPM knob 
+    # to aggressively boost vibes that fit that tempo.
+    bpm_match = re.search(r'(\d{2,3})\s*bpm', lower_text)
+    if bpm_match:
+        target_bpm = int(bpm_match.group(1))
+        for v, data in VIBE_MAP.items():
+            bpm_str = data.get("bpm", "")
+            if "-" in bpm_str:
+                min_b, max_b = map(int, bpm_str.split('-'))
+                if min_b <= target_bpm <= max_b:
+                    scores[v] += (5.0 * bpm_mult) # Big boost if it fits the requested BPM
+                    if f"{target_bpm}bpm" not in matched_tokens:
+                        matched_tokens.append(f"{target_bpm}bpm")
 
     # ── STEP 6: APPLY ANTI-VIBE SUPPRESSION ───────────────────────────────────
     for vibe in anti_vibes:
