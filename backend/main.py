@@ -13,6 +13,7 @@ import urllib.request
 import urllib.parse
 import json
 import asyncio
+import random
 
 # Import our modularized vibe engine
 import vibe_engine
@@ -119,7 +120,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 # ---------------------------------------------------------
 # The 100% Free Music Fetchers (Last.fm + iTunes)
 # ---------------------------------------------------------
-def fetch_lastfm_tracks_sync(genre: str, limit: int = 5):
+def fetch_lastfm_tracks_sync(genre: str, limit: int = 50):
     """Hits the free Last.fm API to pull trending tracks."""
     api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
     url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
@@ -127,7 +128,9 @@ def fetch_lastfm_tracks_sync(genre: str, limit: int = 5):
     fallback_tracks = [
         {"title": "Nightcrawler", "artist": "Travis Scott"},
         {"title": "Resonance", "artist": "HOME"},
-        {"title": "Goth", "artist": "Sidewalks and Skeletons"}
+        {"title": "Goth", "artist": "Sidewalks and Skeletons"},
+        {"title": "After Hours", "artist": "The Weeknd"},
+        {"title": "Genesis", "artist": "Grimes"}
     ]
 
     try:
@@ -169,11 +172,76 @@ def fetch_itunes_data_sync(title: str, artist: str):
     
     return {"preview_url": None, "cover_art": None}
 
-async def fetch_lastfm_tracks(genre: str, limit: int = 5):
+async def fetch_lastfm_tracks(genre: str, limit: int = 50):
     return await asyncio.to_thread(fetch_lastfm_tracks_sync, genre, limit)
 
 async def fetch_itunes_preview(title: str, artist: str):
     return await asyncio.to_thread(fetch_itunes_data_sync, title, artist)
+
+# ---------------------------------------------------------
+# The Mathematical AI (Knob Scoring Engine)
+# ---------------------------------------------------------
+def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict, limit: int = 5):
+    """
+    Takes a massive pool of 50 tracks and physically scores them based on the 
+    user's raw text and the precise values of the UI Knobs.
+    """
+    prompt_lower = request.text.lower()
+    keywords = [k.lower() for k in vibe_data.get("matched_keywords", [])]
+    dominant = vibe_data.get("dominant_vibe", "").lower()
+    bpm_range = vibe_data.get("bpm_range", "90-120")
+    
+    # Identify acoustic target markers based on the NLP engine's BPM reading
+    is_fast = "120" in bpm_range or "140" in bpm_range or "160" in bpm_range
+    fast_markers = ["remix", "mix", "edit", "vip", "club", "bootleg", "mashup", "fast", "speed"]
+    slow_markers = ["acoustic", "slowed", "reverb", "chill", "lofi", "unplugged", "ambient", "slow"]
+    
+    scored_tracks = []
+    for i, t in enumerate(tracks):
+        title = t.get("title", "").lower()
+        artist = t.get("artist", "").lower()
+        score = 0.0
+        
+        # 1. ARTIST FOCUS MATCH (Did they type the artist's name in the prompt?)
+        if artist in prompt_lower or title in prompt_lower:
+            # Massive boost heavily multiplied by the Artist Knob
+            score += 50 * (request.artist_focus / 50.0)
+            
+        # 2. GENRE / VIBE MATCH (Do the track names match the vibe keywords?)
+        if dominant in title or dominant in artist:
+            score += 30 * (request.genre_focus / 50.0)
+        for kw in keywords:
+            if kw in title or kw in artist:
+                score += 20 * (request.genre_focus / 50.0)
+                
+        # 3. BPM FOCUS MATCH (Simulate tempo via title acoustic markers)
+        if request.bpm_focus > 50:
+            markers = fast_markers if is_fast else slow_markers
+            if any(m in title for m in markers):
+                score += 40 * (request.bpm_focus / 50.0)
+        
+        # 4. MAINSTREAM VS NICHE SLIDER
+        # High knobs = user wants deep, specific cuts. Low knobs = user wants mainstream top 10 hits.
+        popularity_penalty = (i / len(tracks)) * 20 if len(tracks) > 0 else 0
+        knob_avg = (request.artist_focus + request.genre_focus + request.bpm_focus) / 3.0
+        
+        if knob_avg > 60:
+            # Reward tracks deeper in the 50-track list
+            score += popularity_penalty 
+        else:
+            # Reward the top mainstream tracks at the top of the list
+            score -= popularity_penalty
+            
+        # Inject microscopic random jitter so identical 0.0 scores don't yield the exact same tracks
+        score += random.uniform(0, 2)
+        
+        scored_tracks.append((score, t))
+        
+    # Sort by the final mathematical score, descending!
+    scored_tracks.sort(key=lambda x: x[0], reverse=True)
+    
+    # Slice the absolute best 5
+    return [t[1] for t in scored_tracks[:limit]]
 
 
 # ---------------------------------------------------------
@@ -249,16 +317,19 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     genres = vibe_data.get("genres", [])
     target_genre = genres[0] if genres else "electronic"
     
-    # 2. Get the raw text tracks from Last.fm
-    raw_tracks = await fetch_lastfm_tracks(genre=target_genre, limit=5)
+    # 2. Grab a massive pool of 50 raw tracks from Last.fm
+    raw_pool = await fetch_lastfm_tracks(genre=target_genre, limit=50)
     
-    # 3. Concurrently fetch the Apple Music 30-sec previews for the in-app player
-    itunes_tasks = [fetch_itunes_preview(t["title"], t["artist"]) for t in raw_tracks]
+    # 3. Mathematically score and filter the 50 tracks down to the best 5 using the UI knobs!
+    best_tracks = filter_and_score_tracks(raw_pool, request, vibe_data, limit=5)
+    
+    # 4. Concurrently fetch the Apple Music 30-sec previews for the WINNING tracks
+    itunes_tasks = [fetch_itunes_preview(t["title"], t["artist"]) for t in best_tracks]
     itunes_results = await asyncio.gather(*itunes_tasks)
     
-    # 4. Assemble the final track list with Both Options (Deep Links + iTunes Player)
+    # 5. Assemble the final track list with Both Options (Deep Links + iTunes Player)
     final_tracks = []
-    for i, t in enumerate(raw_tracks):
+    for i, t in enumerate(best_tracks):
         search_query = urllib.parse.quote(f"{t['title']} {t['artist']}")
         final_tracks.append({
             "title": t["title"],
