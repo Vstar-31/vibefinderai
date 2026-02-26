@@ -10,6 +10,7 @@ const IconMail    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="
 const IconX       = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
 const IconWave    = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>;
 const IconDisc    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>;
+const IconFilter  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
 
 /* ─── WAVEFORM VISUALISER ────────────────────────────────────── */
 function WaveformBars({ active, count = 28 }) {
@@ -412,6 +413,12 @@ export default function App() {
   const [vuLevel, setVuLevel]         = useState(0);
   const [knobs, setKnobs]             = useState({ artist: 50, genre: 50, bpm: 50 });
   
+  // NEW: Override & Pro Mode State
+  const [showOverrides, setShowOverrides]     = useState(false);
+  const [overrideArtist, setOverrideArtist]   = useState("");
+  const [overrideGenre, setOverrideGenre]     = useState("");
+  const [useSecondaryVibe, setUseSecondaryVibe] = useState(false);
+
   // Custom Audio Player State
   const [playingTrack, setPlayingTrack] = useState(null);
   const audioRef = useRef(null);
@@ -493,10 +500,15 @@ export default function App() {
 
   const handleLogout = () => { setToken(null); setResult(null); setPrompt(""); setVuLevel(0); };
 
-  const analyzeVibe = async () => {
+  // Note: analyzeVibe now supports taking a direct parameter to force a pivot to the secondary vibe
+  const analyzeVibe = async (forceSecondary = false) => {
     if (!prompt.trim()) return;
     try {
       setLoading(true); setError("");
+      
+      const isSecondary = forceSecondary || useSecondaryVibe;
+      if (forceSecondary) setUseSecondaryVibe(true);
+
       const res = await fetch("/api/vibe/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -504,7 +516,11 @@ export default function App() {
           text: prompt,
           artist_focus: Math.round(knobs.artist),
           genre_focus: Math.round(knobs.genre),
-          bpm_focus: Math.round(knobs.bpm)
+          bpm_focus: Math.round(knobs.bpm),
+          // NEW OVERRIDE PARAMS
+          use_secondary_vibe: isSecondary,
+          override_genre: overrideGenre.trim() || null,
+          override_artist: overrideArtist.trim() || null
         }),
       });
       if (res.status === 401) { handleLogout(); throw new Error("Session expired — re-authenticate"); }
@@ -623,7 +639,38 @@ export default function App() {
                 {!token && <div style={S.lockOverlay}><button onClick={() => setShowAuthModal(true)} style={S.lockBtn}><IconLock /> Authentication Required</button></div>}
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", flexWrap: "wrap", gap: "12px" }}>
+              {/* ── NEW: PRO MODE OVERRIDES ── */}
+              <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <button
+                  onClick={() => setShowOverrides(!showOverrides)}
+                  disabled={!token}
+                  style={{ background: "none", border: "none", color: "rgba(180,140,80,0.6)", fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px", cursor: token ? "pointer" : "default", fontFamily: "'DM Mono', monospace", alignSelf: "flex-start", opacity: token ? 1 : 0.5 }}
+                >
+                  <IconFilter /> {showOverrides ? "Hide Overrides" : "Manual Overrides // Pro Mode"}
+                </button>
+
+                {showOverrides && token && (
+                  <div className="animate-in" style={{ display: "flex", gap: "16px", flexWrap: "wrap", padding: "16px", background: "rgba(10,5,2,0.6)", border: "1px dashed rgba(180,140,80,0.25)", borderRadius: "8px" }}>
+                    <div style={{ flex: 1, minWidth: "160px" }}>
+                       <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Artist Bypass</label>
+                       <input type="text" value={overrideArtist} onChange={e => setOverrideArtist(e.target.value)} placeholder="e.g. Deftones" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: "160px" }}>
+                       <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Genre Bypass</label>
+                       <input type="text" value={overrideGenre} onChange={e => setOverrideGenre(e.target.value)} placeholder="e.g. shoegaze" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
+                    </div>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "18px", cursor: "pointer", width: "100%" }} onClick={() => setUseSecondaryVibe(!useSecondaryVibe)}>
+                      <div style={{ width: "36px", height: "18px", borderRadius: "9px", background: useSecondaryVibe ? "rgba(217,119,6,0.6)" : "rgba(80,50,10,0.4)", position: "relative", transition: "background 0.2s", border: "1px solid rgba(120,80,20,0.3)" }}>
+                         <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: useSecondaryVibe ? "#fde68a" : "rgba(180,140,80,0.6)", position: "absolute", top: "2px", left: useSecondaryVibe ? "20px" : "3px", transition: "left 0.2s, background 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.5)" }} />
+                      </div>
+                      <span style={{ fontSize: "10px", color: useSecondaryVibe ? "#fde68a" : "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Hard-Switch to Secondary Vibe</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "20px", flexWrap: "wrap", gap: "12px" }}>
                 <div style={S.signalRow}>
                   <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
                     <div style={S.signalDot(!!token)} className={token ? "pulsing" : ""} />
@@ -631,7 +678,7 @@ export default function App() {
                   </div>
                   <WaveformBars active={loading || !!playingTrack} count={22} vibeColor={activeColor} />
                 </div>
-                <button onClick={analyzeVibe} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
+                <button onClick={() => analyzeVibe(false)} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
                   {loading && token ? <><div style={{ width: "14px", height: "14px", border: "2px solid rgba(251,191,36,0.3)", borderTopColor: "#fbbf24", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Analyzing…</> : <><IconPlay /> Run Analysis</>}
                 </button>
               </div>
@@ -650,15 +697,23 @@ export default function App() {
               <div style={S.grid}>
                 <div className="panel-card" style={S.resultCard}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}><IconWave /><span style={S.cardLabel}>Dominant Vibe</span></div>
-                  <div style={{ ...S.cardValue, color: activeColor }}>{result.dominant_vibe}</div>
-                  <ConfidenceMeter value={result.confidence} vibeColor={activeColor} />
-                  <div style={S.cardSub}>Confidence: {Math.round(result.confidence * 100)}%</div>
-                  {result.secondary_vibe && (
-                    <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>Secondary Signature</span>
-                      <div style={{ fontSize: "14px", fontFamily: "'Playfair Display', serif", color: vibeColors[result.secondary_vibe] || "#e8d5a3", fontStyle: "italic", textShadow: `0 0 10px ${vibeColors[result.secondary_vibe]}44` }}>
-                        {result.secondary_vibe} <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", opacity: 0.6 }}>({Math.round(result.secondary_confidence * 100)}%)</span>
-                      </div>
+                  <div style={{ ...S.cardValue, color: activeColor }}>
+                    {useSecondaryVibe ? result.secondary_vibe || result.dominant_vibe : result.dominant_vibe}
+                  </div>
+                  <ConfidenceMeter value={useSecondaryVibe ? result.secondary_confidence : result.confidence} vibeColor={activeColor} />
+                  <div style={S.cardSub}>Confidence: {Math.round((useSecondaryVibe ? result.secondary_confidence : result.confidence) * 100)}%</div>
+                  
+                  {/* NEW: THE "PIVOT" BUTTON */}
+                  {result.secondary_vibe && !useSecondaryVibe && (
+                    <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
+                      <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>Secondary Signature Detected</span>
+                      <button 
+                        onClick={() => analyzeVibe(true)}
+                        className="dial-btn"
+                        style={{ background: "rgba(20,10,5,0.6)", border: `1px dashed ${vibeColors[result.secondary_vibe]}66`, padding: "6px 12px", borderRadius: "6px", color: vibeColors[result.secondary_vibe] || "#e8d5a3", fontSize: "11px", fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "6px", width: "100%", justifyContent: "center" }}
+                      >
+                        Pivot Engine to: <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "13px", fontStyle: "italic" }}>{result.secondary_vibe}</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -671,9 +726,14 @@ export default function App() {
                 </div>
 
                 <div className="panel-card" style={{ ...S.resultCard, justifyContent: "flex-start", paddingTop: "28px" }}>
-                  <span style={S.cardLabel}>Genre Mapping</span>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center", marginTop: "10px" }}>
-                    {result.genres.map(g => (<span key={g} className="freq-tag" style={{ color: activeColor, borderColor: `${activeColor}44` }}>{g}</span>))}
+                  <span style={S.cardLabel}>Engine State</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px", width: "100%", alignItems: "center" }}>
+                    {result.detected_artist && <span className="freq-tag" style={{ color: activeColor, borderColor: `${activeColor}44`, background: `${activeColor}11` }}>LOCKED: {result.detected_artist}</span>}
+                    {result.detected_song && <span className="freq-tag" style={{ color: "#fde68a", borderColor: "rgba(253,230,138,0.4)" }}>TRACK: {result.detected_song}</span>}
+                    {overrideGenre && <span className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.4)" }}>OVERRIDE: {overrideGenre}</span>}
+                    {(!result.detected_artist && !result.detected_song && !overrideGenre) && (
+                       result.genres.map(g => (<span key={g} className="freq-tag" style={{ color: "rgba(180,140,80,0.7)", borderColor: `rgba(180,140,80,0.3)` }}>{g}</span>))
+                    )}
                   </div>
                 </div>
               </div>
