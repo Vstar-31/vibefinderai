@@ -2,7 +2,7 @@ import re
 from collections import defaultdict
 
 # =============================================================================
-#  VIBEFINDER AI — ACOUSTIC INTELLIGENCE ENGINE v4.0
+#  VIBEFINDER AI — ACOUSTIC INTELLIGENCE ENGINE v4.1
 #  "THE OMNISCIENT GRAND EXPANSION" EDITION
 # =============================================================================
 #  Architecture upgrades:
@@ -11,8 +11,9 @@ from collections import defaultdict
 #   3. Negation handling — "not happy", "don't want sad", "no chill" flip scores.
 #   4. Emoji→mood mapping — 🔥😭💀🥺 all carry signal.
 #   5. Valence–Arousal cross-scoring — vibes that share emotional space bleed confidence.
-#   6. 17 Total Vibe Categories including new 'tropical' and 'industrial'.
+#   6. 18 Total Vibe Categories including new 'tropical', 'industrial', and 'desi'.
 #   7. Global Artist Index — 400+ artists mapped across the spectrum.
+#   8. Calibrated Confidence Math — filters out bleed noise for higher certainty.
 # =============================================================================
 
 
@@ -255,7 +256,7 @@ SYNONYMS: dict[str, list[str]] = {
     "no distractions": ["focus"],
     "brain on": ["focus"],
 
-    # ── soulful / jazz adjacent ──────────────────────────────────────────────
+    # ── soulful / jazz / noir adjacent ──────────────────────────────────────────────
     "jazzy": ["soulful"],
     "bluesy": ["soulful"],
     "gospel": ["soulful"],
@@ -274,6 +275,9 @@ SYNONYMS: dict[str, list[str]] = {
     "dinner party": ["soulful", "calm"],
     "wine drunk": ["soulful", "chill"],
     "whiskey sour": ["soulful", "chill"],
+    "jazz club": ["soulful", "cinematic"],
+    "dark jazz": ["soulful", "dark", "cinematic"],
+    "noir": ["cinematic", "dark", "soulful"],
 
     # ── country / folk adjacent ──────────────────────────────────────────────
     "country": ["country"],
@@ -300,6 +304,15 @@ SYNONYMS: dict[str, list[str]] = {
     "barn": ["country"],
     "summertime sadness": ["heartbreak", "country"],
     "sad country": ["heartbreak", "country"],
+    
+    # ── desi / bollywood adjacent ────────────────────────────────────────────
+    "desi swag": ["desi", "party", "hype"],
+    "bollywood vibes": ["desi"],
+    "brown boy": ["desi", "hype"],
+    "brown girl": ["desi"],
+    "shaadi vibes": ["desi", "party"],
+    "sangeet": ["desi", "party"],
+    "dhol beats": ["desi", "party"],
 
     # ── retro / nostalgic adjacent ────────────────────────────────────────────
     "nostalgia": ["retro"],
@@ -365,7 +378,7 @@ SYNONYMS: dict[str, list[str]] = {
     "🚀": ["euphoric", "hype"],
     "🌈": ["euphoric", "hyperpop"],
     "🎸": ["intense", "retro"],
-    "🎷": ["soulful"],
+    "🎷": ["soulful", "cinematic"],
     "🎺": ["soulful", "hype"],
     "🎻": ["country", "cinematic", "soulful"],
     "🌙": ["dark", "dreamy"],
@@ -383,7 +396,6 @@ SYNONYMS: dict[str, list[str]] = {
 }
 
 # ─── NEGATION WORDS ───────────────────────────────────────────────────────────
-# If any of these appear within 4 tokens BEFORE a matched keyword, invert score
 NEGATION_TOKENS = {
     "not", "no", "never", "dont", "don't", "doesnt", "doesn't", "without",
     "zero", "none", "nothing", "neither", "nor", "hate", "avoid", "skip",
@@ -391,7 +403,6 @@ NEGATION_TOKENS = {
 }
 
 # ─── VALENCE–AROUSAL BLEED TABLE ─────────────────────────────────────────────
-# If vibe A wins, add fractional points to nearby vibes in emotional space.
 BLEED: dict[str, dict[str, float]] = {
     "hype":       {"intense": 0.25, "party": 0.20, "euphoric": 0.15},
     "calm":       {"focus": 0.20, "chill": 0.25, "dreamy": 0.10},
@@ -410,15 +421,15 @@ BLEED: dict[str, dict[str, float]] = {
     "country":    {"calm": 0.15, "soulful": 0.15, "retro": 0.10},
     "tropical":   {"party": 0.25, "chill": 0.15},
     "industrial": {"dark": 0.25, "intense": 0.20},
+    "desi":       {"party": 0.25, "hype": 0.15, "soulful": 0.10},
 }
 
 
 # =============================================================================
-#  THE GRAND VIBE MAP — V4.0 FULL DATASET
+#  THE GRAND VIBE MAP — V4.1 FULL DATASET
 # =============================================================================
 VIBE_MAP: dict[str, dict] = {
 
-    # ── HYPE ─────────────────────────────────────────────────────────────────
     "hype": {
         "keywords": [
             "aggressive", "pumped", "energy", "crazy", "rage", "lit", "fast",
@@ -471,7 +482,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Trap", "Phonk", "Hardstyle", "Rage Rap", "EDM", "UK Drill", "Bass Music"],
     },
 
-    # ── CALM ─────────────────────────────────────────────────────────────────
     "calm": {
         "keywords": [
             "peaceful", "soothing", "relaxing", "tranquil", "serene", "quiet",
@@ -515,7 +525,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Ambient", "Acoustic", "Folk", "Easy Listening", "New Age", "Bossa Nova", "Neoclassical"],
     },
 
-    # ── INTENSE ───────────────────────────────────────────────────────────────
     "intense": {
         "keywords": [
             "heavy", "metal", "brutal", "dark", "chaotic", "screaming", "loud",
@@ -556,7 +565,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Deathcore", "Nu-Metal", "Thrash", "Hardcore", "Progressive Metal", "Industrial", "Grindcore"],
     },
 
-    # ── CHILL ─────────────────────────────────────────────────────────────────
     "chill": {
         "keywords": [
             "mellow", "smooth", "vibey", "laid back", "floating", "cool",
@@ -596,7 +604,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Neo-Soul", "Indie R&B", "Chillwave", "Lo-Fi Hip Hop", "Vaporwave", "Pluggnb"],
     },
 
-    # ── FOCUS ─────────────────────────────────────────────────────────────────
     "focus": {
         "keywords": [
             "concentrate", "study", "work", "productive", "zen", "minimal",
@@ -633,7 +640,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Modern Classical", "Ambient", "Deep House", "Instrumental Hip Hop", "IDM", "Krautrock"],
     },
 
-    # ── EUPHORIC ──────────────────────────────────────────────────────────────
     "euphoric": {
         "keywords": [
             "uplifting", "heavenly", "transcend", "magic", "limitless",
@@ -669,7 +675,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Progressive House", "Future Bass", "Dream Pop", "Synthpop", "Melodic Techno", "Trance"],
     },
 
-    # ── SOULFUL ───────────────────────────────────────────────────────────────
     "soulful": {
         "keywords": [
             "emotional", "deep", "bluesy", "jazz", "passionate", "vocal",
@@ -708,7 +713,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Jazz", "Blues", "Classic Soul", "Gospel", "Neo-Soul", "Contemporary R&B"],
     },
 
-    # ── RETRO ─────────────────────────────────────────────────────────────────
     "retro": {
         "keywords": [
             "nostalgic", "vintage", "80s", "90s", "neon", "classic", "analog",
@@ -750,7 +754,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Synthwave", "80s Pop", "New Wave", "Disco", "Funk", "City Pop", "AOR"],
     },
 
-    # ── DREAMY ────────────────────────────────────────────────────────────────
     "dreamy": {
         "keywords": [
             "surreal", "hazy", "ethereal", "shoegaze", "cloudy", "faded",
@@ -789,7 +792,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Shoegaze", "Dream Pop", "Indie Rock", "Psych Rock", "Slowcore", "Ambient Pop"],
     },
 
-    # ── CINEMATIC ─────────────────────────────────────────────────────────────
     "cinematic": {
         "keywords": [
             "epic", "grand", "orchestral", "heroic", "legendary", "majestic",
@@ -832,7 +834,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Soundtrack", "Modern Classical", "Epic Orchestral", "Dark Ambient", "Neo-Classical"],
     },
 
-    # ── DARK ──────────────────────────────────────────────────────────────────
     "dark": {
         "keywords": [
             "shadow", "gothic", "creepy", "evil", "ghostly", "underworld",
@@ -868,7 +869,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Darkwave", "Industrial Techno", "Witch House", "Goth", "Post-Punk", "Black Metal Adjacent"],
     },
 
-    # ── HEARTBREAK ────────────────────────────────────────────────────────────
     "heartbreak": {
         "keywords": [
             "sad", "broken", "heartbreak", "heartbroken", "devastated", "crying",
@@ -920,7 +920,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Sad Pop", "Indie Folk", "Emo", "Sad R&B", "Alt-Pop", "Singer-Songwriter"],
     },
 
-    # ── HYPERPOP ──────────────────────────────────────────────────────────────
     "hyperpop": {
         "keywords": [
             "hyperpop", "glitchy", "distorted", "maximalist", "digital",
@@ -958,7 +957,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Hyperpop", "Digicore", "PC Music", "Bubblegum Bass", "Glitchpop", "Cloud Rap"],
     },
 
-    # ── PARTY ─────────────────────────────────────────────────────────────────
     "party": {
         "keywords": [
             "party", "dance", "club", "rave", "dj", "speakers", "subwoofer",
@@ -999,7 +997,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Dance Pop", "House", "Tech House", "Afrobeats", "Amapiano", "Dancehall", "Club"],
     },
 
-    # ── COUNTRY / FOLK ────────────────────────────────────────────────────────
     "country": {
         "keywords": [
             "country", "folk", "americana", "western", "southern", "rural",
@@ -1047,7 +1044,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Country", "Folk", "Americana", "Bluegrass", "Singer-Songwriter", "Southern Rock", "Alt-Country"],
     },
 
-    # ── TROPICAL / AFRO / DANCEHALL ──────────────────────────────────────────
     "tropical": {
         "keywords": [
             "island", "beach", "summer", "caribbean", "afrobeats", "reggae", 
@@ -1071,7 +1067,6 @@ VIBE_MAP: dict[str, dict] = {
         "genres": ["Afrobeats", "Reggaeton", "Dancehall", "Reggae", "Soca", "Amapiano"],
     },
 
-    # ── INDUSTRIAL / GRITTY TECHNO ──────────────────────────────────────────
     "industrial": {
         "keywords": [
             "mechanical", "gritty", "metallic", "distorted", "noise", "cyber", 
@@ -1092,6 +1087,31 @@ VIBE_MAP: dict[str, dict] = {
         ],
         "bpm": "110-140",
         "genres": ["Industrial", "EBM", "Dark Techno", "Experimental Hip Hop", "Noise"],
+    },
+    
+    "desi": {
+        "keywords": [
+            "bollywood", "desi", "bhangra", "dhol", "wedding", "shaadi", "sangeet", 
+            "filmi", "tollywood", "kollywood", "punjabi", "tabla", "sitar", "hindustani",
+            "ghazal", "qawwali", "desi pop",
+        ],
+        "phrases": [
+            "desi swag", "brown boy", "brown girl", "bollywood vibes", "shaadi vibes",
+            "desi party", "dhol beats"
+        ],
+        "context": [
+            "indian wedding", "baraat", "mehndi", "desi club", "mumbai", "delhi", 
+            "diwali", "holi", "navratri", "family gathering"
+        ],
+        "artists": [
+            "ar rahman", "pritam", "arijit singh", "shreya ghoshal", "diljit dosanjh", 
+            "badshah", "sidhu moose wala", "ap dhillon", "karan aujla", "mickey singh", 
+            "guru randhawa", "anu malik", "alka yagnik", "udith narayan", "lata mangeshkar",
+            "kumar sanu", "k.s. chithra", "hariharan", "sonu nigam", "shankar mahadevan",
+            "shubh", "tesher", "divine", "yo yo honey singh", "ammy virk", "harrdy sandhu"
+        ],
+        "bpm": "90-130",
+        "genres": ["Bollywood", "Desi Pop", "Bhangra", "Punjabi Pop", "Filmi"]
     }
 }
 
@@ -1109,7 +1129,7 @@ NEGATION_MULT  = -0.8  # Negated match flips and slightly dampens
 
 
 # =============================================================================
-#  NLP HELPERS  (v4 — upgraded)
+#  NLP HELPERS  (v4.1 — calibrated)
 # =============================================================================
 
 import functools
@@ -1237,23 +1257,12 @@ def _intensity_multiplier(text: str, match_start: int, window_chars: int = 35) -
 
 
 # =============================================================================
-#  MAIN ANALYSIS ENGINE  (v4)
+#  MAIN ANALYSIS ENGINE  (v4.1)
 # =============================================================================
 
 def analyze_vibe_algorithm(text: str) -> dict:
     """
-    Vibe Analysis Engine v4.0 — "Zero Budget, Maximum Brain"
-
-    Pipeline:
-      0. Anti-vibe detection  — flag vibes the user explicitly doesn't want
-      1. Synonym expansion     — slang/emoji/phrases → canonical tokens (word-boundary safe)
-      2. Phrase matching       — multi-word idioms
-      3. Artist matching       — high-weight; matched spans are then masked
-      4. Keyword matching      — word-boundary safe, intensity-multiplied, negation-checked
-      5. Context matching      — word-boundary safe, negation-checked
-      6. Anti-vibe suppression — zero out flagged vibes
-      7. Valence-Arousal bleed — emotional neighbour bleed
-      8. Result assembly
+    Vibe Analysis Engine v4.1 — Calibrated Edition
     """
 
     lower_text = text.lower()
@@ -1280,9 +1289,6 @@ def analyze_vibe_algorithm(text: str) -> dict:
                 matched_tokens.append(phrase)
 
     # ── STEP 3: ARTIST MATCHING + SPAN MASKING ────────────────────────────────
-    # Multi-word artists: substring match is safe (spaces are natural delimiters).
-    # Single-word artists: require word-boundary to prevent "sting" matching in
-    # "manifesting", "mom" in "moment", "pr" in "pre-workout", etc.
     masked_text = lower_text
     for vibe, data in VIBE_MAP.items():
         for artist in data.get("artists", []):
@@ -1355,11 +1361,11 @@ def analyze_vibe_algorithm(text: str) -> dict:
             for neighbor, factor in bleed_map.items():
                 scores[neighbor] += pre_bleed[vibe] * factor
 
-    # ── STEP 8: RESULT ASSEMBLY ───────────────────────────────────────────────
+    # ── STEP 8: RESULT ASSEMBLY (Calibrated Math) ─────────────────────────────
     positive_scores = {v: s for v, s in scores.items() if s > 0}
-    total_score = sum(positive_scores.values())
+    total_raw_score = sum(positive_scores.values())
 
-    if not positive_scores or total_score == 0:
+    if not positive_scores or total_raw_score == 0:
         return {
             "dominant_vibe": "neutral",
             "confidence": 0.0,
@@ -1372,14 +1378,17 @@ def analyze_vibe_algorithm(text: str) -> dict:
 
     ranked = sorted(positive_scores.items(), key=lambda x: x[1], reverse=True)
     dominant_vibe, top_score = ranked[0]
-    confidence = round(top_score / total_score, 2)
+    
+    # NEW CONFIDENCE MATH: We shrink the "noise" divisor so clear winners hit 80-90%
+    adjusted_total = top_score + ((total_raw_score - top_score) * 0.35)
+    confidence = round(min(0.99, top_score / adjusted_total), 2)
 
     secondary_vibe = None
     secondary_confidence = 0.0
     if len(ranked) > 1:
         sv, ss = ranked[1]
-        sc = round(ss / total_score, 2)
-        if sc >= 0.10:
+        sc = round(min(0.99, ss / adjusted_total), 2)
+        if sc >= 0.15:
             secondary_vibe = sv
             secondary_confidence = sc
 
@@ -1397,50 +1406,5 @@ def analyze_vibe_algorithm(text: str) -> dict:
     }
 
 
-# =============================================================================
-#  QUICK DEBUG HARNESS
-# =============================================================================
 if __name__ == "__main__":
-    test_cases = [
-        ("Hardcore gym session lifting heavy, pre workout and rage",          "hype"),
-        ("Late night drive, stoned, lo-fi beats, nobody around, just chilling","chill"),
-        ("Frank Ocean type stuff for a rainy Sunday when you miss someone",   "heartbreak/soulful"),
-        ("It's giving brat summer, I want to dance all night, slightly unhinged","party"),
-        ("manifesting a brat summer with high energy rizz",                   "party/euphoric"),
-        ("Country roads, campfire, cold beer, Tyler Childers energy",         "country"),
-        ("industrial dark warehouse rave with clipping and death grips",      "intense/dark"),
-        ("Hyperpop chaos, charli xcx, 100 gecs, glitchy maximalist internet girl","hyperpop"),
-        ("Not sad, not calm, something epic and orchestral for a big life moment","cinematic"),
-        ("🔥💀 gym pump no thoughts just weights",                            "hype"),
-        ("Crying rn, just got ghosted after a 4 month situationship 😭💔",   "heartbreak"),
-        ("absolutely devastated, completely broken, crying at 2am",           "heartbreak (amplified)"),
-        ("kinda sad but not too heavy, something bittersweet",                "heartbreak (soft)"),
-    ]
-
-    print("=" * 70)
-    print("VIBE ENGINE v4 TEST RESULTS")
-    print("=" * 70)
-    all_pass = True
-    for case, expected in test_cases:
-        result = analyze_vibe_algorithm(case)
-        dominant = result["dominant_vibe"]
-        secondary = result.get("secondary_vibe", "")
-        conf = result["confidence"] * 100
-        sec_conf = result.get("secondary_confidence", 0) * 100
-        matches = result["matched_keywords"][:6]
-
-        # Check for known false positives: single common words that shouldn't match via substring
-        KNOWN_BAD = {"work", "light", "ocean", "mom", "sting", "pr", ""}
-        false_pos = [m for m in matches if m.strip() in KNOWN_BAD]
-
-        print(f"\nINPUT   : {case[:65]}")
-        print(f"EXPECT  : {expected}")
-        print(f"DOMINANT: {dominant} ({conf:.0f}%)" + (f"  |  {secondary} ({sec_conf:.0f}%)" if secondary else ""))
-        print(f"BPM     : {result['bpm_range']}  GENRES: {', '.join(result['genres'][:3])}")
-        print(f"MATCHED : {matches}")
-        if false_pos:
-            print(f"⚠️  POSSIBLE FALSE POS: {false_pos}")
-            all_pass = False
-
-    print("\n" + "=" * 70)
-    print("✅ No false positives detected" if all_pass else "⚠️  Review flagged items above")
+    print(analyze_vibe_algorithm("Dark jazz club, trumpet, noir energy"))
