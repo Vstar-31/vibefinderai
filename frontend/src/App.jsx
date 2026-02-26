@@ -11,6 +11,7 @@ const IconX       = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="
 const IconWave    = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>;
 const IconDisc    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>;
 const IconFilter  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
+const IconRefresh = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>;
 
 /* ─── WAVEFORM VISUALISER ────────────────────────────────────── */
 function WaveformBars({ active, count = 28 }) {
@@ -404,6 +405,7 @@ function GlobalStyles() {
 export default function App() {
   const [token, setToken]             = useState(null);
   const [prompt, setPrompt]           = useState("");
+  const [lastPrompt, setLastPrompt]   = useState(""); // NEW: Tracks prompt changes for intelligent caching
   const [result, setResult]           = useState(null);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
@@ -412,7 +414,6 @@ export default function App() {
   const [authForm, setAuthForm]       = useState({ email: "", username: "", password: "" });
   const [vuLevel, setVuLevel]         = useState(0);
   
-  // Restored Artist Knob, Replaced Genre Knob with Nicheness
   const [knobs, setKnobs]             = useState({ artist: 50, nicheness: 50, bpm: 50 });
   const [trackLimit, setTrackLimit]   = useState(5); 
   
@@ -431,7 +432,8 @@ export default function App() {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
     euphoric: '#e879f9', soulful: '#fbbf24', retro: '#818cf8', dreamy: '#c084fc', cinematic: '#fb923c', 
     dark: '#9ca3af', heartbreak: '#f472b6', hyperpop: '#d946ef', party: '#ec4899', country: '#d97706',   
-    tropical: '#14b8a6', industrial: '#6b7280', desi: '#e11d48', neutral: '#d97706'
+    tropical: '#14b8a6', industrial: '#6b7280', desi: '#e11d48', neutral: '#d97706',
+    'Direct Search': '#facc15' 
   };
 
   const activeColor = result ? (vibeColors[useSecondaryVibe ? result.secondary_vibe : result.dominant_vibe] || vibeColors.neutral) : vibeColors.neutral;
@@ -503,13 +505,38 @@ export default function App() {
 
   const handleLogout = () => { setToken(null); setResult(null); setPrompt(""); setVuLevel(0); };
 
-  // FIX: Properly accept a target state so we can toggle in both directions!
-  const analyzeVibe = async (targetSecondaryState = useSecondaryVibe) => {
+  // FIX: The New Intelligent Cache Engine & Auto-Run Handler
+  const analyzeVibe = async (config = {}) => {
     if (!prompt.trim()) return;
     try {
       setLoading(true); setError("");
       
-      setUseSecondaryVibe(targetSecondaryState);
+      let finalSecondary = useSecondaryVibe;
+      let finalGenre = overrideGenre;
+      let finalArtist = overrideArtist;
+
+      // Did the user click a filter tag/button? If yes, apply those explicitly.
+      if (config.isFilterClick) {
+          if (config.targetSecondary !== undefined) finalSecondary = config.targetSecondary;
+          if (config.targetGenre !== undefined) finalGenre = config.targetGenre;
+      } else {
+          // It's a standard "Run Analysis" button click. 
+          // If they typed a brand new prompt, wipe the old result filters so it doesn't poison the new search!
+          if (prompt !== lastPrompt) {
+              finalSecondary = false;
+              // Only wipe override genre/artist if the Pro Mode menu is hidden (standard user).
+              if (!showOverrides) {
+                  finalGenre = "";
+                  finalArtist = "";
+              }
+          }
+      }
+
+      // Sync the cleaned state back to the UI instantly
+      setUseSecondaryVibe(finalSecondary);
+      setOverrideGenre(finalGenre);
+      setOverrideArtist(finalArtist);
+      setLastPrompt(prompt);
 
       const res = await fetch("/api/vibe/analyze", {
         method: "POST",
@@ -520,18 +547,35 @@ export default function App() {
           nicheness: Math.round(knobs.nicheness), 
           bpm_focus: Math.round(knobs.bpm),
           track_limit: trackLimit,
-          use_secondary_vibe: targetSecondaryState,
-          override_genre: overrideGenre.trim() || null,
-          override_artist: overrideArtist.trim() || null
+          use_secondary_vibe: finalSecondary,
+          override_genre: finalGenre.trim() || null,
+          override_artist: finalArtist.trim() || null
         }),
       });
+      
       if (res.status === 401) { handleLogout(); throw new Error("Session expired — re-authenticate"); }
-      if (!res.ok) throw new Error("Analysis failed");
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || "Analysis failed due to server error.");
+      }
+      
       const data = await res.json();
       setResult(data);
       setTimeout(() => { document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }); }, 150);
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
+  };
+
+  // FULL ENGINE KILL SWITCH
+  const resetEngine = () => {
+      setPrompt("");
+      setLastPrompt("");
+      setResult(null);
+      setOverrideGenre("");
+      setOverrideArtist("");
+      setUseSecondaryVibe(false);
+      setError("");
   };
 
   /* ── STYLES ── */
@@ -548,7 +592,7 @@ export default function App() {
     signalRow: { display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" },
     signalDot: (on) => ({ width: "7px", height: "7px", borderRadius: "50%", background: on ? activeColor : "rgba(80,50,10,0.5)", boxShadow: on ? `0 0 8px ${activeColor}` : "none", flexShrink: 0, transition: "background 0.3s, box-shadow 0.3s" }),
     signalLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)" },
-    errorBox: { display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "rgba(60,10,10,0.5)", border: "1px solid rgba(180,40,40,0.3)", borderRadius: "10px", color: "#f87171", fontSize: "12px", marginBottom: "20px" },
+    errorBox: { display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "rgba(60,10,10,0.5)", border: "1px solid rgba(180,40,40,0.3)", borderRadius: "10px", color: "#f87171", fontSize: "12px", marginBottom: "20px", lineHeight: "1.4" },
     textareaWrap: { position: "relative" },
     textarea: { width: "100%", height: "130px", background: "rgba(5,3,1,0.8)", border: "1px solid rgba(120,80,20,0.35)", borderRadius: "10px", padding: "16px", color: "#e8d5a3", fontFamily: "'DM Mono', monospace", fontSize: "14px", lineHeight: "1.6", outline: "none", transition: "border-color 0.2s, box-shadow 0.2s" },
     lockOverlay: { position: "absolute", inset: 0, background: "rgba(5,3,1,0.75)", backdropFilter: "blur(4px)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 },
@@ -637,7 +681,15 @@ export default function App() {
               </div>
 
               <div style={S.textareaWrap}>
-                <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={"Ex: Late night drive through rain-slicked streets, Travis Scott on the radio..."} style={S.textarea} disabled={!token || loading} onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }} onBlur={e => { e.target.style.borderColor = "rgba(120,80,20,0.35)"; e.target.style.boxShadow = "none"; }} />
+                <textarea 
+                    value={prompt} 
+                    onChange={(e) => setPrompt(e.target.value)} 
+                    placeholder={"Ex: Late night drive through rain-slicked streets, Travis Scott on the radio..."} 
+                    style={S.textarea} 
+                    disabled={!token || loading} 
+                    onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }} 
+                    onBlur={e => { e.target.style.borderColor = "rgba(120,80,20,0.35)"; e.target.style.boxShadow = "none"; }} 
+                />
                 {!token && <div style={S.lockOverlay}><button onClick={() => setShowAuthModal(true)} style={S.lockBtn}><IconLock /> Authentication Required</button></div>}
               </div>
 
@@ -683,6 +735,21 @@ export default function App() {
                 
                 {/* TRACK COUNT & RUN BUTTON CONTROLS */}
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  
+                  {/* ENGINE KILL SWITCH */}
+                  {result && (
+                      <button 
+                          onClick={resetEngine}
+                          disabled={loading}
+                          title="Clear all filters and drop results"
+                          style={{ background: "none", border: "none", color: "rgba(180,140,80,0.4)", fontSize: "10px", textTransform: "uppercase", cursor: "pointer", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: "4px", padding: "8px", transition: "color 0.2s" }}
+                          onMouseOver={e => e.currentTarget.style.color = "#ef4444"}
+                          onMouseOut={e => e.currentTarget.style.color = "rgba(180,140,80,0.4)"}
+                      >
+                          <IconRefresh /> Reset Engine
+                      </button>
+                  )}
+
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tracks:</span>
                     <div style={{ display: "flex", background: "rgba(10,5,2,0.6)", border: "1px solid rgba(120,80,20,0.3)", borderRadius: "6px", overflow: "hidden" }}>
@@ -708,7 +775,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button onClick={() => analyzeVibe(useSecondaryVibe)} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
+                  <button onClick={() => analyzeVibe()} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
                     {loading && token ? <><div style={{ width: "14px", height: "14px", border: "2px solid rgba(251,191,36,0.3)", borderTopColor: "#fbbf24", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Analyzing…</> : <><IconPlay /> Run Analysis</>}
                   </button>
                 </div>
@@ -731,17 +798,25 @@ export default function App() {
                   <div style={{ ...S.cardValue, color: activeColor }}>
                     {useSecondaryVibe ? result.secondary_vibe || result.dominant_vibe : result.dominant_vibe}
                   </div>
+                  
+                  {/* Visually show if we bypassed into direct search */}
+                  {result.dominant_vibe === 'Direct Search' && !useSecondaryVibe && (
+                     <div style={{ fontSize: "10px", background: "rgba(250,204,21,0.15)", color: "#facc15", padding: "4px 8px", borderRadius: "4px", border: "1px solid rgba(250,204,21,0.3)", marginTop: "4px" }}>
+                       FALLBACK MODE ACTIVE
+                     </div>
+                  )}
+
                   <ConfidenceMeter value={useSecondaryVibe ? result.secondary_confidence : result.confidence} vibeColor={activeColor} />
                   <div style={S.cardSub}>Confidence: {Math.round((useSecondaryVibe ? result.secondary_confidence : result.confidence) * 100)}%</div>
                   
-                  {/* FIX: BI-DIRECTIONAL PIVOT BUTTON */}
-                  {(result.secondary_vibe || useSecondaryVibe) && (
+                  {/* BI-DIRECTIONAL PIVOT BUTTON WITH AUTO-RUN */}
+                  {(result.secondary_vibe || useSecondaryVibe) && result.dominant_vibe !== 'Direct Search' && (
                     <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
                       <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>
                         {useSecondaryVibe ? "Primary Signature Available" : "Secondary Signature Detected"}
                       </span>
                       <button 
-                        onClick={() => analyzeVibe(!useSecondaryVibe)}
+                        onClick={() => analyzeVibe({ isFilterClick: true, targetSecondary: !useSecondaryVibe })}
                         className="dial-btn"
                         style={{ background: "rgba(20,10,5,0.6)", border: `1px dashed ${vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe]}66`, padding: "6px 12px", borderRadius: "6px", color: vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe] || "#e8d5a3", fontSize: "11px", fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "6px", width: "100%", justifyContent: "center" }}
                       >
@@ -767,14 +842,15 @@ export default function App() {
                     {result.detected_song && <span className="freq-tag" style={{ color: "#fde68a", borderColor: "rgba(253,230,138,0.4)" }}>TRACK: {result.detected_song}</span>}
                     {overrideGenre && <span className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.4)" }}>OVERRIDE: {overrideGenre}</span>}
                     
-                    {/* NEW: GENRE CHECKBOX BUTTONS */}
+                    {/* GENRE CHECKBOX BUTTONS WITH AUTO-RUN */}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", justifyContent: "center", marginTop: "4px" }}>
-                        {result.genres.map(g => {
+                        {result.genres.map((g, idx) => {
+                            if (result.dominant_vibe === 'Direct Search') return null;
                             const isSelected = overrideGenre.toLowerCase() === g.toLowerCase();
                             return (
                                 <button
-                                    key={g}
-                                    onClick={() => setOverrideGenre(isSelected ? "" : g)}
+                                    key={idx}
+                                    onClick={() => analyzeVibe({ isFilterClick: true, targetGenre: isSelected ? "" : g })}
                                     className="freq-tag dial-btn"
                                     title={isSelected ? "Remove Filter" : `Filter strictly by ${g}`}
                                     style={{
@@ -874,42 +950,44 @@ export default function App() {
                 </div>
               )}
 
-              {/* NEURAL BREAKDOWN WITH CLICKABLE FILTERS */}
-              <div className="panel-card" style={{ padding: "24px", marginTop: "16px" }}>
-                <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 11px, rgba(120,80,20,0.025) 11px, rgba(120,80,20,0.025) 12px)", pointerEvents: "none", borderRadius: "16px" }} />
-                <div style={{ position: "relative" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <span style={S.cardLabel}>Neural Match Breakdown</span>
+              {/* NEURAL BREAKDOWN */}
+              {result.dominant_vibe !== 'Direct Search' && (
+                <div className="panel-card" style={{ padding: "24px", marginTop: "16px" }}>
+                  <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 11px, rgba(120,80,20,0.025) 11px, rgba(120,80,20,0.025) 12px)", pointerEvents: "none", borderRadius: "16px" }} />
+                  <div style={{ position: "relative" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span style={S.cardLabel}>Neural Match Breakdown</span>
+                      </div>
+                    </div>
+                    <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px", width: "100%" }} />
+                    
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      {result.matched_keywords.length > 0
+                        ? result.matched_keywords.map((kw, idx) => {
+                            return (
+                              <span 
+                                key={idx} 
+                                style={{ 
+                                  padding: "5px 12px", 
+                                  background: "rgba(8,5,2,0.8)", 
+                                  border: `1px solid ${activeColor}33`, 
+                                  borderRadius: "6px", 
+                                  fontSize: "11px", 
+                                  fontFamily: "'DM Mono', monospace", 
+                                  color: "rgba(180,140,80,0.75)", 
+                                  letterSpacing: "0.05em", 
+                                }}>
+                                  #{kw}
+                              </span>
+                            );
+                          })
+                        : <span style={{ fontSize: "12px", color: "rgba(120,80,20,0.5)", fontStyle: "italic" }}>Universal mood detected — falling back to ambient processing.</span>
+                      }
                     </div>
                   </div>
-                  <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px", width: "100%" }} />
-                  
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                    {result.matched_keywords.length > 0
-                      ? result.matched_keywords.map(kw => {
-                          return (
-                            <span 
-                              key={kw} 
-                              style={{ 
-                                padding: "5px 12px", 
-                                background: "rgba(8,5,2,0.8)", 
-                                border: `1px solid ${activeColor}33`, 
-                                borderRadius: "6px", 
-                                fontSize: "11px", 
-                                fontFamily: "'DM Mono', monospace", 
-                                color: "rgba(180,140,80,0.75)", 
-                                letterSpacing: "0.05em", 
-                              }}>
-                                #{kw}
-                            </span>
-                          );
-                        })
-                      : <span style={{ fontSize: "12px", color: "rgba(120,80,20,0.5)", fontStyle: "italic" }}>Universal mood detected — falling back to ambient processing.</span>
-                    }
-                  </div>
                 </div>
-              </div>
+              )}
 
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "28px", opacity: 0.4 }}>
                 <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: activeColor }} /></div>
