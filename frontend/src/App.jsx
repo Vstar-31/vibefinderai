@@ -9,12 +9,11 @@ const IconMail    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="
 const IconX       = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
 const IconWave    = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>;
 
-/* ─── WAVEFORM VISUALISER (pure CSS bars) ────────────────────── */
-function WaveformBars({ active, count = 28 }) {
+/* ─── WAVEFORM VISUALISER ────────────────────────────────────── */
+function WaveformBars({ active, count = 28, vibeColor = "#d97706" }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "32px" }}>
       {Array.from({ length: count }).map((_, i) => {
-        const h = active ? Math.random() * 28 + 4 : 8;
         const delay = (i * 40) % 700;
         return (
           <div
@@ -25,15 +24,15 @@ function WaveformBars({ active, count = 28 }) {
               minHeight: "4px",
               maxHeight: "32px",
               borderRadius: "2px",
-              background: active
-                ? `hsl(${38 + i * 1.2}, 80%, ${48 + (i % 4) * 5}%)`
-                : "rgba(180,140,80,0.25)",
+              background: active ? vibeColor : "rgba(180,140,80,0.25)",
+              opacity: active ? 0.8 : 0.4,
               animationName: active ? "barDance" : "none",
               animationDuration: `${350 + (i % 7) * 80}ms`,
               animationDelay: `${delay}ms`,
               animationTimingFunction: "ease-in-out",
               animationIterationCount: "infinite",
               animationDirection: "alternate",
+              boxShadow: active ? `0 0 8px ${vibeColor}44` : "none",
             }}
           />
         );
@@ -49,7 +48,7 @@ function WaveformBars({ active, count = 28 }) {
 }
 
 /* ─── VU METER ───────────────────────────────────────────────── */
-function VuMeter({ value = 0 }) {
+function VuMeter({ value = 0, vibeColor = "#d97706" }) {
   const segments = 14;
   const lit = Math.round(value * segments);
   return (
@@ -64,9 +63,9 @@ function VuMeter({ value = 0 }) {
             height: `${10 + i * 1.5}px`,
             borderRadius: "2px",
             background: isLit
-              ? isRed ? "#ef4444" : isYellow ? "#f59e0b" : "#d97706"
-              : "rgba(120,80,20,0.2)",
-            boxShadow: isLit && !isRed ? "0 0 6px rgba(217,119,6,0.6)" : isLit ? "0 0 6px rgba(239,68,68,0.6)" : "none",
+              ? isRed ? "#ef4444" : isYellow ? "#f59e0b" : vibeColor
+              : "rgba(120,80,20,0.1)",
+            boxShadow: isLit ? `0 0 8px ${isRed ? '#ef4444' : vibeColor}66` : "none",
             transition: "background 0.1s, box-shadow 0.1s",
           }} />
         );
@@ -76,7 +75,7 @@ function VuMeter({ value = 0 }) {
 }
 
 /* ─── OSCILLOSCOPE CANVAS ────────────────────────────────────── */
-function Oscilloscope({ active }) {
+function Oscilloscope({ active, vibeColor = "#d97706" }) {
   const canvasRef = useRef(null);
   const frameRef  = useRef(null);
   const tRef      = useRef(0);
@@ -89,10 +88,10 @@ function Oscilloscope({ active }) {
 
     const draw = () => {
       ctx.clearRect(0, 0, W, H);
-      ctx.strokeStyle = active ? "rgba(217,119,6,0.85)" : "rgba(120,80,20,0.25)";
+      ctx.strokeStyle = active ? vibeColor : "rgba(120,80,20,0.25)";
       ctx.lineWidth = active ? 1.5 : 1;
       ctx.shadowBlur = active ? 8 : 0;
-      ctx.shadowColor = "rgba(217,119,6,0.6)";
+      ctx.shadowColor = vibeColor;
       ctx.beginPath();
       for (let x = 0; x < W; x++) {
         const t = tRef.current;
@@ -109,7 +108,7 @@ function Oscilloscope({ active }) {
     };
     draw();
     return () => cancelAnimationFrame(frameRef.current);
-  }, [active]);
+  }, [active, vibeColor]);
 
   return (
     <div style={{
@@ -128,7 +127,7 @@ function Oscilloscope({ active }) {
 }
 
 /* ─── VINYL SPINNER ──────────────────────────────────────────── */
-function Vinyl({ spinning }) {
+function Vinyl({ spinning, labelColor = "#d97706" }) {
   return (
     <div style={{
       width: "52px", height: "52px", borderRadius: "50%",
@@ -136,15 +135,16 @@ function Vinyl({ spinning }) {
       boxShadow: "0 0 0 2px rgba(180,140,80,0.3), 0 4px 16px rgba(0,0,0,0.7)",
       position: "relative", flexShrink: 0,
       animationName: spinning ? "spin" : "none",
-      animationDuration: "2.4s",
+      animationDuration: spinning ? "2.4s" : "0s",
       animationTimingFunction: "linear",
       animationIterationCount: "infinite",
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
       <div style={{
         width: "14px", height: "14px", borderRadius: "50%",
-        background: "radial-gradient(circle, #c8922a 40%, #7a4f12 100%)",
-        boxShadow: "0 0 6px rgba(200,146,42,0.5)",
+        background: `radial-gradient(circle, ${labelColor} 40%, #7a4f12 100%)`,
+        boxShadow: spinning ? `0 0 8px ${labelColor}88` : "none",
+        transition: "background 0.5s ease",
       }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -152,7 +152,7 @@ function Vinyl({ spinning }) {
 }
 
 /* ─── CONFIDENCE METER ───────────────────────────────────────── */
-function ConfidenceMeter({ value }) {
+function ConfidenceMeter({ value, vibeColor = "#d97706" }) {
   return (
     <div style={{ width: "100%" }}>
       <div style={{
@@ -164,9 +164,9 @@ function ConfidenceMeter({ value }) {
         <div style={{
           height: "100%",
           width: `${value * 100}%`,
-          background: "linear-gradient(90deg, #92400e, #d97706, #fbbf24)",
+          background: `linear-gradient(90deg, #92400e, ${vibeColor}, #fbbf24)`,
           borderRadius: "3px",
-          boxShadow: "0 0 10px rgba(217,119,6,0.5)",
+          boxShadow: `0 0 10px ${vibeColor}88`,
           transition: "width 1.2s cubic-bezier(0.23,1,0.32,1)",
         }} />
       </div>
@@ -228,6 +228,7 @@ function GlobalStyles() {
         min-height: 100vh;
         color: #e8d5a3;
         font-family: 'DM Mono', monospace;
+        overflow-x: hidden;
       }
 
       ::selection { background: rgba(217,119,6,0.25); color: #fde68a; }
@@ -332,7 +333,24 @@ export default function App() {
   const [vuLevel, setVuLevel]         = useState(0);
   const vuRef = useRef(null);
 
-  /* Animate VU meter while loading */
+  // Map vibes to specific profound colors to inject into the analog gear
+  const vibeColors = {
+    hype: '#f87171',      // red
+    calm: '#34d399',      // emerald
+    intense: '#f97316',   // orange
+    chill: '#60a5fa',     // blue
+    focus: '#22d3ee',     // cyan
+    euphoric: '#e879f9',  // fuchsia
+    soulful: '#fbbf24',   // amber
+    retro: '#818cf8',     // indigo
+    dreamy: '#c084fc',    // purple
+    neutral: '#d97706'    // default amber
+  };
+
+  // Derive current theme color based on result or default
+  const activeColor = result ? (vibeColors[result.dominant_vibe] || vibeColors.neutral) : vibeColors.neutral;
+
+  /* Animate VU meter while loading or based on result confidence */
   useEffect(() => {
     if (loading) {
       vuRef.current = setInterval(() => {
@@ -340,7 +358,7 @@ export default function App() {
       }, 120);
     } else {
       clearInterval(vuRef.current);
-      setVuLevel(result ? 0.72 : 0);
+      setVuLevel(result ? result.confidence : 0);
     }
     return () => clearInterval(vuRef.current);
   }, [loading, result]);
@@ -352,31 +370,53 @@ export default function App() {
     setLoading(true); setError("");
     try {
       if (!isLoginView) {
+        // Step 1: Register if in registration view
         const regRes = await fetch("/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: authForm.email, username: authForm.username, password: authForm.password }),
+          body: JSON.stringify({ 
+            email: authForm.email, 
+            username: authForm.username, 
+            password: authForm.password 
+          }),
         });
-        if (!regRes.ok) { const d = await regRes.json(); throw new Error(d.detail || "Registration failed"); }
+        if (!regRes.ok) { 
+          const d = await regRes.json(); 
+          throw new Error(d.detail || "Registration failed"); 
+        }
       }
+      
+      // Step 2: Acquire Token (Standard OAuth2 form-data pattern)
       const fd = new URLSearchParams();
-      fd.append("username", authForm.username); fd.append("password", authForm.password);
+      fd.append("username", authForm.username); 
+      fd.append("password", authForm.password);
+      
       const logRes = await fetch("/auth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: fd,
       });
+      
       if (!logRes.ok) throw new Error("Authentication failed — check credentials");
+      
       const data = await logRes.json();
       setToken(data.access_token);
       setShowAuthModal(false);
       setAuthForm({ email: "", username: "", password: "" });
-      setIsLoginView(true);
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
+      setIsLoginView(true); // Reset to login for next time
+    } catch (err) { 
+      setError(err.message); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
-  const handleLogout = () => { setToken(null); setResult(null); setPrompt(""); setVuLevel(0); };
+  const handleLogout = () => { 
+    setToken(null); 
+    setResult(null); 
+    setPrompt(""); 
+    setVuLevel(0); 
+  };
 
   const analyzeVibe = async () => {
     if (!prompt.trim()) return;
@@ -384,217 +424,88 @@ export default function App() {
       setLoading(true); setError("");
       const res = await fetch("/api/vibe/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { 
+          "Content-Type": "application/json", 
+          "Authorization": `Bearer ${token}` 
+        },
         body: JSON.stringify({ text: prompt }),
       });
-      if (res.status === 401) { handleLogout(); throw new Error("Session expired — re-authenticate"); }
+      
+      if (res.status === 401) { 
+        handleLogout(); 
+        throw new Error("Session expired — re-authenticate"); 
+      }
       if (!res.ok) throw new Error("Analysis failed");
+      
       const data = await res.json();
       setResult(data);
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
+    } catch (err) { 
+      setError(err.message); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   /* ── STYLES (inline for portability) ── */
   const S = {
-    root: {
-      minHeight: "100vh",
-      padding: "24px 16px 60px",
-      fontFamily: "'DM Mono', monospace",
-    },
+    root: { minHeight: "100vh", padding: "24px 16px 60px", fontFamily: "'DM Mono', monospace" },
     inner: { maxWidth: "860px", margin: "0 auto" },
-
-    /* Header */
-    header: {
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      paddingBottom: "24px",
-      borderBottom: "1px solid rgba(120,80,20,0.3)",
-      marginBottom: "32px",
-    },
+    header: { display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "24px", borderBottom: "1px solid rgba(120,80,20,0.3)", marginBottom: "32px" },
     logoWrap: { display: "flex", alignItems: "center", gap: "14px" },
     logoDisc: {
       width: "42px", height: "42px", borderRadius: "50%",
       background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008, #2e1a0a, #1a1008)",
       border: "2px solid rgba(180,140,80,0.4)",
-      boxShadow: "0 0 18px rgba(120,60,10,0.4), inset 0 0 10px rgba(0,0,0,0.5)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      flexShrink: 0,
+      boxShadow: `0 0 18px ${activeColor}33, inset 0 0 10px rgba(0,0,0,0.5)`,
+      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+      transition: "box-shadow 0.5s ease"
     },
-    logoDiscInner: {
-      width: "10px", height: "10px", borderRadius: "50%",
-      background: "radial-gradient(circle, #d97706, #7a4f12)",
-    },
-    logoText: {
-      fontFamily: "'Playfair Display', serif",
-      fontSize: "22px", fontWeight: 900,
-      color: "#e8d5a3",
-      letterSpacing: "-0.01em",
-      lineHeight: 1.1,
-    },
-    logoSub: {
-      fontSize: "10px",
-      fontFamily: "'DM Mono', monospace",
-      color: "rgba(180,140,80,0.5)",
-      letterSpacing: "0.25em",
-      textTransform: "uppercase",
-    },
-
-    /* Auth btn */
+    logoDiscInner: { width: "10px", height: "10px", borderRadius: "50%", background: `radial-gradient(circle, ${activeColor}, #7a4f12)`, transition: "background 0.5s ease" },
+    logoText: { fontFamily: "'Playfair Display', serif", fontSize: "22px", fontWeight: 900, color: "#e8d5a3", letterSpacing: "-0.01em", lineHeight: 1.1 },
+    logoSub: { fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)", letterSpacing: "0.25em", textTransform: "uppercase" },
     authBtn: (hasToken) => ({
-      display: "flex", alignItems: "center", gap: "8px",
-      padding: "8px 18px",
-      borderRadius: "8px",
-      fontFamily: "'DM Mono', monospace",
-      fontSize: "12px",
-      fontWeight: 500,
-      letterSpacing: "0.08em",
-      textTransform: "uppercase",
-      cursor: "pointer",
-      transition: "all 0.2s",
+      display: "flex", alignItems: "center", gap: "8px", padding: "8px 18px", borderRadius: "8px", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s",
       background: hasToken ? "rgba(40,20,5,0.8)" : "linear-gradient(135deg, #92400e, #d97706)",
       color: hasToken ? "rgba(180,140,80,0.7)" : "#fef3c7",
       border: hasToken ? "1px solid rgba(120,80,20,0.4)" : "1px solid rgba(251,191,36,0.3)",
       boxShadow: hasToken ? "none" : "0 0 20px rgba(217,119,6,0.25)",
     }),
-
-    /* Signal status */
     signalRow: { display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" },
     signalDot: (on) => ({
       width: "7px", height: "7px", borderRadius: "50%",
-      background: on ? "#d97706" : "rgba(80,50,10,0.5)",
-      boxShadow: on ? "0 0 8px rgba(217,119,6,0.8)" : "none",
-      flexShrink: 0,
+      background: on ? activeColor : "rgba(80,50,10,0.5)",
+      boxShadow: on ? `0 0 8px ${activeColor}` : "none",
+      flexShrink: 0, transition: "background 0.3s, box-shadow 0.3s"
     }),
     signalLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)" },
-
-    /* Error */
-    errorBox: {
-      display: "flex", alignItems: "center", gap: "10px",
-      padding: "12px 16px",
-      background: "rgba(60,10,10,0.5)",
-      border: "1px solid rgba(180,40,40,0.3)",
-      borderRadius: "10px",
-      color: "#f87171",
-      fontSize: "12px",
-      marginBottom: "20px",
-    },
-
-    /* Textarea */
+    errorBox: { display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "rgba(60,10,10,0.5)", border: "1px solid rgba(180,40,40,0.3)", borderRadius: "10px", color: "#f87171", fontSize: "12px", marginBottom: "20px" },
     textareaWrap: { position: "relative" },
     textarea: {
-      width: "100%",
-      height: "130px",
-      background: "rgba(5,3,1,0.8)",
-      border: "1px solid rgba(120,80,20,0.35)",
-      borderRadius: "10px",
-      padding: "16px",
-      color: "#e8d5a3",
-      fontFamily: "'DM Mono', monospace",
-      fontSize: "14px",
-      lineHeight: "1.6",
-      outline: "none",
-      transition: "border-color 0.2s, box-shadow 0.2s",
+      width: "100%", height: "130px", background: "rgba(5,3,1,0.8)", border: "1px solid rgba(120,80,20,0.35)", borderRadius: "10px", padding: "16px", color: "#e8d5a3", fontFamily: "'DM Mono', monospace", fontSize: "14px", lineHeight: "1.6", outline: "none", transition: "border-color 0.2s, box-shadow 0.2s",
     },
     lockOverlay: {
-      position: "absolute", inset: 0,
-      background: "rgba(5,3,1,0.75)",
-      backdropFilter: "blur(4px)",
-      borderRadius: "10px",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 10,
+      position: "absolute", inset: 0, background: "rgba(5,3,1,0.75)", backdropFilter: "blur(4px)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10,
     },
     lockBtn: {
-      display: "flex", alignItems: "center", gap: "8px",
-      padding: "10px 22px",
-      background: "rgba(20,12,4,0.9)",
-      border: "1px solid rgba(180,120,40,0.35)",
-      borderRadius: "30px",
-      color: "rgba(180,140,80,0.8)",
-      fontSize: "12px",
-      cursor: "pointer",
-      letterSpacing: "0.1em",
-      textTransform: "uppercase",
-      fontFamily: "'DM Mono', monospace",
-      transition: "border-color 0.2s, color 0.2s",
+      display: "flex", alignItems: "center", gap: "8px", padding: "10px 22px", background: "rgba(20,12,4,0.9)", border: "1px solid rgba(180,120,40,0.35)", borderRadius: "30px", color: "rgba(180,140,80,0.8)", fontSize: "12px", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "'DM Mono', monospace", transition: "border-color 0.2s, color 0.2s",
     },
-
-    /* Run btn */
     runBtn: (disabled) => ({
-      display: "flex", alignItems: "center", gap: "10px",
-      padding: "12px 28px",
-      background: disabled
-        ? "rgba(50,30,8,0.4)"
-        : "linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%)",
+      display: "flex", alignItems: "center", gap: "10px", padding: "12px 28px",
+      background: disabled ? "rgba(50,30,8,0.4)" : "linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%)",
       border: "1px solid " + (disabled ? "rgba(80,50,10,0.3)" : "rgba(251,191,36,0.3)"),
-      borderRadius: "10px",
-      color: disabled ? "rgba(120,80,20,0.5)" : "#fef3c7",
-      fontFamily: "'DM Mono', monospace",
-      fontSize: "12px",
-      fontWeight: 500,
-      letterSpacing: "0.15em",
-      textTransform: "uppercase",
-      cursor: disabled ? "not-allowed" : "pointer",
-      boxShadow: disabled ? "none" : "0 4px 20px rgba(180,100,10,0.3)",
-      transition: "all 0.2s",
+      borderRadius: "10px", color: disabled ? "rgba(120,80,20,0.5)" : "#fef3c7", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.15em", textTransform: "uppercase", cursor: disabled ? "not-allowed" : "pointer", boxShadow: disabled ? "none" : `0 4px 20px ${activeColor}44`, transition: "all 0.2s",
     }),
-
-    /* Result cards */
-    grid: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-      gap: "16px",
-    },
-    resultCard: {
-      padding: "24px",
-      display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
-      gap: "8px",
-    },
+    grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" },
+    resultCard: { padding: "24px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "8px" },
     cardLabel: { fontSize: "10px", letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(180,140,80,0.45)" },
-    cardValue: {
-      fontFamily: "'Playfair Display', serif",
-      fontSize: "30px", fontWeight: 700,
-      color: "#fde68a",
-      textShadow: "0 0 20px rgba(217,119,6,0.3)",
-    },
+    cardValue: { fontFamily: "'Playfair Display', serif", fontSize: "30px", fontWeight: 700, color: "#fde68a", textShadow: `0 0 20px ${activeColor}44` },
     cardSub: { fontSize: "11px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em" },
-
-    /* Modal */
-    modalOverlay: {
-      position: "fixed", inset: 0, zIndex: 50,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      padding: "16px",
-      background: "rgba(4,2,1,0.88)",
-      backdropFilter: "blur(8px)",
-    },
-    modal: {
-      width: "100%", maxWidth: "420px",
-      padding: "36px 32px 28px",
-      position: "relative",
-    },
-    modalTitle: {
-      fontFamily: "'Playfair Display', serif",
-      fontSize: "24px", fontWeight: 900,
-      color: "#fde68a",
-      marginBottom: "8px",
-    },
+    modalOverlay: { position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", background: "rgba(4,2,1,0.88)", backdropFilter: "blur(8px)" },
+    modal: { width: "100%", maxWidth: "420px", padding: "36px 32px 28px", position: "relative" },
+    modalTitle: { fontFamily: "'Playfair Display', serif", fontSize: "24px", fontWeight: 900, color: "#fde68a", marginBottom: "8px" },
     modalSub: { fontSize: "11px", color: "rgba(180,140,80,0.45)", letterSpacing: "0.1em", marginBottom: "28px" },
     formLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)", marginBottom: "6px", display: "block" },
-    submitBtn: {
-      width: "100%", padding: "12px",
-      marginTop: "24px",
-      background: "linear-gradient(135deg, #92400e, #d97706)",
-      border: "1px solid rgba(251,191,36,0.25)",
-      borderRadius: "8px",
-      color: "#fef3c7",
-      fontFamily: "'DM Mono', monospace",
-      fontSize: "12px",
-      fontWeight: 500,
-      letterSpacing: "0.18em",
-      textTransform: "uppercase",
-      cursor: "pointer",
-      boxShadow: "0 4px 20px rgba(180,100,10,0.3)",
-      transition: "opacity 0.2s",
-    },
+    submitBtn: { width: "100%", padding: "12px", marginTop: "24px", background: "linear-gradient(135deg, #92400e, #d97706)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "8px", color: "#fef3c7", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.18em", textTransform: "uppercase", cursor: "pointer", boxShadow: "0 4px 20px rgba(180,100,10,0.3)", transition: "opacity 0.2s" },
   };
 
   return (
@@ -613,7 +524,6 @@ export default function App() {
                 <IconX />
               </button>
 
-              {/* decorative groove lines */}
               <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(120,80,20,0.04) 5px, rgba(120,80,20,0.04) 6px)", borderRadius: "16px", pointerEvents: "none" }} />
 
               <div style={{ position: "relative" }}>
@@ -676,7 +586,7 @@ export default function App() {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-              <Oscilloscope active={loading} />
+              <Oscilloscope active={loading} vibeColor={activeColor} />
               <button
                 onClick={token ? handleLogout : () => setShowAuthModal(true)}
                 className="dial-btn"
@@ -698,11 +608,9 @@ export default function App() {
 
           {/* ── INPUT PANEL ─── */}
           <div className="panel-card screws" style={{ padding: "28px", marginBottom: "24px" }}>
-            {/* horizontal groove lines */}
             <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(120,80,20,0.03) 7px, rgba(120,80,20,0.03) 8px)", pointerEvents: "none", borderRadius: "16px" }} />
 
             <div style={{ position: "relative" }}>
-              {/* Panel top row */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px", flexWrap: "wrap", gap: "12px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                   <div style={{ display: "flex", gap: "6px" }}>
@@ -715,18 +623,17 @@ export default function App() {
                     <div style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase" }}>// Acoustic descriptor input</div>
                   </div>
                 </div>
-                <VuMeter value={vuLevel} />
+                <VuMeter value={vuLevel} vibeColor={activeColor} />
               </div>
 
-              {/* Textarea */}
               <div style={S.textareaWrap}>
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder={"Ex: Late night drive through rain-slicked streets, JBL 4343s, single malt in hand..."}
+                  placeholder={"Ex: Late night drive through rain-slicked streets, Travis Scott on the radio..."}
                   style={S.textarea}
                   disabled={!token || loading}
-                  onFocus={e => { e.target.style.borderColor = "rgba(217,119,6,0.6)"; e.target.style.boxShadow = "0 0 0 2px rgba(217,119,6,0.12)"; }}
+                  onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }}
                   onBlur={e => { e.target.style.borderColor = "rgba(120,80,20,0.35)"; e.target.style.boxShadow = "none"; }}
                 />
                 {!token && (
@@ -738,14 +645,13 @@ export default function App() {
                 )}
               </div>
 
-              {/* Bottom row */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", flexWrap: "wrap", gap: "12px" }}>
                 <div style={S.signalRow}>
                   <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
                     <div style={S.signalDot(!!token)} className={token ? "pulsing" : ""} />
                     <span style={S.signalLabel}>{token ? "Signal Active" : "No Signal"}</span>
                   </div>
-                  <WaveformBars active={loading} count={22} />
+                  <WaveformBars active={loading} count={22} vibeColor={activeColor} />
                 </div>
 
                 <button
@@ -766,29 +672,26 @@ export default function App() {
           {/* ── RESULTS ─── */}
           {result && (
             <div className="animate-in">
-              {/* Results header */}
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", paddingLeft: "4px" }}>
-                <div style={{ width: "24px", height: "1px", background: "rgba(217,119,6,0.5)" }} />
+                <div style={{ width: "24px", height: "1px", background: `${activeColor}88` }} />
                 <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)" }}>Analysis Complete</span>
-                <div style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, rgba(217,119,6,0.4), transparent)" }} />
+                <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}66, transparent)` }} />
               </div>
 
               <div style={S.grid}>
-                {/* Dominant Vibe */}
                 <div className="panel-card" style={S.resultCard}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
                     <IconWave />
                     <span style={S.cardLabel}>Dominant Vibe</span>
                   </div>
-                  <div style={S.cardValue}>{result.dominant_vibe}</div>
-                  <ConfidenceMeter value={result.confidence} />
+                  <div style={{ ...S.cardValue, color: activeColor }}>{result.dominant_vibe}</div>
+                  <ConfidenceMeter value={result.confidence} vibeColor={activeColor} />
                   <div style={S.cardSub}>Confidence: {Math.round(result.confidence * 100)}%</div>
                 </div>
 
-                {/* BPM */}
                 <div className="panel-card" style={S.resultCard}>
                   <div style={{ marginBottom: "4px" }}>
-                    <Vinyl spinning={true} />
+                    <Vinyl spinning={true} labelColor={activeColor} />
                   </div>
                   <span style={S.cardLabel}>Target Tempo</span>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
@@ -798,38 +701,28 @@ export default function App() {
                   <div style={S.cardSub}>Rhythmic Pulse</div>
                 </div>
 
-                {/* Genres */}
                 <div className="panel-card" style={{ ...S.resultCard, justifyContent: "flex-start", paddingTop: "28px" }}>
                   <span style={S.cardLabel}>Genre Mapping</span>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center", marginTop: "10px" }}>
                     {result.genres.map(g => (
-                      <span key={g} className="freq-tag">{g}</span>
+                      <span key={g} className="freq-tag" style={{ color: activeColor, borderColor: `${activeColor}44` }}>{g}</span>
                     ))}
                   </div>
                 </div>
               </div>
 
-              {/* Keyword breakdown */}
               <div className="panel-card" style={{ padding: "24px", marginTop: "16px" }}>
                 <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 11px, rgba(120,80,20,0.025) 11px, rgba(120,80,20,0.025) 12px)", pointerEvents: "none", borderRadius: "16px" }} />
                 <div style={{ position: "relative" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
                     <span style={S.cardLabel}>Neural Match Breakdown</span>
-                    <div style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, rgba(120,80,20,0.5), transparent)" }} />
+                    <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)` }} />
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                     {result.matched_keywords.length > 0
                       ? result.matched_keywords.map(kw => (
                         <span key={kw} style={{
-                          padding: "5px 12px",
-                          background: "rgba(8,5,2,0.8)",
-                          border: "1px solid rgba(120,80,20,0.3)",
-                          borderRadius: "6px",
-                          fontSize: "11px",
-                          fontFamily: "'DM Mono', monospace",
-                          color: "rgba(180,140,80,0.75)",
-                          letterSpacing: "0.05em",
-                          transition: "border-color 0.2s",
+                          padding: "5px 12px", background: "rgba(8,5,2,0.8)", border: `1px solid ${activeColor}33`, borderRadius: "6px", fontSize: "11px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.75)", letterSpacing: "0.05em", transition: "border-color 0.2s",
                         }}>
                           #{kw}
                         </span>
@@ -840,16 +733,15 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Footer tape reel decorative strip */}
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "28px", opacity: 0.4 }}>
                 <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "rgba(120,80,20,0.6)" }} />
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: activeColor }} />
                 </div>
                 <div style={{ flex: 1, height: "6px", borderRadius: "3px", background: "rgba(80,50,10,0.4)", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: "100%", background: "repeating-linear-gradient(90deg, rgba(120,80,20,0.4) 0px, rgba(120,80,20,0.4) 2px, transparent 2px, transparent 10px)" }} />
+                  <div style={{ height: "100%", width: "100%", background: `repeating-linear-gradient(90deg, ${activeColor}33 0px, ${activeColor}33 2px, transparent 2px, transparent 10px)` }} />
                 </div>
                 <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "rgba(120,80,20,0.6)" }} />
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: activeColor }} />
                 </div>
               </div>
             </div>
