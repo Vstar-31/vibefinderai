@@ -27,3 +27,6 @@ filesystem.md
 phases.md
 architecture.md
 backend/vibefinder_engine.log
+analysis.md
+backend/batch_tester.py
+backend/qa_batch_results.log

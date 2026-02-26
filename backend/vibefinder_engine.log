@@ -26,3 +26,24 @@
 2026-02-27 01:49:38 [INFO] VibeFinderEngine: Engine shutting down. Disconnecting database...
 2026-02-27 01:49:39 [INFO] VibeFinderEngine: Initializing Supabase (Prisma) connection...
 2026-02-27 01:49:40 [INFO] VibeFinderEngine: Database connected successfully. Engine online.
+2026-02-27 01:50:12 [INFO] VibeFinderEngine: --- NEW REQUEST: Analyzing Vibe ---
+2026-02-27 01:50:12 [INFO] VibeFinderEngine: Prompt: 'weeknd vibes on weekend' | Limit: 20
+2026-02-27 01:50:14 [INFO] VibeFinderEngine: Standard AI Resolution: Dominant Genre -> Lo-Fi
+2026-02-27 01:50:14 [WARNING] VibeFinderEngine: Engine Confidence Critical (0.0 < 0.25). Triggering Fallback Protocol!
+2026-02-27 01:50:15 [INFO] VibeFinderEngine: Fallback Search returned 100 tracks.
+2026-02-27 01:50:15 [INFO] VibeFinderEngine: Executing mathematical sorting and diversity guards...
+2026-02-27 01:50:15 [INFO] VibeFinderEngine: Scraping Apple Music previews concurrently for top 20 tracks...
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'São Paulo (feat. Anitta)' by 'The Weeknd': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'The Weekend' by 'Modern Baseball': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Weekend' by 'Feng': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Weekend Wars' by 'MGMT': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Weekend (feat. Miguel)' by 'Mac Miller': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Hymn for the Weekend' by 'Coldplay': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Run' by 'Vampire Weekend': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'False Alarm' by 'The Weeknd': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'Vibes Weekend' by 'Kranium': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [WARNING] VibeFinderEngine: iTunes API preview fetch failed for 'BRAZY WEEKEND' by 'Lucki': HTTP Error 403: Forbidden
+2026-02-27 01:50:16 [INFO] VibeFinderEngine: --- SUCCESS: Returning 20 tracks to client ---
+2026-02-27 01:54:10 [INFO] VibeFinderEngine: Engine shutting down. Disconnecting database...
+2026-02-27 01:54:11 [INFO] VibeFinderEngine: Initializing Supabase (Prisma) connection...
+2026-02-27 01:54:13 [INFO] VibeFinderEngine: Database connected successfully. Engine online.
