@@ -6,7 +6,7 @@ services:
     startCommand: bash start.sh
     envVars:
       - key: PYTHON_VERSION
-        value: 3.13
+        value: 3.12.3
       - key: PYTHONUNBUFFERED
         value: 1
       - key: PRISMA_CACHE_DIR
