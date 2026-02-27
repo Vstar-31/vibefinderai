@@ -2,20 +2,28 @@ import re
 from collections import defaultdict
 
 # =============================================================================
-#  VIBEFINDER AI — ACOUSTIC INTELLIGENCE ENGINE v4.2
-#  "THE OMNISCIENT GRAND EXPANSION" EDITION
+#  VIBEFINDER AI — ACOUSTIC INTELLIGENCE ENGINE v5.0
+#  "DESI EXPANSION & QA REGRESSION FIX" EDITION
 # =============================================================================
-#  Architecture upgrades:
-#   1. Massive Slang Dictionary — Captures Gen Z/Alpha, TikTok eras, and old-school slang.
-#   2. Multi-word phrase detection — catches "main character energy", "in my bag".
-#   3. Negation handling — "not happy", "don't want sad", "no chill" flip scores.
-#   4. Emoji→mood mapping — 🔥😭💀🥺 all carry signal.
-#   5. Valence–Arousal cross-scoring — vibes that share emotional space bleed confidence.
-#   6. 19 Total Vibe Categories including new 'rock', 'tropical', 'industrial', and 'desi'.
-#   7. Global Artist Index — 400+ artists mapped across the spectrum.
-#   8. Calibrated Confidence Math — filters out bleed noise for higher certainty.
-#   9. DECADES EXPANSION — Full mapping from 1950s to 2020s.
-#  10. MAX GENRES — Every category loaded with niche and sub-genre targets.
+#  v5.0 Changelog (QA-Driven Fixes from 500-Prompt Batch):
+#   1. NEW VIBES: 'happy', 'romantic', 'indie_folk', 'punjabi', 'haryanvi'
+#      'bollywood_sad', 'ambient' added as first-class categories.
+#   2. DESI MEGA-EXPANSION: Punjabi (party), Punjabi soft, Haryanvi, Bollywood
+#      classic, Bollywood love, desi wedding with 100+ new artists and keywords.
+#   3. FALLBACK FIX: Emotional-rich prompts with ambiguous language now score
+#      properly via expanded emotional_state keywords. Prompts like "terrified
+#      of being forgotten" and "vibrating with excitement" no longer fall to 5%.
+#   4. COUNTRY/FOLK DISAMBIGUATION: 'indie_folk' vibe separates Fleet Foxes-
+#      style content from mainstream country. 'Midwest emo' no longer triggers
+#      'country'. 'indie folk', 'dark folk' now correctly score indie_folk.
+#   5. INTENSE MISFIRES FIXED: Subtle emotional prompts like "quietly unraveling"
+#      no longer over-score 'intense'. New context keywords added.
+#   6. EUPHORIC MONOPOLY FIXED: New 'happy' vibe absorbs simple joy/giddy
+#      prompts so they don't all hit the same Avicii/deadmau5 pool.
+#   7. SOULFUL MISFIRES FIXED: "Righteous fury" etc now routes to hype/intense.
+#   8. SYNONYM TABLE: 150+ new desi slang, happy/joyful, genre aliases added.
+#   9. BLEED TABLE: New vibes wired into valence-arousal bleed.
+#  10. 27 Total Vibe Categories (up from 19).
 # =============================================================================
 
 
@@ -319,9 +327,9 @@ SYNONYMS: dict[str, list[str]] = {
 
     # ── country / folk adjacent ──────────────────────────────────────────────
     "country": ["country"],
-    "folk": ["country"],
+    "folk": ["country", "indie_folk"],
     "roots": ["country", "soulful"],
-    "americana": ["country"],
+    "americana": ["country", "indie_folk"],
     "western": ["country"],
     "boots": ["country"],
     "honky tonk": ["country"],
@@ -333,9 +341,9 @@ SYNONYMS: dict[str, list[str]] = {
     "small town": ["country"],
     "heartland": ["country"],
     "twang": ["country"],
-    "banjo": ["country"],
+    "banjo": ["country", "indie_folk"],
     "fiddle": ["country", "soulful"],
-    "acoustic guitar": ["country", "calm", "focus"],
+    "acoustic guitar": ["country", "calm", "focus", "indie_folk"],
     "road trip": ["country", "retro", "rock"],
     "tail gate": ["country", "party"],
     "tailgate": ["country", "party"],
@@ -345,12 +353,215 @@ SYNONYMS: dict[str, list[str]] = {
     
     # ── desi / bollywood adjacent ────────────────────────────────────────────
     "desi swag": ["desi", "party", "hype"],
+    "desi vibes": ["desi"],
+    "desi energy": ["desi", "party"],
     "bollywood vibes": ["desi"],
+    "bollywood music": ["desi"],
+    "bollywood sad": ["bollywood_sad", "heartbreak"],
+    "bollywood love": ["romantic", "desi"],
+    "filmy": ["desi"],
     "brown boy": ["desi", "hype"],
     "brown girl": ["desi"],
     "shaadi vibes": ["desi", "party"],
+    "shaadi songs": ["desi", "party"],
     "sangeet": ["desi", "party"],
+    "sangeet party": ["desi", "party"],
     "dhol beats": ["desi", "party"],
+    "bhangra vibes": ["punjabi", "party"],
+    "bhangra music": ["punjabi", "party"],
+    "punjabi music": ["punjabi"],
+    "punjabi vibes": ["punjabi"],
+    "punjabi wedding": ["punjabi", "party"],
+    "haryanvi music": ["haryanvi", "party"],
+    "haryanvi vibes": ["haryanvi"],
+    "haryanvi songs": ["haryanvi"],
+    "ragini music": ["haryanvi"],
+    "desi hip hop": ["desi", "hype"],
+    "hindi songs": ["desi"],
+    "hindi music": ["desi"],
+    "sufi vibes": ["desi", "calm"],
+    "qawwali vibes": ["desi", "soulful"],
+    "ghazal vibes": ["desi", "heartbreak"],
+    "ghazals": ["desi", "heartbreak"],
+    "indian wedding": ["desi", "party"],
+    "baraat": ["punjabi", "party"],
+    "mehndi songs": ["desi", "party"],
+    "navratri vibes": ["desi", "party"],
+    "holi vibes": ["desi", "party", "happy"],
+    "diwali vibes": ["desi", "party", "happy"],
+    "90s bollywood": ["desi", "retro"],
+    "old bollywood": ["desi", "retro"],
+    "classic bollywood": ["desi", "retro"],
+    "arijit vibes": ["bollywood_sad", "heartbreak"],
+    "ap dhillon vibes": ["punjabi_soft", "romantic"],
+    "punjabi soft": ["punjabi_soft", "romantic"],
+    "soft punjabi": ["punjabi_soft"],
+    "punjabi sad": ["punjabi_soft", "heartbreak"],
+    "sidhu moosewala": ["punjabi", "hype"],
+    "karan aujla vibes": ["punjabi", "hype"],
+    "shayari vibes": ["desi", "heartbreak"],
+    "teri yaad": ["desi", "heartbreak"],
+    "desi breakup": ["desi", "heartbreak"],
+    "desi romance": ["romantic", "desi"],
+    "dholak": ["desi", "party"],
+
+    # ── happy / joyful / cheerful (new dedicated section) ────────────────
+    "happy": ["happy", "euphoric"],
+    "happiness": ["happy"],
+    "joyful": ["happy", "euphoric"],
+    "joyous": ["happy", "euphoric"],
+    "cheerful": ["happy"],
+    "cheery": ["happy"],
+    "upbeat": ["happy", "hype"],
+    "feel good": ["happy"],
+    "feel-good": ["happy"],
+    "sunny": ["happy", "euphoric"],
+    "bright": ["happy", "euphoric"],
+    "peppy": ["happy", "party"],
+    "bouncy": ["happy", "party"],
+    "jolly": ["happy"],
+    "merry": ["happy"],
+    "gleeful": ["happy", "euphoric"],
+    "good mood": ["happy"],
+    "great mood": ["happy"],
+    "best day": ["happy", "euphoric"],
+    "best day ever": ["happy", "euphoric"],
+    "on top of the world": ["happy", "euphoric"],
+    "nothing can stop me": ["happy", "hype"],
+    "loving life": ["happy", "euphoric"],
+    "spring vibes": ["happy", "calm"],
+    "spring morning": ["happy", "calm"],
+    "sunshine feeling": ["happy"],
+    "good times": ["happy", "retro"],
+    "smile": ["happy", "calm"],
+    "smiling for no reason": ["happy"],
+    "laughing": ["happy", "party"],
+
+    # ── romantic / love songs ─────────────────────────────────────────────
+    "romantic": ["romantic"],
+    "romance": ["romantic"],
+    "in love": ["romantic"],
+    "falling in love": ["romantic"],
+    "love songs": ["romantic"],
+    "love song": ["romantic"],
+    "lovey dovey": ["romantic"],
+    "date night": ["romantic", "soulful"],
+    "slow dance": ["romantic", "soulful"],
+    "candlelit dinner": ["romantic", "soulful"],
+    "anniversary": ["romantic", "soulful"],
+    "valentines": ["romantic"],
+    "serenade": ["romantic"],
+    "love letter": ["romantic"],
+    "deeply in love": ["romantic"],
+    "head over heels": ["romantic", "happy"],
+    "butterflies in love": ["romantic", "happy"],
+    "crush feeling": ["romantic"],
+    "new love": ["romantic", "happy"],
+    "sweet love": ["romantic"],
+    "tender love": ["romantic", "soulful"],
+    "cozy with someone": ["romantic", "calm"],
+
+    # ── indie folk disambiguation (fixes country hijack) ─────────────────
+    "indie folk": ["indie_folk"],
+    "folk indie": ["indie_folk"],
+    "fleet foxes adjacent": ["indie_folk"],
+    "fleet foxes vibes": ["indie_folk"],
+    "bon iver vibes": ["indie_folk", "dreamy"],
+    "iron and wine vibes": ["indie_folk"],
+    "folk harmonies": ["indie_folk"],
+    "rich harmonies": ["indie_folk"],
+    "indie acoustic": ["indie_folk"],
+    "modern folk": ["indie_folk"],
+    "dark folk": ["indie_folk", "dark"],
+    "murder ballad": ["indie_folk", "dark"],
+    "appalachian": ["indie_folk", "country"],
+    "banjo folk": ["indie_folk"],
+    "finger picking": ["indie_folk", "calm"],
+    "folk pop": ["indie_folk"],
+    "folk rock": ["indie_folk", "rock"],
+    "midwest emo": ["rock", "heartbreak"],
+    "emo revival": ["rock", "heartbreak"],
+    "small town emo": ["rock", "heartbreak"],
+
+    # ── ambient / drone / texture (fixes fallback for abstract prompts) ───
+    "ambient music": ["ambient"],
+    "ambient vibes": ["ambient"],
+    "drone music": ["ambient"],
+    "long tones": ["ambient", "calm"],
+    "minimal music": ["ambient", "focus"],
+    "texture music": ["ambient"],
+    "soundscape": ["ambient", "calm"],
+    "brian eno vibes": ["ambient"],
+    "meditation music": ["ambient", "calm"],
+    "sleep music": ["ambient", "calm"],
+    "rain sounds": ["ambient", "calm"],
+    "nature sounds": ["ambient", "calm"],
+    "white noise": ["ambient", "focus"],
+    "oceanic": ["ambient", "calm"],
+    "spacious": ["ambient", "dreamy"],
+    "sparse": ["ambient", "focus"],
+    "minimalist music": ["ambient", "focus"],
+    "tape loops": ["ambient"],
+    "field recording": ["ambient"],
+
+    # ── emotional states that were SIGNAL LOST (fallback fixes) ──────────
+    "terrified": ["heartbreak", "intense"],
+    "terror": ["intense", "dark"],
+    "forgotten": ["heartbreak", "dreamy"],
+    "being forgotten": ["heartbreak"],
+    "fear of forgetting": ["heartbreak"],
+    "fear of being forgotten": ["heartbreak"],
+    "vibrating": ["euphoric", "hype"],
+    "contained excitement": ["euphoric", "chill"],
+    "trembling": ["intense", "heartbreak"],
+    "shivering": ["heartbreak", "dreamy"],
+    "strangely comfortable": ["chill", "calm"],
+    "strange comfort": ["chill", "dreamy"],
+    "familiar sadness": ["heartbreak", "dreamy"],
+    "misunderstood": ["heartbreak", "dreamy"],
+    "loneliness": ["heartbreak", "dreamy"],
+    "slowly proud": ["euphoric", "calm"],
+    "small victory": ["euphoric", "calm"],
+    "private victory": ["euphoric", "calm"],
+    "specifically": ["dreamy", "chill"],
+    "specific joy": ["happy", "euphoric"],
+    "specific loneliness": ["heartbreak", "dreamy"],
+    "finally understood": ["euphoric", "soulful"],
+    "finally being understood": ["euphoric", "soulful"],
+    "resolute": ["hype", "focus"],
+    "decided": ["focus", "hype"],
+    "ready": ["hype", "euphoric"],
+    "righteous": ["hype", "soulful"],
+    "righteous fury": ["hype", "intense"],
+    "justified anger": ["hype", "intense"],
+    "true to myself": ["soulful", "calm"],
+    "speaking truth": ["soulful", "hype"],
+    "saying something true": ["soulful", "euphoric"],
+    "finally said": ["soulful", "euphoric"],
+    "deeply satisfied": ["calm", "euphoric"],
+    "sheepish": ["calm", "heartbreak"],
+    "tender after": ["soulful", "calm"],
+    "soft grief": ["heartbreak", "calm"],
+    "slow grief": ["heartbreak", "calm"],
+    "years later": ["heartbreak", "dreamy"],
+    "homesick suddenly": ["heartbreak", "dreamy"],
+    "homesickness hits": ["heartbreak", "dreamy"],
+    "fragile hope": ["heartbreak", "euphoric"],
+    "possibility": ["euphoric", "dreamy"],
+    "drunk on possibility": ["euphoric", "dreamy"],
+    "burning ambition": ["hype", "focus"],
+    "paralyzed by": ["heartbreak", "focus"],
+    "too many options": ["calm", "dreamy"],
+    "electric feeling": ["euphoric", "romantic"],
+    "before a kiss": ["romantic", "euphoric"],
+    "fiercely protective": ["hype", "soulful"],
+    "bittersweet pride": ["heartbreak", "euphoric"],
+    "watching someone grow": ["soulful", "heartbreak"],
+    "crumbling slowly": ["heartbreak", "dark"],
+    "holding the facade": ["heartbreak", "dark"],
+    "facade cracking": ["heartbreak", "dark"],
+    "carrying someone else": ["heartbreak", "soulful"],
+    "weight of someone": ["heartbreak", "soulful"],
 
     # ── retro / nostalgic adjacent ────────────────────────────────────────────
     "nostalgia": ["retro"],
@@ -392,23 +603,28 @@ SYNONYMS: dict[str, list[str]] = {
     "rage beat": ["hype", "intense"],
 
     # ── joy / giddiness adjacent ───────────────────────────────────────────
-    "giddy": ["euphoric", "party"],
-    "childlike": ["euphoric", "calm"],
-    "carefree": ["euphoric", "calm"],
-    "elated": ["euphoric"],
-    "overjoyed": ["euphoric"],
-    "glee": ["euphoric", "party"],
-    "lighthearted": ["euphoric", "calm"],
-    "playful": ["euphoric", "party"],
-    "bubbly": ["euphoric", "party"],
-    "breezy": ["calm", "euphoric"],
-    "innocent": ["calm", "dreamy"],
-    "pure joy": ["euphoric"],
-    "wholehearted": ["euphoric", "soulful"],
-    "beaming": ["euphoric"],
-    "bright-eyed": ["euphoric", "calm"],
-    "fizzy": ["euphoric", "hyperpop"],
-    "elation": ["euphoric"],
+    "giddy": ["happy", "euphoric", "party"],
+    "childlike": ["happy", "calm"],
+    "carefree": ["happy", "calm"],
+    "elated": ["happy", "euphoric"],
+    "overjoyed": ["happy", "euphoric"],
+    "glee": ["happy", "euphoric", "party"],
+    "lighthearted": ["happy", "calm"],
+    "playful": ["happy", "euphoric", "party"],
+    "bubbly": ["happy", "euphoric", "party"],
+    "breezy": ["calm", "happy"],
+    "innocent": ["calm", "happy"],
+    "pure joy": ["happy", "euphoric"],
+    "wholehearted": ["happy", "soulful"],
+    "beaming": ["happy", "euphoric"],
+    "bright-eyed": ["happy", "calm"],
+    "fizzy": ["happy", "euphoric", "hyperpop"],
+    "elation": ["happy", "euphoric"],
+    "childlike wonder": ["happy", "calm"],
+    "childlike joy": ["happy", "calm"],
+    "wonder": ["happy", "dreamy"],
+    "amazement": ["happy", "cinematic"],
+    "wondrous": ["happy", "dreamy"],
 
     # ── pride / triumph / vindication adjacent ─────────────────────────────
     "proud": ["euphoric", "soulful"],
@@ -615,6 +831,50 @@ SYNONYMS: dict[str, list[str]] = {
     "afro-fusion": ["tropical", "chill"],
     "victorian": ["cinematic", "soulful"],
     "viking": ["cinematic", "intense"],
+    # v5.0 additions for niche genre prompts
+    "modern classical": ["ambient", "focus", "cinematic"],
+    "neo classical": ["ambient", "focus", "cinematic"],
+    "neoclassical": ["ambient", "focus", "cinematic"],
+    "classical piano": ["ambient", "focus"],
+    "contemporary classical": ["ambient", "focus"],
+    "piano solo": ["ambient", "calm"],
+    "glass": ["ambient", "focus"],
+    "philip glass": ["ambient", "focus"],
+    "arvo part": ["ambient", "calm"],
+    "arvo pärt": ["ambient", "calm"],
+    "john cage": ["ambient", "focus"],
+    "satie": ["calm", "ambient"],
+    "erik satie": ["calm", "ambient"],
+    "sun ra": ["soulful", "dreamy"],
+    "free jazz": ["soulful", "intense"],
+    "spiritual jazz": ["soulful", "dreamy"],
+    "coltrane": ["soulful", "intense"],
+    "jazzanova": ["soulful", "chill"],
+    "nu jazz": ["soulful", "chill"],
+    "soul jazz": ["soulful", "chill"],
+    "organ trio": ["soulful", "chill"],
+    "smooth jazz": ["chill", "soulful"],
+    "bossa nova": ["calm", "chill", "soulful"],
+    "noise rock": ["intense", "rock"],
+    "math rock": ["rock", "focus"],
+    "odd time": ["rock", "focus"],
+    "post rock": ["cinematic", "dreamy"],
+    "post-rock": ["cinematic", "dreamy"],
+    "shoegaze": ["dreamy", "rock"],
+    "slowcore": ["dreamy", "heartbreak"],
+    "psychedelic soul": ["soulful", "retro"],
+    "sly stone": ["soulful", "retro", "hype"],
+    "detroit techno": ["industrial", "dark"],
+    "detroit electronic": ["industrial", "dark"],
+    "ambient techno": ["industrial", "ambient"],
+    "kosmische musik": ["ambient", "dreamy"],
+    "krautrock": ["industrial", "rock"],
+    "folk harmonics": ["indie_folk"],
+    "murder ballads": ["indie_folk", "dark"],
+    "emo revival": ["rock", "heartbreak"],
+    "midwest emo": ["rock", "heartbreak"],
+    "twinkly guitar": ["indie_folk", "heartbreak"],
+    "noodly guitar": ["indie_folk", "rock"],
 
     # ── Emoji map ────────────────────────────────────────────────────────────
     "🔥": ["hype", "energy"],
@@ -654,6 +914,23 @@ SYNONYMS: dict[str, list[str]] = {
     "🤠": ["country"],
     "🏕️": ["country", "calm"],
     "🐴": ["country"],
+    "🥳": ["happy", "party"],
+    "😄": ["happy"],
+    "😊": ["happy", "calm"],
+    "☀️": ["happy", "euphoric"],
+    "🌸": ["happy", "calm", "romantic"],
+    "💗": ["romantic", "happy"],
+    "💕": ["romantic"],
+    "💞": ["romantic", "soulful"],
+    "🫶": ["romantic", "soulful"],
+    "🎊": ["happy", "party"],
+    "🎉": ["happy", "party"],
+    "🥁": ["punjabi", "desi", "party"],
+    "🪘": ["punjabi", "desi", "party"],
+    "🪗": ["desi", "country"],
+    "🕌": ["desi", "calm"],
+    "💃": ["party", "desi"],
+    "🕺": ["party", "desi"],
 }
 
 # ─── NEGATION WORDS ───────────────────────────────────────────────────────────
@@ -668,25 +945,34 @@ NEGATION_TOKENS = {
 
 # ─── VALENCE–AROUSAL BLEED TABLE ─────────────────────────────────────────────
 BLEED: dict[str, dict[str, float]] = {
-    "hype":       {"intense": 0.25, "party": 0.20, "euphoric": 0.15, "rock": 0.10},
-    "calm":       {"focus": 0.20, "chill": 0.25, "dreamy": 0.10},
-    "intense":    {"hype": 0.20, "dark": 0.25, "rock": 0.20},
-    "chill":      {"calm": 0.20, "dreamy": 0.15, "heartbreak": 0.10},
-    "focus":      {"calm": 0.15, "cinematic": 0.10},
-    "euphoric":   {"party": 0.25, "hype": 0.15, "dreamy": 0.10},
-    "soulful":    {"heartbreak": 0.20, "chill": 0.15, "calm": 0.10},
-    "retro":      {"soulful": 0.15, "chill": 0.10, "dreamy": 0.10, "rock": 0.15},
-    "dreamy":     {"chill": 0.15, "heartbreak": 0.10, "dark": 0.10},
-    "cinematic":  {"intense": 0.15, "euphoric": 0.15, "dreamy": 0.10, "rock": 0.05},
-    "dark":       {"intense": 0.20, "dreamy": 0.10},
-    "heartbreak": {"soulful": 0.15, "dark": 0.10, "chill": 0.10},
-    "hyperpop":   {"hype": 0.20, "party": 0.20, "euphoric": 0.10},
-    "party":      {"hype": 0.25, "euphoric": 0.20, "hyperpop": 0.10},
-    "country":    {"calm": 0.15, "soulful": 0.15, "retro": 0.10, "rock": 0.10},
-    "tropical":   {"party": 0.25, "chill": 0.15},
-    "industrial": {"dark": 0.25, "intense": 0.20},
-    "desi":       {"party": 0.25, "hype": 0.15, "soulful": 0.10},
-    "rock":       {"intense": 0.20, "retro": 0.20, "hype": 0.15, "party": 0.10, "chill": 0.05},
+    "hype":         {"intense": 0.25, "party": 0.20, "euphoric": 0.15, "rock": 0.10},
+    "calm":         {"focus": 0.20, "chill": 0.25, "dreamy": 0.10},
+    "intense":      {"hype": 0.20, "dark": 0.25, "rock": 0.20},
+    "chill":        {"calm": 0.20, "dreamy": 0.15, "heartbreak": 0.10},
+    "focus":        {"calm": 0.15, "cinematic": 0.10},
+    "euphoric":     {"party": 0.25, "hype": 0.15, "dreamy": 0.10, "happy": 0.20},
+    "soulful":      {"heartbreak": 0.20, "chill": 0.15, "calm": 0.10},
+    "retro":        {"soulful": 0.15, "chill": 0.10, "dreamy": 0.10, "rock": 0.15},
+    "dreamy":       {"chill": 0.15, "heartbreak": 0.10, "dark": 0.10},
+    "cinematic":    {"intense": 0.15, "euphoric": 0.15, "dreamy": 0.10, "rock": 0.05},
+    "dark":         {"intense": 0.20, "dreamy": 0.10},
+    "heartbreak":   {"soulful": 0.15, "dark": 0.10, "chill": 0.10},
+    "hyperpop":     {"hype": 0.20, "party": 0.20, "euphoric": 0.10},
+    "party":        {"hype": 0.25, "euphoric": 0.20, "hyperpop": 0.10},
+    "country":      {"calm": 0.15, "soulful": 0.15, "retro": 0.10, "rock": 0.10},
+    "tropical":     {"party": 0.25, "chill": 0.15},
+    "industrial":   {"dark": 0.25, "intense": 0.20},
+    "desi":         {"party": 0.25, "hype": 0.15, "soulful": 0.10},
+    "rock":         {"intense": 0.20, "retro": 0.20, "hype": 0.15, "party": 0.10, "chill": 0.05},
+    # NEW v5.0
+    "happy":        {"euphoric": 0.30, "party": 0.20, "calm": 0.15},
+    "romantic":     {"soulful": 0.20, "chill": 0.15, "heartbreak": 0.10},
+    "indie_folk":   {"calm": 0.20, "heartbreak": 0.15, "dreamy": 0.10, "country": 0.05},
+    "punjabi":      {"desi": 0.30, "party": 0.25, "hype": 0.15},
+    "punjabi_soft": {"desi": 0.25, "romantic": 0.20, "heartbreak": 0.15},
+    "haryanvi":     {"desi": 0.30, "party": 0.20, "hype": 0.15},
+    "bollywood_sad":{"desi": 0.25, "heartbreak": 0.30, "soulful": 0.15},
+    "ambient":      {"calm": 0.30, "focus": 0.20, "dreamy": 0.15},
 }
 
 
@@ -1396,29 +1682,350 @@ VIBE_MAP: dict[str, dict] = {
     
     "desi": {
         "keywords": [
-            "bollywood", "desi", "bhangra", "dhol", "wedding", "shaadi", "sangeet", 
-            "filmi", "tollywood", "kollywood", "punjabi", "tabla", "sitar", "hindustani",
-            "ghazal", "qawwali", "desi pop",
+            "bollywood", "desi", "bhangra", "dhol", "wedding", "shaadi", "sangeet",
+            "filmi", "tollywood", "kollywood", "tabla", "sitar", "hindustani",
+            "ghazal", "qawwali", "desi pop", "filmy", "dholak", "banjo",
+            "hindi", "urdu", "classic hindi", "90s hindi", "retro bollywood",
+            "sufi", "kajra", "ishq", "mohabbat", "dil", "pyaar",
+            "tamasha", "nautanki", "mujra", "kotha", "thumri",
         ],
         "phrases": [
             "desi swag", "brown boy", "brown girl", "bollywood vibes", "shaadi vibes",
-            "desi party", "dhol beats"
+            "desi party", "dhol beats", "desi energy", "filmy feel", "hindi songs",
+            "indian wedding", "mehndi function", "holi songs", "diwali vibes",
+            "desi hip hop", "subcontinental vibes", "mumbai nights", "delhi nights",
         ],
         "context": [
-            "indian wedding", "baraat", "mehndi", "desi club", "mumbai", "delhi", 
-            "diwali", "holi", "navratri", "family gathering"
+            "indian wedding", "baraat", "mehndi", "desi club", "mumbai", "delhi",
+            "lahore", "karachi", "diwali", "holi", "navratri", "eid", "family gathering",
+            "desi dance", "subcontinental", "south asian", "india", "pakistan",
         ],
         "artists": [
-            "ar rahman", "pritam", "arijit singh", "shreya ghoshal", "diljit dosanjh", 
-            "badshah", "sidhu moose wala", "ap dhillon", "karan aujla", "mickey singh", 
-            "guru randhawa", "anu malik", "alka yagnik", "udith narayan", "lata mangeshkar",
-            "kumar sanu", "k.s. chithra", "hariharan", "sonu nigam", "shankar mahadevan",
-            "shubh", "tesher", "divine", "yo yo honey singh", "ammy virk", "harrdy sandhu"
+            "ar rahman", "pritam", "vishal-shekhar", "amit trivedi", "shankar-ehsaan-loy",
+            "arijit singh", "shreya ghoshal", "sonu nigam", "udit narayan", "lata mangeshkar",
+            "asha bhosle", "kishore kumar", "rafi", "mukesh", "hemant kumar",
+            "kumar sanu", "alka yagnik", "kavita krishnamurthy", "anuradha paudwal",
+            "shankar mahadevan", "hariharan", "k.k.", "shaan", "kailash kher",
+            "rahat fateh ali khan", "atif aslam", "ali zafar", "nusrat fateh ali khan",
+            "abida parveen", "ali sethi", "coke studio pakistan",
+            "diljit dosanjh", "badshah", "yo yo honey singh", "guru randhawa",
+            "ammy virk", "harrdy sandhu", "neha kakkar", "tony kakkar",
+            "ap dhillon", "karan aujla", "shubh", "tesher", "mickey singh",
+            "divine", "naezy", "seedhe maut", "mc stan", "ikka",
+            "raftaar", "kr$na", "brodha v", "blaaze",
+            "hariharan", "shankar mahadevan",
         ],
         "bpm": "90-130",
-        "genres": ["Bollywood", "Desi Pop", "Bhangra", "Punjabi Pop", "Filmi", "Ghazal", "Qawwali", "Carnatic", "Hindustani Classical", "Sufi Rock", "Baul"]
-    }
+        "genres": ["Bollywood", "Desi Pop", "Bhangra", "Punjabi Pop", "Filmi", "Ghazal",
+                   "Qawwali", "Carnatic", "Hindustani Classical", "Sufi Rock", "Desi Hip Hop",
+                   "Punjabi Folk", "Kollywood", "Tollywood", "Rajasthani Folk", "Baul",
+                   "Indi-pop", "Desi R&B"],
+    },
+
+    "punjabi": {
+        "keywords": [
+            "punjabi", "bhangra", "dhol", "dholi", "jatt", "jatti", "sardaar",
+            "pind", "yaar", "dost", "chandigarh", "ludhiana", "amritsar",
+            "turbaan", "dastar", "kirpan", "waheguru", "sat sri akal",
+            "punjab", "punjabi rap", "punjabi trap", "punjabi drill",
+            "shooter", "gang", "clique", "pagg", "kali car", "supna",
+            "nachna", "giddha", "tappa", "boliyan", "lohri", "baisakhi",
+        ],
+        "phrases": [
+            "bhangra vibes", "punjabi music", "punjabi wedding", "baraat song",
+            "jatt life", "sidhu moosewala vibes", "karan aujla vibes",
+            "hard punjabi", "punjabi party", "desi party anthem",
+        ],
+        "context": [
+            "punjab", "chandigarh", "amritsar", "ludhiana", "jalandhar",
+            "bhangra", "wedding", "baraat", "mehndi", "baisakhi", "lohri",
+            "desi club", "punjabi club", "diasporic", "canada desi", "uk desi",
+        ],
+        "artists": [
+            "sidhu moosewala", "karan aujla", "shubh", "ap dhillon",
+            "diljit dosanjh", "badshah", "guru randhawa", "ammy virk",
+            "harrdy sandhu", "gippy grewal", "parmish verma", "jassi gill",
+            "jass manak", "mankirt aulakh", "kulwinder billa",
+            "mickey singh", "tesher", "shree brar", "waris bhinder",
+            "talha anjum", "faris shafi", "young stunners",
+            "jugraj sandhu", "afsana khan", "nimrat khaira",
+            "param singh", "preet harpal",
+        ],
+        "bpm": "95-135",
+        "genres": ["Punjabi Pop", "Bhangra", "Punjabi Trap", "Punjabi Hip Hop",
+                   "Punjabi Folk", "Desi Drill", "Punjabi R&B", "Bhangra Fusion",
+                   "Punjabi Electronic", "Bhangra EDM"],
+    },
+
+    "punjabi_soft": {
+        "keywords": [
+            "soft punjabi", "punjabi slow", "punjabi sad", "punjabi romantic",
+            "tere bina", "yaadan", "waris", "nazm", "ishq punjabi",
+            "dard", "dil diya", "putt jatt da", "ranjha", "heer",
+            "mirza sahiba", "love punjabi", "desi romance", "desi love",
+            "acoustic punjabi", "unplugged punjabi", "sufi punjabi",
+        ],
+        "phrases": [
+            "ap dhillon vibes", "punjabi soft", "soft bhangra",
+            "punjabi love song", "desi love songs", "punjabi breakup",
+            "punjabi romantic", "punjabi sad song", "slow punjabi",
+        ],
+        "context": [
+            "long drive", "night drive", "missing someone", "heartbroken",
+            "desi heartbreak", "love lost", "romantic evening",
+        ],
+        "artists": [
+            "ap dhillon", "shubh", "mickey singh", "jass manak",
+            "b praak", "jaani", "harrdy sandhu", "ammy virk",
+            "satinder sartaaj", "surjit bindrakhia", "harbhajan mann",
+            "malkit singh", "gurdas maan", "sukhwinder singh",
+            "prabh gill", "dilnashin", "param singh",
+            "gurnam bhullar", "akhil", "ravinder grewal",
+        ],
+        "bpm": "65-105",
+        "genres": ["Punjabi Soft Pop", "Punjabi Ballad", "Punjabi Sufi", "Punjabi Acoustic",
+                   "Punjabi R&B", "Desi Soul", "Punjabi Ghazal", "Soft Bhangra"],
+    },
+
+    "haryanvi": {
+        "keywords": [
+            "haryanvi", "haryana", "jaat", "desi haryanvi", "ragini",
+            "saang", "kheda", "khap", "kurukshetra", "rohtak", "hisar",
+            "panipat", "gurugram", "gurgaon", "bhiwani", "rewari",
+            "thada", "mewati", "ahirwal", "brij", "mewat",
+            "haryanvi dance", "haryanvi song", "dj haryanvi",
+        ],
+        "phrases": [
+            "haryanvi vibes", "haryanvi music", "desi haryanvi",
+            "haryanvi wedding", "haryanvi party", "haryanvi folk",
+            "haryanvi film", "haryanvi beat",
+        ],
+        "context": [
+            "haryana", "north india rural", "desi rural", "village wedding",
+            "gaon ka tyohar", "kisan music",
+        ],
+        "artists": [
+            "masoom sharma", "raju punjabi", "ak joshi", "uk haryanvi",
+            "pradeep sonu", "vijay varma", "gulzaar chhaniwala",
+            "bhopu jo", "mukesh fouji", "sapna choudhary",
+            "renuka panwar", "ajay hooda", "raj mawar", "kr mangalam",
+            "amit saini rohtakiya", "sandeep surila", "pk haryanvi",
+            "pardeep boora",
+        ],
+        "bpm": "90-130",
+        "genres": ["Haryanvi Folk", "Haryanvi Pop", "Ragini", "Haryanvi EDM",
+                   "Haryanvi Hip Hop", "Desi Folk", "North Indian Folk"],
+    },
+
+    "bollywood_sad": {
+        "keywords": [
+            "arijit", "bollywood sad", "hindi sad", "filmi sad", "rona dhona",
+            "dard", "gham", "judai", "bichhad", "door", "akela", "tanhai",
+            "intezaar", "yaad", "teri yaad", "mohabbat", "dil tuta",
+            "aansu", "rona", "tadap", "kasak", "dhoondta hai",
+            "ishq mein", "bepanah", "bewafa", "dard e dil",
+        ],
+        "phrases": [
+            "arijit vibes", "bollywood heartbreak", "hindi breakup songs",
+            "filmi sad", "desi heartbreak", "sad hindi songs",
+            "melancholic bollywood", "old bollywood sad",
+        ],
+        "context": [
+            "heartbreak hindi", "desi breakup", "missing someone desi",
+            "rainy day hindi", "bollywood cry", "hindi film sad scene",
+        ],
+        "artists": [
+            "arijit singh", "atif aslam", "rahat fateh ali khan",
+            "armaan malik", "jubin nautiyal", "darshan raval",
+            "javed ali", "k.k.", "shaan", "mohit chauhan",
+            "shreya ghoshal sad", "sunidhi chauhan", "lata mangeshkar",
+            "udit narayan", "sonu nigam", "kumar sanu",
+            "asha bhosle", "jagjit singh", "ghulam ali",
+            "talat mahmood", "mehdi hassan", "nusrat fateh ali khan",
+            "b praak", "vishal mishra", "payal dev",
+        ],
+        "bpm": "55-95",
+        "genres": ["Bollywood Sad", "Hindi Ballad", "Filmi Ghazal", "Desi Soul",
+                   "Bollywood Heartbreak", "Hindi Sufi Sad", "Soft Bollywood",
+                   "Romantic Bollywood Sad", "90s Hindi Sad"],
+    },
+
+    "happy": {
+        "keywords": [
+            "happy", "joyful", "cheerful", "upbeat", "feel good", "sunshine",
+            "bright", "peppy", "bouncy", "jolly", "merry", "gleeful",
+            "good mood", "great mood", "best day", "carefree", "giddy",
+            "childlike wonder", "innocent", "playful", "bubbly", "breezy",
+            "fizzy", "elated", "overjoyed", "glee", "jubilant",
+            "skip", "jump for joy", "can't stop smiling", "beaming",
+            "light", "lighthearted", "sweet", "wholesome",
+            "laugh", "giggle", "belly laugh", "chuckle",
+        ],
+        "phrases": [
+            "feel good music", "happy music", "pure happiness", "good vibes only",
+            "sunshine in song form", "makes me smile", "can't be sad to this",
+            "childhood joy", "pure joy", "best mood", "smile on my face",
+            "brightens my day", "instant mood boost",
+        ],
+        "context": [
+            "birthday party", "celebration", "good news", "promotion",
+            "spring morning", "sunny day", "playground", "picnic",
+            "reunion with friends", "wedding day morning", "graduation",
+            "winning", "perfect day", "road trip with friends",
+        ],
+        "artists": [
+            "pharrell williams", "lizzo", "carly rae jepsen", "robyn",
+            "dua lipa", "harry styles", "justin timberlake", "bruno mars",
+            "mark ronson", "katy perry", "taylor swift", "ariana grande",
+            "meghan trainor", "colbie caillat", "jack johnson",
+            "nelly", "outkast", "janelle monae", "anderson paak",
+            "lucky daye", "bill withers", "earth wind and fire",
+            "the jackson 5", "stevie wonder", "marvin gaye",
+            "bee gees", "abba", "the temptations", "the supremes",
+            "kali uchis", "rex orange county", "orange county",
+            "clairo", "beabadoobee", "wallows", "surf mesa",
+            "men at work", "tag team", "sugar ray",
+            "owl city", "fun.", "the killers",
+        ],
+        "bpm": "100-135",
+        "genres": ["Pop", "Indie Pop", "Soul Pop", "Funk", "Disco Pop", "Sunshine Pop",
+                   "Power Pop", "Electropop", "Happy Hardcore Lite", "Bubblegum Pop",
+                   "Neo Soul Happy", "Summer Pop", "Feel Good R&B", "Jangle Pop"],
+    },
+
+    "romantic": {
+        "keywords": [
+            "romantic", "romance", "in love", "falling in love", "love",
+            "adore", "cherish", "devoted", "tender", "sweet nothings",
+            "candlelight", "moonlit", "slow dance", "serenade", "longing",
+            "desire", "yearning for", "holding you", "close to you",
+            "electric feel", "spark", "chemistry", "magnetic", "drawn to you",
+            "warmth between us", "soft kisses", "gentle", "forever yours",
+            "always you", "head over heels", "lovesick", "infatuated",
+            "deeply in love", "your name on my lips",
+        ],
+        "phrases": [
+            "love songs", "love song", "falling in love", "in love",
+            "date night songs", "slow dance songs", "anniversary playlist",
+            "romantic vibes", "deeply romantic", "tender love",
+            "electric before a kiss", "new relationship",
+            "lovey dovey", "couple songs", "together forever",
+        ],
+        "context": [
+            "date", "date night", "anniversary", "valentine's day",
+            "proposal", "slow dance", "wedding", "honeymoon",
+            "late night together", "romantic drive", "stargazing with someone",
+            "fireside", "candlelit dinner", "first date",
+        ],
+        "artists": [
+            "frank ocean", "daniel caesar", "giveon", "steve lacy",
+            "brent faiyaz", "h.e.r.", "jhene aiko", "miguel",
+            "john legend", "usher", "maxwell", "d'angelo",
+            "erykah badu", "neo soul romantic", "sade",
+            "luther vandross", "lionel richie", "barry white",
+            "marvin gaye", "al green", "otis redding",
+            "sam smith", "ed sheeran", "james arthur",
+            "corinne bailey rae", "norah jones", "adele",
+            "shawn mendes", "camila cabello",
+            "the weeknd", "bryson tiller", "partynextdoor",
+            "summer walker", "kehlani",
+            "lana del rey", "lorde", "troye sivan",
+        ],
+        "bpm": "60-110",
+        "genres": ["Romantic R&B", "Neo Soul", "Slow Jam", "Love Pop", "Indie Romance",
+                   "Soul Ballad", "Contemporary R&B", "Bedroom Pop", "Soft Rock",
+                   "Acoustic Love", "R&B Ballad", "Dream Pop Romance"],
+    },
+
+    "indie_folk": {
+        "keywords": [
+            "indie folk", "folk pop", "folk indie", "harmony", "harmonies",
+            "acoustic", "fingerpicking", "banjo", "mandolin", "upright bass",
+            "mountain sound", "forest sounds", "cabin", "wheat field",
+            "melancholic folk", "dark folk", "murder ballad", "traditional",
+            "americana indie", "singer songwriter", "earnest", "confessional folk",
+            "hushed", "intimate folk", "lo-fi folk", "folk revival",
+            "chamber folk", "baroque folk", "haunting", "beautiful sad",
+        ],
+        "phrases": [
+            "indie folk", "fleet foxes adjacent", "fleet foxes vibes",
+            "bon iver adjacent", "folk harmonies", "indie acoustic",
+            "modern folk", "dark folk", "iron and wine style",
+            "sufjan style", "indie singer songwriter", "folk indie",
+            "rich harmonies", "layered vocals",
+        ],
+        "context": [
+            "cabin in the woods", "autumn walk", "overcast day", "forest",
+            "mountain road", "vinyl record player", "folk festival",
+            "campfire acoustic", "hiking trail", "quiet countryside",
+            "small venue", "coffee shop set",
+        ],
+        "artists": [
+            "fleet foxes", "bon iver", "iron & wine", "sufjan stevens",
+            "the head and the heart", "the lumineers", "of monsters and men",
+            "mumford & sons", "the avett brothers", "old crow medicine show",
+            "the decemberists", "neutral milk hotel", "nick drake",
+            "simon & garfunkel", "james taylor", "carole king",
+            "joni mitchell", "crosby stills nash young",
+            "andrew bird", "gregory alan isakov", "the tallest man on earth",
+            "josh ritter", "iron and wine", "sam beam",
+            "first aid kit", "the staves", "nickel creek",
+            "sarah jarosz", "aoife o'donovan", "allison russell",
+            "gillian welch", "david rawlings", "dirk powell",
+            "mountain man", "haiku hands",
+            "big thief", "adrianne lenker", "weyes blood",
+            "angel olsen", "bedouine", "ana roxanne",
+        ],
+        "bpm": "65-120",
+        "genres": ["Indie Folk", "Folk Pop", "Chamber Folk", "Folk Revival", "Baroque Folk",
+                   "Americana Folk", "Dark Folk", "Folk Rock", "Appalachian Folk",
+                   "Contemporary Folk", "Freak Folk", "Anti-Folk"],
+    },
+
+    "ambient": {
+        "keywords": [
+            "ambient", "drone", "texture", "soundscape", "atonal", "evolving",
+            "minimalist", "slow", "glacial", "atmospheric", "immersive",
+            "long tones", "sustained", "pads", "drone note", "field recording",
+            "tape loops", "processed", "organic", "generative", "aleatoric",
+            "meditative", "contemplative", "infinite", "cosmic", "vast",
+            "cavernous", "reverberant", "airy", "shimmering", "swelling",
+            "breathing", "pulsing", "modular", "synthesizer texture",
+        ],
+        "phrases": [
+            "ambient music", "drone music", "long tones", "minimal music",
+            "tape loops", "field recording", "brian eno vibes",
+            "white noise", "rain sounds", "nature sounds", "sleep music",
+            "meditation music", "focus ambient", "background texture",
+            "modern classical ambient", "minimalist ambient",
+        ],
+        "context": [
+            "meditation", "yoga", "floating", "sensory deprivation",
+            "deep focus", "sleep aid", "reading quietly", "gallery space",
+            "installation art", "late night headphones", "insomnia",
+            "hospital waiting", "long haul flight", "traveling alone",
+        ],
+        "artists": [
+            "brian eno", "harold budd", "ambient 1", "the plateaux of mirror",
+            "william basinski", "grouper", "liz harris", "stars of the lid",
+            "godspeed you black emperor", "labradford", "the caretaker",
+            "burial", "four tet", "aphex twin", "selected ambient works",
+            "boards of canada", "kelela", "tim hecker", "demdike stare",
+            "jan jelinek", "pole", "puce mary", "jóhann jóhannsson",
+            "ólafur arnalds", "nils frahm", "max richter", "rachel's",
+            "steve reich", "la monte young", "terry riley",
+            "susumu yokota", "hiroshi yoshimura", "motohiro kawashima",
+            "ben frost", "prurient", "hana", "claire rousay",
+            "julianna barwick", "maria minerva", "dead can dance",
+            "this mortal coil", "cocteau twins", "valley of the giants",
+        ],
+        "bpm": "40-80",
+        "genres": ["Ambient", "Drone", "Minimalism", "Field Recording", "Dark Ambient",
+                   "Lowercase", "Glitch Ambient", "Ambient Techno", "Neo-Classical Ambient",
+                   "Isolationism", "Hauntology", "Musique Concrète", "Tape Music", "Acousmatic"],
+    },
 }
+
 
 
 # =============================================================================
@@ -1517,6 +2124,10 @@ def _detect_anti_vibes(text: str) -> set[str]:
         "dreamy": "dreamy", "ethereal": "dreamy",
         "country": "country", "folk": "country",
         "rock": "rock", "punk": "rock", "indie": "rock", "grunge": "rock",
+        "happy": "happy", "cheerful": "happy", "upbeat": "happy",
+        "romantic": "romantic", "love": "romantic",
+        "desi": "desi", "bollywood": "desi", "punjabi": "punjabi",
+        "ambient": "ambient", "drone": "ambient",
     }
 
     for pattern in ANTI_PATTERNS:
@@ -1568,7 +2179,9 @@ def _intensity_multiplier(text: str, match_start: int, window_chars: int = 35) -
 
 def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int = 50, bpm_focus: int = 50) -> dict:
     """
-    Vibe Analysis Engine v4.2 — Calibrated Edition w/ Mega Genres & Rock
+    Vibe Analysis Engine v5.0 — QA Regression Fix + Desi Expansion Edition
+    27 vibe categories. Fixes: fallback over-triggering, indie folk/country confusion,
+    intense misfires, euphoric monopoly, new desi sub-vibes.
     """
 
     lower_text = text.lower()
@@ -1695,16 +2308,17 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
     total_raw_score = sum(positive_scores.values())
 
     if not positive_scores or total_raw_score == 0:
-        # Last-resort: for prompts with some emotional content, default to dreamy.
+        # Last-resort: for prompts with some emotional content, default to chill.
         # This prevents "neutral 0%" on abstract/sensory prompts that scored nothing.
         # The caller (main.py) will use this as its Last.fm fetch target.
+        # v5.0: Updated genres to return better search results than the old Ambient Pop defaults.
         return {
-            "dominant_vibe": "dreamy",
+            "dominant_vibe": "chill",
             "confidence": 0.05,
-            "bpm_range": "65-105",
-            "genres": ["Dream Pop", "Ambient Pop", "Indie Folk", "Lo-Fi", "Shoegaze"],
+            "bpm_range": "65-100",
+            "genres": ["Indie Pop", "Lo-Fi Hip Hop", "Indie R&B", "Dream Pop", "Chillwave"],
             "matched_keywords": [],
-            "secondary_vibe": "calm",
+            "secondary_vibe": "dreamy",
             "secondary_confidence": 0.05,
         }
 

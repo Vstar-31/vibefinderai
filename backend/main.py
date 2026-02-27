@@ -116,10 +116,13 @@ COMMON_WORDS_BLACKLIST = {
         "independent", "deep", "passion", "holiday", "eve", "chicago", 
         "slow", "love", "night", "good", "bad", "happy", "sad", "summer", 
         "rain", "coffee", "drive", "party", "chill", "focus", "work", 
-        "sleep", "wake", "morning", "midnight", "fire", "magic", "dream"
+        "sleep", "wake", "morning", "midnight", "fire", "magic", "dream",
+        # v5.0 additions — prevent false entity locks from common adjectives
+        "smooth", "fragile", "resolute", "kiss", "paralyzed", "ready",
+        "electric", "bright", "warm", "cold", "sweet", "bitter",
+        "lost", "found", "free", "bound", "broken", "whole",
+        "still", "moving", "running", "falling", "rising", "flying",
     }
-
-# v1.2 — Chronic result spam protection.
 # Tracks that appeared in 10%+ of all QA results regardless of prompt.
 # These get a score penalty in the scoring engine so they don't dominate every playlist.
 TRACK_BLOCKLIST: set[str] = {
@@ -129,6 +132,18 @@ TRACK_BLOCKLIST: set[str] = {
     "slowdive|slowdive",           # same pool monopoly
     "moanin'|art blakey & the jazz messengers",  # leads every soulful result
     "time moves slow|badbadnotgood",
+    # v5.0 additions from QA analysis
+    "4 am (adam k & soha mix)|kaskade",  # monopolizes euphoric results
+    "finished symphony (deadmau5 remix)|hybrid",  # monopolizes euphoric
+    "silhouettes - original radio edit|avicii",    # monopolizes euphoric
+    "strobe (radio edit)|deadmau5",                # monopolizes euphoric  
+    "brazil (2nd edit)|deadmau5",                  # monopolizes euphoric
+    "to the hellfire|lorna shore",                 # monopolizes intense
+    "you only live once|suicide silence",          # monopolizes intense
+    "pray for plagues|bring me the horizon",       # monopolizes intense
+    "country girl (shake it for me)|luke bryan",   # monopolizes country
+    "take me home, country roads|john denver",     # monopolizes country
+    "she's country|jason aldean",                  # monopolizes country
 }
 # ---------------------------------------------------------
 # Pydantic Models
@@ -468,7 +483,12 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         "independent", "deep", "passion", "holiday", "eve", "chicago", 
         "slow", "love", "night", "good", "bad", "happy", "sad", "summer", 
         "rain", "coffee", "drive", "party", "chill", "focus", "work", 
-        "sleep", "wake", "morning", "midnight", "fire", "magic", "dream"
+        "sleep", "wake", "morning", "midnight", "fire", "magic", "dream",
+        # v5.0 additions — prevent false entity locks from common adjectives
+        "smooth", "fragile", "resolute", "kiss", "paralyzed", "ready",
+        "electric", "bright", "warm", "cold", "sweet", "bitter",
+        "lost", "found", "free", "bound", "broken", "whole",
+        "still", "moving", "running", "falling", "rising", "flying",
     }
 
     # v1.2 Fix #1 — Negative Intent Shield
@@ -582,13 +602,23 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         logger.info(f"Fallback Search returned {len(raw_pool)} tracks.")
         
         # v1.2 FIX: Filter out junk fallback results (podcasts, news, YouTube videos)
+        # v5.0: Massively expanded junk patterns based on QA review
         JUNK_PATTERNS = re.compile(
             r'\b(podcast|episode|news|npr|bbc|ted talk|morning edition|'
             r'kitchen nightmares|speedrunning|let me explain|'
-            r'how to make|react(?:ion)?|compilation|highlights)\b',
+            r'how to make|react(?:ion)?|compilation|highlights|'
+            r'sound effect|sound effects|ringtone|notification|'
+            r'relaxing spa|nature music|ocean tones|spa music|'
+            r'30 seconds|music box|text tones|christmas tree|'
+            r'calming drone|holy drone|fire sticks|waterfowl|'
+            r'bitcoin|crypto|nft|stock market|financial|'
+            r'tutorial|lesson|course|lecture|audiobook|'
+            r'tkm|trackmania|yu-gi-oh|master duel|nibiru)\b',
             re.IGNORECASE
         )
-        raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(f"{t.get('title','')} {t.get('artist','')}")]
+        raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(f"{t.get('title','')} {t.get('artist','')}")] 
+        # Also filter tracks with very long title strings (usually YouTube content)
+        raw_pool = [t for t in raw_pool if len(t.get('title', '')) < 120]
         logger.info(f"After junk filter: {len(raw_pool)} tracks remain.")
 
         # v1.3 NEW: Semantic reranking — when Last.fm keyword search gives us a
