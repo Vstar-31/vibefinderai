@@ -1,5 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 
+/* ─── API CONFIGURATION ─────────────────────────────────────── */
+// Use environment variable for API URL in production, empty string for dev (uses proxy)
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
+// Helper to build API URLs
+const buildApiUrl = (path) => {
+  // If API_BASE_URL is set (production), use full URL
+  if (API_BASE_URL) return `${API_BASE_URL}${path}`;
+  // Otherwise use relative path (dev with vite proxy)
+  return path;
+};
+
 /* ─── SVG ICONS ─────────────────────────────────────────────── */
 const IconLock    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
 const IconUnlock  = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>;
@@ -488,7 +500,7 @@ export default function App() {
     setLoading(true); setError("");
     try {
       if (!isLoginView) {
-        const regRes = await fetch("/auth/register", {
+        const regRes = await fetch(buildApiUrl("/auth/register"), {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: authForm.email, username: authForm.username, password: authForm.password }),
         });
@@ -496,7 +508,7 @@ export default function App() {
       }
       const fd = new URLSearchParams();
       fd.append("username", authForm.username); fd.append("password", authForm.password);
-      const logRes = await fetch("/auth/token", {
+      const logRes = await fetch(buildApiUrl("/auth/token"), {
         method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: fd,
       });
       if (!logRes.ok) throw new Error("Authentication failed — check credentials");
@@ -544,7 +556,7 @@ export default function App() {
       setOverrideArtist(finalArtist);
       setLastPrompt(prompt);
 
-      const res = await fetch("/api/vibe/analyze", {
+      const res = await fetch(buildApiUrl("/api/vibe/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ 
@@ -597,7 +609,7 @@ export default function App() {
     setFeedbackGiven(prev => ({ ...prev, [key]: newSignal }));
 
     try {
-      await fetch("/api/feedback", {
+      await fetch(buildApiUrl("/api/feedback"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

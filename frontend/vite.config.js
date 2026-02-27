@@ -10,14 +10,15 @@ export default defineConfig({
   ],
   server: {
     // This proxy intercepts frontend requests and securely forwards them to the FastAPI backend
+    // Only needed for local development; production uses full URLs from VITE_API_URL
     proxy: {
       '/auth': {
-        target: 'http://127.0.0.1:8000',
+        target: process.env.VITE_API_URL || 'http://localhost:8000',
         changeOrigin: true,
-        secure: false, // Set to false for local dev, but handles the handoff perfectly
+        secure: false,
       },
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: process.env.VITE_API_URL || 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
       }
