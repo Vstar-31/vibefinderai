@@ -918,7 +918,7 @@ export default function App() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         <IconDisc />
-                        <span style={S.cardLabel}>Generated Playlist // 100% Free Engine</span>
+                        <span style={S.cardLabel}>Generated Playlist</span>
                       </div>
                       <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>{result.tracks.length} TRACKS</span>
                     </div>

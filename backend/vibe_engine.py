@@ -2,7 +2,7 @@ import re
 from collections import defaultdict
 
 # =============================================================================
-#  VIBEFINDER AI — ACOUSTIC INTELLIGENCE ENGINE v4.1
+#  VIBEFINDER AI — ACOUSTIC INTELLIGENCE ENGINE v4.2
 #  "THE OMNISCIENT GRAND EXPANSION" EDITION
 # =============================================================================
 #  Architecture upgrades:
@@ -11,9 +11,11 @@ from collections import defaultdict
 #   3. Negation handling — "not happy", "don't want sad", "no chill" flip scores.
 #   4. Emoji→mood mapping — 🔥😭💀🥺 all carry signal.
 #   5. Valence–Arousal cross-scoring — vibes that share emotional space bleed confidence.
-#   6. 18 Total Vibe Categories including new 'tropical', 'industrial', and 'desi'.
+#   6. 19 Total Vibe Categories including new 'rock', 'tropical', 'industrial', and 'desi'.
 #   7. Global Artist Index — 400+ artists mapped across the spectrum.
 #   8. Calibrated Confidence Math — filters out bleed noise for higher certainty.
+#   9. DECADES EXPANSION — Full mapping from 1950s to 2020s.
+#  10. MAX GENRES — Every category loaded with niche and sub-genre targets.
 # =============================================================================
 
 
@@ -21,6 +23,25 @@ from collections import defaultdict
 # Maps any user word or phrase to one or more canonical tokens that appear in
 # VIBE_MAP keyword/context lists. Applied BEFORE scoring.
 SYNONYMS: dict[str, list[str]] = {
+    # ── decades / eras adjacent ──────────────────────────────────────────────
+    "1950s": ["retro", "rock", "soulful"],
+    "50s": ["retro", "rock", "soulful"],
+    "1960s": ["retro", "rock", "dreamy"],
+    "60s": ["retro", "rock", "dreamy"],
+    "1970s": ["retro", "rock", "soulful", "party"],
+    "70s": ["retro", "rock", "soulful", "party"],
+    "1980s": ["retro", "party", "industrial"],
+    "80s": ["retro", "party", "industrial"],
+    "1990s": ["retro", "rock", "chill", "hype"],
+    "90s": ["retro", "rock", "chill", "hype"],
+    "2000s": ["retro", "rock", "hyperpop", "party"],
+    "00s": ["retro", "rock", "hyperpop", "party"],
+    "y2k": ["retro", "hyperpop", "rock"],
+    "2010s": ["party", "hype", "chill"],
+    "10s": ["party", "hype", "chill"],
+    "2020s": ["hyperpop", "hype"],
+    "20s": ["hyperpop", "hype"],
+
     # ── energy / hype / aura adjacent ─────────────────────────────────────────
     "fire": ["hype", "energy"],
     "bussin": ["hype", "energy"],
@@ -74,6 +95,23 @@ SYNONYMS: dict[str, list[str]] = {
     "grinding": ["focus"],
     "flow state": ["focus"],
     "no thoughts head empty": ["chill", "focus"],
+
+    # ── rock / guitar / band adjacent (NEW) ──────────────────────────────────
+    "shredding": ["rock", "intense"],
+    "face melting": ["rock", "intense"],
+    "headbang": ["rock", "intense"],
+    "mosh": ["rock", "intense"],
+    "moshpit": ["rock", "intense", "party"],
+    "mosh pit": ["rock", "intense", "party"],
+    "guitar solo": ["rock", "cinematic"],
+    "distortion": ["rock", "industrial"],
+    "fuzz": ["rock", "retro"],
+    "garage band": ["rock", "retro"],
+    "indie sleaze": ["rock", "party"],
+    "alt rock": ["rock"],
+    "pop punk": ["rock", "party"],
+    "rock out": ["rock", "hype"],
+    "rockstar": ["rock", "hype"],
 
     # ── calm / peace adjacent ───────────────────────────────────────────────
     "cozy": ["calm", "chill"],
@@ -216,9 +254,9 @@ SYNONYMS: dict[str, list[str]] = {
     "edgy": ["dark", "intense"],
     "goth": ["dark"],
     "gothic": ["dark"],
-    "emo": ["dark", "intense"],
-    "emo era": ["dark", "intense"],
-    "black parade energy": ["dark", "intense"],
+    "emo": ["dark", "intense", "rock"],
+    "emo era": ["dark", "intense", "rock"],
+    "black parade energy": ["dark", "intense", "rock"],
     "screaming into void": ["intense", "dark"],
     "destructive": ["intense", "dark"],
     "going feral": ["intense", "dark"],
@@ -298,7 +336,7 @@ SYNONYMS: dict[str, list[str]] = {
     "banjo": ["country"],
     "fiddle": ["country", "soulful"],
     "acoustic guitar": ["country", "calm", "focus"],
-    "road trip": ["country", "retro"],
+    "road trip": ["country", "retro", "rock"],
     "tail gate": ["country", "party"],
     "tailgate": ["country", "party"],
     "barn": ["country"],
@@ -319,17 +357,12 @@ SYNONYMS: dict[str, list[str]] = {
     "throwback": ["retro"],
     "vintage": ["retro"],
     "old school": ["retro"],
-    "y2k": ["retro", "hyperpop"],
-    "2000s": ["retro"],
-    "90s": ["retro"],
-    "80s": ["retro"],
-    "70s": ["retro", "soulful"],
     "cassette": ["retro"],
-    "vinyl": ["retro", "soulful"],
-    "record store": ["retro", "soulful"],
+    "vinyl": ["retro", "soulful", "rock"],
+    "record store": ["retro", "soulful", "rock"],
     "fm radio": ["retro"],
     "dial-up": ["retro"],
-    "summer of 69": ["retro", "euphoric"],
+    "summer of 69": ["retro", "euphoric", "rock"],
     "vaporwave": ["retro", "dreamy"],
     "city pop": ["retro", "chill"],
     "city pop vibes": ["retro", "chill"],
@@ -341,7 +374,7 @@ SYNONYMS: dict[str, list[str]] = {
     # ── hyperpop / internet adjacent ─────────────────────────────────────────
     "hyperpop": ["hyperpop"],
     "glitchy": ["hyperpop", "dark"],
-    "distorted": ["hyperpop", "intense"],
+    "distorted": ["hyperpop", "intense", "rock"],
     "maximalist": ["hyperpop", "hype"],
     "chaotic good": ["hyperpop", "party"],
     "terminally online": ["hyperpop"],
@@ -351,7 +384,7 @@ SYNONYMS: dict[str, list[str]] = {
     "hypno pop": ["hyperpop"],
     "bubblegum bass": ["hyperpop"],
     "scenecore": ["hyperpop", "intense"],
-    "skramz": ["intense", "hyperpop"],
+    "skramz": ["intense", "hyperpop", "rock"],
     "slugga": ["hype", "hyperpop"],
     "nightcore": ["hyperpop", "hype"],
     "digital girl": ["hyperpop", "dreamy"],
@@ -486,11 +519,9 @@ SYNONYMS: dict[str, list[str]] = {
     "procrastination": ["chill", "focus"],
     "background noise": ["focus", "chill"],
     "background music": ["focus", "calm"],
-    "dinner party": ["soulful", "calm"],
     "cooking": ["calm", "soulful"],
     "hosting": ["soulful", "party"],
     "karaoke": ["party", "hype"],
-    "road trip": ["hype", "chill"],
     "long flight": ["chill", "calm"],
     "commute": ["chill", "focus"],
     "grocery shopping": ["chill", "calm"],
@@ -541,9 +572,6 @@ SYNONYMS: dict[str, list[str]] = {
     "delirious": ["dreamy", "euphoric"],
     "deliriously tired": ["chill", "dreamy"],
     "tired but happy": ["chill", "euphoric"],
-    "crumbling": ["heartbreak", "dark"],
-    "facade": ["heartbreak", "dark"],
-    "holding it together": ["heartbreak", "focus"],
     "at peace with being alone": ["calm", "soulful"],
     "peace with being alone": ["calm", "soulful"],
     "at peace": ["calm", "euphoric"],
@@ -551,7 +579,6 @@ SYNONYMS: dict[str, list[str]] = {
     "home that never": ["heartbreak", "dreamy"],
     "never heard before": ["dreamy", "chill"],
     "familiar but never": ["dreamy", "heartbreak"],
-    "background music": ["focus", "calm"],
     "first date at home": ["soulful", "calm"],
     "waltz": ["cinematic", "calm"],
     "waltzing": ["cinematic", "calm"],
@@ -560,40 +587,36 @@ SYNONYMS: dict[str, list[str]] = {
     "berlin": ["industrial", "dark"],
     "4am": ["dark", "industrial"],
     "at 4am": ["dark", "industrial"],
-    "long flight": ["calm", "chill"],
     "looks like": ["dreamy", "cinematic"],
     "feels like": ["heartbreak", "dreamy"],
     "sounds like": ["dreamy", "focus"],
     "tastes like": ["dreamy", "retro"],
 
     # ── niche genre terms that were SIGNAL LOST ──────────────────────────────
-    "techno": ["industrial", "dark"],
-    "berlin techno": ["industrial", "dark"],
     "underground techno": ["industrial", "dark"],
     "acid techno": ["industrial", "hype"],
     "progressive bluegrass": ["country", "focus"],
     "bluegrass gospel": ["country", "soulful"],
-    "proto-punk": ["intense", "retro"],
+    "proto-punk": ["intense", "retro", "rock"],
     "chamber pop": ["cinematic", "focus"],
     "baroque pop": ["cinematic", "focus"],
     "baroque": ["cinematic", "focus"],
     "dembow": ["tropical", "party"],
     "reggaeton": ["tropical", "party"],
     "raga": ["focus", "dreamy"],
-    "psychedelic": ["dreamy", "retro"],
+    "psychedelic": ["dreamy", "retro", "rock"],
     "wonky": ["industrial", "focus"],
     "outlaw country": ["country", "dark"],
-    "grunge": ["intense", "dark"],
-    "seattle": ["intense", "dark"],
-    "acid rock": ["retro", "intense"],
+    "grunge": ["intense", "dark", "rock"],
+    "seattle": ["intense", "dark", "rock"],
+    "acid rock": ["retro", "intense", "rock"],
     "disco": ["party", "retro"],
     "nairobi": ["tropical", "chill"],
     "afro-fusion": ["tropical", "chill"],
     "victorian": ["cinematic", "soulful"],
-    "waltz": ["cinematic", "calm"],
     "viking": ["cinematic", "intense"],
-    "waltzing": ["cinematic", "calm"],
-    "candlelight": ["soulful", "calm"],
+
+    # ── Emoji map ────────────────────────────────────────────────────────────
     "🔥": ["hype", "energy"],
     "💀": ["hype", "intense"],
     "😤": ["hype", "intense"],
@@ -612,7 +635,10 @@ SYNONYMS: dict[str, list[str]] = {
     "🌟": ["euphoric"],
     "🚀": ["euphoric", "hype"],
     "🌈": ["euphoric", "hyperpop"],
-    "🎸": ["intense", "retro"],
+    "🎸": ["rock", "intense", "retro"],
+    "🥁": ["rock", "party"],
+    "🎤": ["rock", "party", "soulful"],
+    "🤘": ["rock", "intense"],
     "🎷": ["soulful", "cinematic"],
     "🎺": ["soulful", "hype"],
     "🎻": ["country", "cinematic", "soulful"],
@@ -642,31 +668,70 @@ NEGATION_TOKENS = {
 
 # ─── VALENCE–AROUSAL BLEED TABLE ─────────────────────────────────────────────
 BLEED: dict[str, dict[str, float]] = {
-    "hype":       {"intense": 0.25, "party": 0.20, "euphoric": 0.15},
+    "hype":       {"intense": 0.25, "party": 0.20, "euphoric": 0.15, "rock": 0.10},
     "calm":       {"focus": 0.20, "chill": 0.25, "dreamy": 0.10},
-    "intense":    {"hype": 0.20, "dark": 0.25},
+    "intense":    {"hype": 0.20, "dark": 0.25, "rock": 0.20},
     "chill":      {"calm": 0.20, "dreamy": 0.15, "heartbreak": 0.10},
     "focus":      {"calm": 0.15, "cinematic": 0.10},
     "euphoric":   {"party": 0.25, "hype": 0.15, "dreamy": 0.10},
     "soulful":    {"heartbreak": 0.20, "chill": 0.15, "calm": 0.10},
-    "retro":      {"soulful": 0.15, "chill": 0.10, "dreamy": 0.10},
+    "retro":      {"soulful": 0.15, "chill": 0.10, "dreamy": 0.10, "rock": 0.15},
     "dreamy":     {"chill": 0.15, "heartbreak": 0.10, "dark": 0.10},
-    "cinematic":  {"intense": 0.15, "euphoric": 0.15, "dreamy": 0.10},
+    "cinematic":  {"intense": 0.15, "euphoric": 0.15, "dreamy": 0.10, "rock": 0.05},
     "dark":       {"intense": 0.20, "dreamy": 0.10},
     "heartbreak": {"soulful": 0.15, "dark": 0.10, "chill": 0.10},
     "hyperpop":   {"hype": 0.20, "party": 0.20, "euphoric": 0.10},
     "party":      {"hype": 0.25, "euphoric": 0.20, "hyperpop": 0.10},
-    "country":    {"calm": 0.15, "soulful": 0.15, "retro": 0.10},
+    "country":    {"calm": 0.15, "soulful": 0.15, "retro": 0.10, "rock": 0.10},
     "tropical":   {"party": 0.25, "chill": 0.15},
     "industrial": {"dark": 0.25, "intense": 0.20},
     "desi":       {"party": 0.25, "hype": 0.15, "soulful": 0.10},
+    "rock":       {"intense": 0.20, "retro": 0.20, "hype": 0.15, "party": 0.10, "chill": 0.05},
 }
 
 
 # =============================================================================
-#  THE GRAND VIBE MAP — V4.1 FULL DATASET
+#  THE GRAND VIBE MAP — V4.2 FULL DATASET w/ MEGA GENRES & DECADES
 # =============================================================================
 VIBE_MAP: dict[str, dict] = {
+
+    "rock": {
+        "keywords": [
+            "rock", "guitar", "bass", "drums", "shred", "riff", "distortion",
+            "fuzz", "amp", "garage", "band", "punk", "grunge", "indie",
+            "alternative", "classic", "rock and roll", "rockstar", "acoustic",
+            "reverb", "power chord", "anthem", "angst", "rebellion", "stage dive",
+            "50s", "60s", "70s", "80s", "90s", "00s"
+        ],
+        "phrases": [
+            "face melting", "rock out", "let's rock", "shredding it", "up to eleven",
+            "indie sleaze", "battle of the bands", "garage days", "punk's not dead"
+        ],
+        "context": [
+            "garage", "dive bar", "arena", "stadium", "basement", "mosh pit",
+            "skatepark", "concert", "gig", "record store", "road trip",
+        ],
+        "artists": [
+            "the beatles", "led zeppelin", "pink floyd", "nirvana", "the strokes",
+            "arctic monkeys", "foo fighters", "red hot chili peppers", "queen",
+            "the rolling stones", "david bowie", "the white stripes", "radiohead",
+            "muse", "paramore", "green day", "blink-182", "the black keys",
+            "pearl jam", "soundgarden", "alice in chains", "the killers",
+            "kings of leon", "my chemical romance", "fall out boy",
+            "the smashing pumpkins", "the clash", "ramones", "the cure",
+            "the smiths", "joy division", "tame impala", "mac demarco",
+            "fontaines d.c.", "idles", "turnstile", "qotsa",
+            "queens of the stone age", "ac/dc", "guns n' roses", "metallica",
+        ],
+        "bpm": "110-160",
+        "genres": [
+            "Classic Rock", "Alternative Rock", "Indie Rock", "Punk Rock",
+            "Grunge", "Hard Rock", "Garage Rock", "Psychedelic Rock", "Pop Punk",
+            "Post-Punk", "Shoegaze", "Math Rock", "Prog Rock", "Soft Rock",
+            "Glam Rock", "Arena Rock", "New Wave", "Emo", "Britpop",
+            "Folk Rock", "Blues Rock", "Post-Hardcore", "Surf Rock", "Krautrock"
+        ],
+    },
 
     "hype": {
         "keywords": [
@@ -713,11 +778,11 @@ VIBE_MAP: dict[str, dict] = {
             "seven lions", "nghtmre", "griz", "liquid stranger", "1788-l",
             "svdden death", "meduza", "dom dolla", "fisher",
             "isoxo", "knock2", "rl grime",
-            "scarlxrd", "ghostemane", "", "$uicideboy$", "pouya",
+            "scarlxrd", "ghostemane", "$uicideboy$", "pouya",
             "night lovell", "trevor daniel",
         ],
         "bpm": "130-175",
-        "genres": ["Trap", "Phonk", "Hardstyle", "Rage Rap", "EDM", "UK Drill", "Bass Music"],
+        "genres": ["Trap", "Phonk", "Hardstyle", "Rage Rap", "EDM", "UK Drill", "Bass Music", "Trap Metal", "Drift Phonk", "Jersey Club", "Midtempo Bass", "Brostep", "Tearout", "Color Bass"],
     },
 
     "calm": {
@@ -760,7 +825,7 @@ VIBE_MAP: dict[str, dict] = {
             "weyes blood", "grouper", "joni mitchell",
         ],
         "bpm": "55-80",
-        "genres": ["Ambient", "Acoustic", "Folk", "Easy Listening", "New Age", "Bossa Nova", "Neoclassical"],
+        "genres": ["Ambient", "Acoustic", "Folk", "Easy Listening", "New Age", "Bossa Nova", "Neoclassical", "Drone", "Folktronica", "Healing", "Soundscape", "Ethereal"],
     },
 
     "intense": {
@@ -794,13 +859,13 @@ VIBE_MAP: dict[str, dict] = {
             "power trip", "turnstile", "health", "nothing", "cult leader",
             "portrayal of guilt", "show me the body", "girls rituals",
             "drain", "speed", "scowl", "militarie gun",
-            "ghostemane", "$uicideboy$", "pouya", "",
+            "ghostemane", "$uicideboy$", "pouya",
             "nine inch nails", "marilyn manson", "rob zombie",
             "white zombie", "tool", "a perfect circle", "primus",
             "system of a down", "rage against the machine", "korn", "limp bizkit",
         ],
         "bpm": "140-220",
-        "genres": ["Deathcore", "Nu-Metal", "Thrash", "Hardcore", "Progressive Metal", "Industrial", "Grindcore"],
+        "genres": ["Deathcore", "Nu-Metal", "Thrash", "Hardcore", "Progressive Metal", "Industrial", "Grindcore", "Djent", "Beatdown Hardcore", "Sludge Metal", "Metalcore", "Crust Punk", "Powerviolence", "Mathcore", "Black Metal", "Death Metal", "Goregrind"],
     },
 
     "chill": {
@@ -839,7 +904,7 @@ VIBE_MAP: dict[str, dict] = {
             "loyle carner", "knxwledge", "black milk",
         ],
         "bpm": "70-100",
-        "genres": ["Neo-Soul", "Indie R&B", "Chillwave", "Lo-Fi Hip Hop", "Vaporwave", "Pluggnb"],
+        "genres": ["Neo-Soul", "Indie R&B", "Chillwave", "Lo-Fi Hip Hop", "Vaporwave", "Pluggnb", "Jazz Hop", "Trip Hop", "Yacht Rock", "Balearic Beat", "Downtempo", "Chillstep", "Lounge"],
     },
 
     "focus": {
@@ -875,7 +940,7 @@ VIBE_MAP: dict[str, dict] = {
             "kali malone",
         ],
         "bpm": "60-90",
-        "genres": ["Modern Classical", "Ambient", "Deep House", "Instrumental Hip Hop", "IDM", "Krautrock"],
+        "genres": ["Modern Classical", "Ambient", "Deep House", "Instrumental Hip Hop", "IDM", "Krautrock", "Minimal Techno", "Glitch", "Post-Rock", "Microhouse", "Psybient", "Brainwave Entrainment"],
     },
 
     "euphoric": {
@@ -910,7 +975,7 @@ VIBE_MAP: dict[str, dict] = {
             "four tet", "jamie xx", "rüfüs du sol", "dj tennis",
         ],
         "bpm": "120-145",
-        "genres": ["Progressive House", "Future Bass", "Dream Pop", "Synthpop", "Melodic Techno", "Trance"],
+        "genres": ["Progressive House", "Future Bass", "Dream Pop", "Synthpop", "Melodic Techno", "Trance", "Happy Hardcore", "French House", "Balearic Trance", "Italo Disco", "Euphoric Hardstyle", "Eurodance"],
     },
 
     "soulful": {
@@ -948,7 +1013,7 @@ VIBE_MAP: dict[str, dict] = {
             "lucky daye", "giveon", "eli henderson", "lola young",
         ],
         "bpm": "50-110",
-        "genres": ["Jazz", "Blues", "Classic Soul", "Gospel", "Neo-Soul", "Contemporary R&B"],
+        "genres": ["Jazz", "Blues", "Classic Soul", "Gospel", "Neo-Soul", "Contemporary R&B", "Motown", "Northern Soul", "Quiet Storm", "Jazz Fusion", "Spiritual Jazz", "Rhythm and Blues", "Gospel Soul"],
     },
 
     "retro": {
@@ -961,6 +1026,7 @@ VIBE_MAP: dict[str, dict] = {
             "drive-in", "diner", "roller rink", "arcade", "mall",
             "coming of age", "prom", "summer of love", "woodstock",
             "synthesizer", "drum machine", "gated reverb",
+            "50s", "60s", "70s", "1980s", "1990s", "00s", "y2k", "2000s"
         ],
         "phrases": [
             "core memory", "it's giving 80s", "it's giving 90s",
@@ -989,7 +1055,7 @@ VIBE_MAP: dict[str, dict] = {
             "anri", "miki matsubara",
         ],
         "bpm": "95-128",
-        "genres": ["Synthwave", "80s Pop", "New Wave", "Disco", "Funk", "City Pop", "AOR"],
+        "genres": ["Synthwave", "80s Pop", "New Wave", "Disco", "Funk", "City Pop", "AOR", "Doo-Wop", "Rockabilly", "Motown", "Classic Soul", "Boogie", "Britpop", "Italo Disco", "Y2K Pop", "Vaporwave", "Chiptune"],
     },
 
     "dreamy": {
@@ -1027,7 +1093,7 @@ VIBE_MAP: dict[str, dict] = {
             "elysia crampton", "claire rousay",
         ],
         "bpm": "65-105",
-        "genres": ["Shoegaze", "Dream Pop", "Indie Rock", "Psych Rock", "Slowcore", "Ambient Pop"],
+        "genres": ["Shoegaze", "Dream Pop", "Indie Rock", "Psych Rock", "Slowcore", "Ambient Pop", "Space Rock", "Ethereal Wave", "Dream Trance", "Chillwave"],
     },
 
     "cinematic": {
@@ -1069,7 +1135,7 @@ VIBE_MAP: dict[str, dict] = {
             "interstellar ost", "blade runner 2049 ost", "inception ost",
         ],
         "bpm": "65-160",
-        "genres": ["Soundtrack", "Modern Classical", "Epic Orchestral", "Dark Ambient", "Neo-Classical"],
+        "genres": ["Soundtrack", "Modern Classical", "Epic Orchestral", "Dark Ambient", "Neo-Classical", "Film Score", "Neoclassical Dark Wave", "Trailer Music", "Choral", "Symphonic Metal"],
     },
 
     "dark": {
@@ -1104,7 +1170,7 @@ VIBE_MAP: dict[str, dict] = {
             "siouxsie and the banshees", "dead can dance", "this mortal coil",
         ],
         "bpm": "85-130",
-        "genres": ["Darkwave", "Industrial Techno", "Witch House", "Goth", "Post-Punk", "Black Metal Adjacent"],
+        "genres": ["Darkwave", "Industrial Techno", "Witch House", "Goth", "Post-Punk", "Black Metal Adjacent", "Gothic Rock", "Coldwave", "Deathrock", "Dark Ambient", "Horrorcore", "Doom Metal"],
     },
 
     "heartbreak": {
@@ -1156,7 +1222,7 @@ VIBE_MAP: dict[str, dict] = {
             "joji", "mitski", "d4vd", "conan gray", "stephen dawes",
         ],
         "bpm": "60-105",
-        "genres": ["Sad Pop", "Indie Folk", "Emo", "Sad R&B", "Alt-Pop", "Singer-Songwriter"],
+        "genres": ["Sad Pop", "Indie Folk", "Emo", "Sad R&B", "Alt-Pop", "Singer-Songwriter", "Midwest Emo", "Sadcore", "Slowcore", "Melancholia", "Acoustic Pop"],
     },
 
     "hyperpop": {
@@ -1193,7 +1259,7 @@ VIBE_MAP: dict[str, dict] = {
             "p4rkr", "rebzyyx", "nettspend",
         ],
         "bpm": "140-175",
-        "genres": ["Hyperpop", "Digicore", "PC Music", "Bubblegum Bass", "Glitchpop", "Cloud Rap"],
+        "genres": ["Hyperpop", "Digicore", "PC Music", "Bubblegum Bass", "Glitchpop", "Cloud Rap", "Glitchcore", "Dariacore", "Sigilkore", "Scenecore", "Nightcore", "HexD", "Bitpop"],
     },
 
     "party": {
@@ -1233,7 +1299,7 @@ VIBE_MAP: dict[str, dict] = {
             "aeroplane", "poolside", "chromeo", "classixx",
         ],
         "bpm": "120-135",
-        "genres": ["Dance Pop", "House", "Tech House", "Afrobeats", "Amapiano", "Dancehall", "Club"],
+        "genres": ["Dance Pop", "House", "Tech House", "Afrobeats", "Amapiano", "Dancehall", "Club", "Reggaeton", "Baile Funk", "Guaracha", "Bassline", "Moombahton", "Electro House", "Club Trax"],
     },
 
     "country": {
@@ -1280,7 +1346,7 @@ VIBE_MAP: dict[str, dict] = {
             "the decemberists",
         ],
         "bpm": "70-120",
-        "genres": ["Country", "Folk", "Americana", "Bluegrass", "Singer-Songwriter", "Southern Rock", "Alt-Country"],
+        "genres": ["Country", "Folk", "Americana", "Bluegrass", "Singer-Songwriter", "Southern Rock", "Alt-Country", "Outlaw Country", "Bro-Country", "Texas Country", "Bakersfield Sound", "Countrypolitan"],
     },
 
     "tropical": {
@@ -1303,7 +1369,7 @@ VIBE_MAP: dict[str, dict] = {
             "tiwa savage", "fireboy dml", "ckay", "oxlade",
         ],
         "bpm": "90-110",
-        "genres": ["Afrobeats", "Reggaeton", "Dancehall", "Reggae", "Soca", "Amapiano"],
+        "genres": ["Afrobeats", "Reggaeton", "Dancehall", "Reggae", "Soca", "Amapiano", "Zouk", "Kizomba", "Afrobeat", "Highlife", "Champeta", "Calypso"],
     },
 
     "industrial": {
@@ -1325,7 +1391,7 @@ VIBE_MAP: dict[str, dict] = {
             "ho99o9", "model/rizal",
         ],
         "bpm": "110-140",
-        "genres": ["Industrial", "EBM", "Dark Techno", "Experimental Hip Hop", "Noise"],
+        "genres": ["Industrial", "EBM", "Dark Techno", "Experimental Hip Hop", "Noise", "Electro-Industrial", "Aggrotech", "Power Electronics", "Cyberpunk", "Dark Electro", "Harsh Noise"],
     },
     
     "desi": {
@@ -1350,7 +1416,7 @@ VIBE_MAP: dict[str, dict] = {
             "shubh", "tesher", "divine", "yo yo honey singh", "ammy virk", "harrdy sandhu"
         ],
         "bpm": "90-130",
-        "genres": ["Bollywood", "Desi Pop", "Bhangra", "Punjabi Pop", "Filmi"]
+        "genres": ["Bollywood", "Desi Pop", "Bhangra", "Punjabi Pop", "Filmi", "Ghazal", "Qawwali", "Carnatic", "Hindustani Classical", "Sufi Rock", "Baul"]
     }
 }
 
@@ -1368,7 +1434,7 @@ NEGATION_MULT  = -0.8  # Negated match flips and slightly dampens
 
 
 # =============================================================================
-#  NLP HELPERS  (v4.1 — calibrated)
+#  NLP HELPERS  (v4.2 — calibrated)
 # =============================================================================
 
 import functools
@@ -1450,6 +1516,7 @@ def _detect_anti_vibes(text: str) -> set[str]:
         "party": "party", "club": "party",
         "dreamy": "dreamy", "ethereal": "dreamy",
         "country": "country", "folk": "country",
+        "rock": "rock", "punk": "rock", "indie": "rock", "grunge": "rock",
     }
 
     for pattern in ANTI_PATTERNS:
@@ -1496,12 +1563,12 @@ def _intensity_multiplier(text: str, match_start: int, window_chars: int = 35) -
 
 
 # =============================================================================
-#  MAIN ANALYSIS ENGINE  (v4.1)
+#  MAIN ANALYSIS ENGINE  (v4.2)
 # =============================================================================
 
 def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int = 50, bpm_focus: int = 50) -> dict:
     """
-    Vibe Analysis Engine v4.1 — Calibrated Edition w/ UI Priority Knobs
+    Vibe Analysis Engine v4.2 — Calibrated Edition w/ Mega Genres & Rock
     """
 
     lower_text = text.lower()
@@ -1673,7 +1740,7 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
 
 def _extract_modifier_boost(text: str) -> dict[str, float]:
     """
-    v1.2 — "Like X but Y" Modifier Awareness.
+    v1.3 — "Like X but Y" Modifier Awareness (Updated for Rock).
     Detects patterns like "sounds like Radiohead but more electronic" or
     "like Bon Iver but warmer" and returns a score boost map for the Y modifier.
     The entity lock handles X; this function ensures Y also influences the result.
@@ -1693,7 +1760,7 @@ def _extract_modifier_boost(text: str) -> dict[str, float]:
         "warmer": ["soulful", "calm"],
         "darker": ["dark"],
         "sadder": ["heartbreak"],
-        "heavier": ["intense"],
+        "heavier": ["intense", "rock"],
         "lighter": ["calm", "euphoric"],
         "more atmospheric": ["dreamy", "dark"],
         "atmospheric": ["dreamy", "dark"],
@@ -1704,11 +1771,11 @@ def _extract_modifier_boost(text: str) -> dict[str, float]:
         "punchier": ["hype", "intense"],
         "shorter": ["hype"],
         "danceable": ["party"],
-        "louder": ["intense", "hype"],
+        "louder": ["intense", "hype", "rock"],
         "quieter": ["calm"],
         "nostalgic": ["retro", "dreamy"],
         "futuristic": ["industrial", "focus"],
-        "psychedelic": ["dreamy", "retro"],
+        "psychedelic": ["dreamy", "retro", "rock"],
         "cinematic": ["cinematic"],
         "experimental": ["industrial", "focus"],
         "hopeful": ["euphoric", "calm"],
@@ -1717,6 +1784,9 @@ def _extract_modifier_boost(text: str) -> dict[str, float]:
         "groovy": ["chill", "soulful"],
         "intimate": ["soulful", "calm"],
         "epic": ["cinematic"],
+        "rockier": ["rock"],
+        "punky": ["rock"],
+        "grungier": ["rock"],
     }
 
     for m in modifier_pattern.finditer(lower):
