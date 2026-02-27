@@ -9,3 +9,5 @@ services:
         value: 3.13
       - key: PYTHONUNBUFFERED
         value: 1
+      - key: PRISMA_CACHE_DIR
+        value: .prisma
