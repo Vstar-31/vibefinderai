@@ -17,6 +17,7 @@ import random
 import re
 import logging
 import sys
+import time
 
 # Import our modularized vibe engine
 import vibe_engine
@@ -154,68 +155,71 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # ---------------------------------------------------------
+# Network Retry Helper (v1.2 — Fix #4: Network Resilience)
+# ---------------------------------------------------------
+def _fetch_with_retry(url: str, label: str, timeout: int = 5, max_retries: int = 3) -> dict | None:
+    """
+    GETs a URL and returns parsed JSON, with exponential backoff on failure.
+    Delays between retries: 1s → 2s → 4s.
+    Returns None after all retries are exhausted.
+    """
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode())
+        except Exception as e:
+            wait = 2 ** attempt  # 1s, 2s, 4s
+            if attempt < max_retries - 1:
+                logger.warning(f"[Retry {attempt + 1}/{max_retries}] {label} — {e}. Backing off {wait}s...")
+                time.sleep(wait)
+            else:
+                logger.error(f"{label} failed after {max_retries} attempts: {e}")
+    return None
+
+
+# ---------------------------------------------------------
 # Free Music Fetchers (Last.fm + iTunes)
 # ---------------------------------------------------------
 def fetch_lastfm_tracks_sync(genre: str, limit: int = 200):
     """Hits the free Last.fm API to pull trending tracks."""
     api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
     url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
-    
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            tracks = data.get("tracks", {}).get("track", [])
-            return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
-    except Exception as e:
-        logger.error(f"Last.fm genre fetch failed for '{genre}': {e}")
-        return []
+    data = _fetch_with_retry(url, label=f"Last.fm genre fetch for '{genre}'")
+    if data:
+        tracks = data.get("tracks", {}).get("track", [])
+        return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
+    return []
 
 def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 200):
     """Hits the free Last.fm API to pull a SPECIFIC artist's discography."""
     api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
     url = f"http://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist={urllib.parse.quote(artist)}&api_key={api_key}&format=json&limit={limit}"
-    
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            tracks = data.get("toptracks", {}).get("track", [])
-            return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
-    except Exception as e:
-        logger.error(f"Last.fm artist fetch failed for '{artist}': {e}")
-        return []
+    data = _fetch_with_retry(url, label=f"Last.fm artist fetch for '{artist}'")
+    if data:
+        tracks = data.get("toptracks", {}).get("track", [])
+        return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
+    return []
 
 def fetch_lastfm_track_search_sync(query: str, limit: int = 100):
     """FALLBACK: Directly searches Last.fm for literal track names if AI confidence is shot."""
     api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
     url = f"http://ws.audioscrobbler.com/2.0/?method=track.search&track={urllib.parse.quote(query)}&api_key={api_key}&format=json&limit={limit}"
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            tracks = data.get("results", {}).get("trackmatches", {}).get("track", [])
-            return [{"title": t.get("name"), "artist": t.get("artist")} for t in tracks]
-    except Exception as e:
-        logger.error(f"Last.fm direct track search failed for '{query}': {e}")
-        return []
+    data = _fetch_with_retry(url, label=f"Last.fm direct track search for '{query}'")
+    if data:
+        tracks = data.get("results", {}).get("trackmatches", {}).get("track", [])
+        return [{"title": t.get("name"), "artist": t.get("artist")} for t in tracks]
+    return []
 
 def fetch_itunes_data_sync(title: str, artist: str):
     """Silently hits the free iTunes API to grab the .m4a preview & cover art."""
     query = urllib.parse.quote(f"{title} {artist}")
     url = f"https://itunes.apple.com/search?term={query}&entity=song&limit=1"
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
-            data = json.loads(response.read().decode())
-            if data.get("resultCount", 0) > 0:
-                track = data["results"][0]
-                return {
-                    "preview_url": track.get("previewUrl"),
-                    "cover_art": track.get("artworkUrl100")
-                }
-    except Exception as e: 
-        logger.warning(f"iTunes API preview fetch failed for '{title}' by '{artist}': {e}")
+    # iTunes is low-stakes; 1 retry is enough, no need for full backoff
+    data = _fetch_with_retry(url, label=f"iTunes preview for '{title}' by '{artist}'", timeout=3, max_retries=2)
+    if data and data.get("resultCount", 0) > 0:
+        track = data["results"][0]
+        return {"preview_url": track.get("previewUrl"), "cover_art": track.get("artworkUrl100")}
     return {"preview_url": None, "cover_art": None}
 
 async def fetch_lastfm_tracks(genre: str, limit: int = 200):
@@ -298,6 +302,13 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
         popularity_bias = (i / len(tracks)) * 30 if len(tracks) > 0 else 0
         nicheness_multiplier = (request.nicheness - 50) / 50.0
         score += (popularity_bias * nicheness_multiplier)
+        
+        # v1.2 Fix #2 — English / Global Popularity Filter
+        # Last.fm returns results ordered by listener count, so lower index = higher global reach.
+        # We apply a mild "global popularity" bonus that decays over the first 100 results.
+        # This counter-balances regional/non-English charts flooding the top without explicit request.
+        global_popularity_bonus = max(0.0, (1.0 - (i / max(len(tracks), 100))) * 10.0)
+        score += global_popularity_bonus
         
         score += random.uniform(0, 1.5)
         scored_tracks.append((score, t))
@@ -405,6 +416,19 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         "rain", "coffee", "drive", "party", "chill", "focus", "work", 
         "sleep", "wake", "morning", "midnight", "fire", "magic", "dream"
     }
+
+    # v1.2 Fix #1 — Negative Intent Shield
+    # If any of these tokens immediately precede a matched entity, we discard the lock.
+    NEGATION_TOKENS = {"not", "no", "don't", "dont", "nothing", "avoid", "except", "without", "skip", "never"}
+
+    def _is_negated_entity(entity: str, text: str) -> bool:
+        """Returns True if a negation token immediately precedes the entity in the text."""
+        pattern = rf'\b({"|".join(re.escape(n) for n in NEGATION_TOKENS)})\s+{re.escape(entity)}\b'
+        return bool(re.search(pattern, text, re.IGNORECASE))
+
+    # v1.2 Fix #3 — Standalone Lock Sensitivity
+    # Only allow a song-only lock (no artist match) on SHORT prompts (< 10 words).
+    prompt_word_count = len(prompt_lower.split())
     
     if not detected_artist:
         try:
@@ -414,12 +438,20 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                 artist_pattern = rf'\b{re.escape(artist_name)}\b'
                 
                 if re.search(artist_pattern, prompt_lower):
+                    # v1.2 Fix #1: Negative Intent Shield — discard if negated
+                    if _is_negated_entity(artist_name, prompt_lower):
+                        logger.info(f"Entity Scanner: Negation detected before artist '{a.name}' — lock discarded.")
+                        continue
                     detected_artist = a.name
                     logger.info(f"Entity Scanner Locked Artist: {detected_artist}")
                     if a.songs:
                         song_list = [s.strip().lower() for s in a.songs.split(",")]
                         for s in song_list:
                             if s and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
+                                # v1.2 Fix #1: Negative Intent Shield on song too
+                                if _is_negated_entity(s, prompt_lower):
+                                    logger.info(f"Entity Scanner: Negation detected before song '{s}' — song lock discarded.")
+                                    continue
                                 detected_song = s
                                 logger.info(f"Entity Scanner Locked Song: {detected_song}")
                                 break
@@ -429,6 +461,14 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                     for s in song_list:
                         # NEW GUARD: Only lock if the song is >3 chars AND not in the blacklist!
                         if len(s) > 3 and s not in COMMON_WORDS_BLACKLIST and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
+                            # v1.2 Fix #1: Negative Intent Shield
+                            if _is_negated_entity(s, prompt_lower):
+                                logger.info(f"Entity Scanner: Negation detected before song '{s}' — standalone lock discarded.")
+                                continue
+                            # v1.2 Fix #3: Standalone Lock Sensitivity — only lock on short prompts
+                            if prompt_word_count >= 10:
+                                logger.info(f"Entity Scanner: Long prompt ({prompt_word_count} words) — skipping standalone song lock for '{s}'.")
+                                continue
                             detected_artist = a.name
                             detected_song = s
                             logger.info(f"Entity Scanner Locked Song independently: {detected_song} by {detected_artist}")
