@@ -12,6 +12,8 @@ const IconWave    = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="
 const IconDisc    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>;
 const IconFilter  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
 const IconRefresh = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>;
+const IconThumbUp   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>;
+const IconThumbDown = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>;
 
 /* ─── WAVEFORM VISUALISER ────────────────────────────────────── */
 function WaveformBars({ active, count = 28 }) {
@@ -428,6 +430,10 @@ export default function App() {
   const audioRef = useRef(null);
   const vuRef = useRef(null);
 
+  // Feedback state — tracks which tracks have been rated this session
+  // key: "title|artist", value: 1 (liked) | -1 (disliked)
+  const [feedbackGiven, setFeedbackGiven] = useState({});
+
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
     euphoric: '#e879f9', soulful: '#fbbf24', retro: '#818cf8', dreamy: '#c084fc', cinematic: '#fb923c', 
@@ -576,6 +582,39 @@ export default function App() {
       setOverrideArtist("");
       setUseSecondaryVibe(false);
       setError("");
+      setFeedbackGiven({});
+  };
+
+  // FEEDBACK SUBMISSION
+  // Fires immediately on thumb click. Optimistic UI — we update local state
+  // before the network call completes so the button feels instant.
+  const submitFeedback = async (track, position, signal) => {
+    const key = `${track.title}|${track.artist}`;
+
+    // Optimistic update — flip if same button clicked again (toggle off → 0)
+    const current = feedbackGiven[key];
+    const newSignal = current === signal ? 0 : signal;
+    setFeedbackGiven(prev => ({ ...prev, [key]: newSignal }));
+
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          request_id:      result?.request_id ?? "unlogged",
+          track_title:     track.title,
+          track_artist:    track.artist,
+          signal:          newSignal,
+          position:        position,
+          preview_seconds: null,
+        }),
+      });
+    } catch (err) {
+      console.warn("Feedback submission failed:", err);
+    }
   };
 
   /* ── STYLES ── */
@@ -908,8 +947,51 @@ export default function App() {
                               </div>
                             </div>
                             
-                            {/* Dual Options (C & B) */}
-                            <div style={{ display: "flex", gap: "8px" }}>
+                            {/* Track Actions */}
+                            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+
+                              {/* Feedback buttons — shown after result loads */}
+                              {(() => {
+                                const fbKey = `${track.title}|${track.artist}`;
+                                const given = feedbackGiven[fbKey];
+                                return (
+                                  <div style={{ display: "flex", gap: "4px" }}>
+                                    <button
+                                      onClick={() => submitFeedback(track, i + 1, 1)}
+                                      className="dial-btn"
+                                      title="Good match"
+                                      style={{
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                        width: "32px", height: "32px", borderRadius: "8px", border: "1px solid",
+                                        background: given === 1 ? "rgba(52,211,153,0.2)" : "rgba(120,80,20,0.1)",
+                                        borderColor: given === 1 ? "#34d399" : "rgba(120,80,20,0.35)",
+                                        color: given === 1 ? "#34d399" : "rgba(180,140,80,0.4)",
+                                        cursor: "pointer", transition: "all 0.15s",
+                                        boxShadow: given === 1 ? "0 0 8px rgba(52,211,153,0.3)" : "none",
+                                      }}
+                                    >
+                                      <IconThumbUp />
+                                    </button>
+                                    <button
+                                      onClick={() => submitFeedback(track, i + 1, -1)}
+                                      className="dial-btn"
+                                      title="Bad match"
+                                      style={{
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                        width: "32px", height: "32px", borderRadius: "8px", border: "1px solid",
+                                        background: given === -1 ? "rgba(248,113,113,0.2)" : "rgba(120,80,20,0.1)",
+                                        borderColor: given === -1 ? "#f87171" : "rgba(120,80,20,0.35)",
+                                        color: given === -1 ? "#f87171" : "rgba(180,140,80,0.4)",
+                                        cursor: "pointer", transition: "all 0.15s",
+                                        boxShadow: given === -1 ? "0 0 8px rgba(248,113,113,0.3)" : "none",
+                                      }}
+                                    >
+                                      <IconThumbDown />
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+
                               <button 
                                 onClick={() => togglePlay(track.preview_url)}
                                 disabled={!track.preview_url}

@@ -22,6 +22,9 @@ import time
 # Import our modularized vibe engine
 import vibe_engine
 
+# Import semantic fallback ranker (gracefully degrades if model not installed)
+import semantic_search
+
 # Load environment variables
 load_dotenv()
 
@@ -140,6 +143,7 @@ class TrackInfo(BaseModel):
     cover_art: str | None = None
 
 class VibeResponse(BaseModel):
+    request_id: str           # NEW: VibeRequest row id, needed for feedback linking
     dominant_vibe: str
     confidence: float
     bpm_range: str
@@ -150,6 +154,20 @@ class VibeResponse(BaseModel):
     detected_artist: str | None = None
     detected_song: str | None = None
     tracks: list[TrackInfo] = []
+
+class FeedbackRequest(BaseModel):
+    """
+    Sent by the frontend when a user thumbs up / thumbs down a track.
+    signal:   1 = liked, -1 = skipped/disliked, 0 = played through (implicit)
+    position: 1-indexed rank of the track in the returned list
+    preview_seconds: how long they listened before rating (optional)
+    """
+    request_id: str       # VibeRequest.id from the analysis response
+    track_title: str
+    track_artist: str
+    signal: int           # must be -1, 0, or 1
+    position: int
+    preview_seconds: int | None = None
 
 # ---------------------------------------------------------
 # Auth Helpers
@@ -535,6 +553,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
 
     # 4. SMART POOL FETCH & GRACEFUL FALLBACK
     is_fallback = False
+    used_semantic = False
     
     if vibe_data.get("confidence", 0.0) < 0.25 and not detected_artist and not request.override_genre:
         is_fallback = True
@@ -545,7 +564,6 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         logger.info(f"Fallback Search returned {len(raw_pool)} tracks.")
         
         # v1.2 FIX: Filter out junk fallback results (podcasts, news, YouTube videos)
-        # Indicators: very long titles, known podcast/news channel patterns
         JUNK_PATTERNS = re.compile(
             r'\b(podcast|episode|news|npr|bbc|ted talk|morning edition|'
             r'kitchen nightmares|speedrunning|let me explain|'
@@ -554,6 +572,18 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         )
         raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(f"{t.get('title','')} {t.get('artist','')}")]
         logger.info(f"After junk filter: {len(raw_pool)} tracks remain.")
+
+        # v1.3 NEW: Semantic reranking — when Last.fm keyword search gives us a
+        # noisy pool, run sentence-transformer similarity to promote the tracks
+        # whose identity most closely matches the user's prompt.
+        if semantic_search.semantic_ready() and raw_pool:
+            logger.info(f"[Semantic] Reranking {len(raw_pool)} fallback tracks by prompt similarity...")
+            raw_pool = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: semantic_search.rank_tracks_by_prompt(request.text, raw_pool)
+            )
+            used_semantic = True
+            logger.info(f"[Semantic] Reranking complete.")
         
     elif request.override_artist or vibe_data.get("dominant_vibe") == "artist_driven":
         artist_target = request.override_artist or detected_artist
@@ -588,6 +618,14 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     # 5. MATHEMATICAL SCORING
     logger.info("Executing mathematical sorting and diversity guards...")
     best_tracks = filter_and_score_tracks(raw_pool, request, vibe_data, is_fallback=is_fallback)
+
+    # v1.3 NEW: If semantic scores are available and we used the fallback path,
+    # blend them with the heuristic scores for a final reranking pass.
+    if used_semantic and best_tracks and any("semantic_score" in t for t in best_tracks):
+        logger.info("[Semantic] Blending semantic + heuristic scores for final ranking...")
+        best_tracks = semantic_search.blend_semantic_scores(best_tracks, semantic_weight=0.35)
+        # Re-trim to track limit after blending
+        best_tracks = best_tracks[:request.track_limit]
     
     if not best_tracks:
         logger.warning("Scoring eliminated all tracks. Firing HTTP 404.")
@@ -612,7 +650,104 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             "preview_url": previews[i]["preview_url"],
             "cover_art": previews[i]["cover_art"]
         })
+
+    # 8. LOG REQUEST TO DATABASE
+    # Persist the full analysis session so we can link feedback to it later.
+    # Fire-and-forget — we don't block the response on a DB write.
+    import json as _json
+    vibe_request_id = None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        vibe_request_row = await db.viberequest.create(data={
+            "userId":          user_id,
+            "promptText":      request.text,
+            "dominantVibe":    vibe_data.get("dominant_vibe", "neutral"),
+            "secondaryVibe":   vibe_data.get("secondary_vibe"),
+            "confidence":      float(vibe_data.get("confidence", 0.0)),
+            "bpmRange":        str(vibe_data.get("bpm_range", "")),
+            "genres":          _json.dumps(vibe_data.get("genres", [])),
+            "matchedKeywords": _json.dumps(vibe_data.get("matched_keywords", [])),
+            "detectedArtist":  vibe_data.get("detected_artist"),
+            "detectedSong":    vibe_data.get("detected_song"),
+            "artistFocus":     request.artist_focus,
+            "nicheness":       request.nicheness,
+            "bpmFocus":        request.bpm_focus,
+            "trackLimit":      request.track_limit,
+            "usedFallback":    is_fallback,
+            "usedSemantic":    used_semantic,
+            "returnedTracks":  _json.dumps([
+                {"title": t["title"], "artist": t["artist"]} for t in final_tracks
+            ]),
+        })
+        vibe_request_id = vibe_request_row.id
+        logger.info(f"VibeRequest logged to DB: {vibe_request_id}")
+    except Exception as e:
+        # Non-fatal — never let a logging failure break the response
+        logger.error(f"Failed to log VibeRequest to DB: {e}")
         
     vibe_data["tracks"] = final_tracks
+    vibe_data["request_id"] = vibe_request_id or "unlogged"
     logger.info(f"--- SUCCESS: Returning {len(final_tracks)} tracks to client ---")
     return vibe_data
+
+
+@app.post("/api/feedback", status_code=201)
+async def submit_feedback(feedback: FeedbackRequest, token: str = Depends(oauth2_scheme)):
+    """
+    Record a user's thumbs up / thumbs down on a specific track.
+    
+    Called by the frontend immediately when the user clicks the feedback buttons.
+    Each call is one row in TrackFeedback — lightweight and append-only.
+    
+    Validation:
+    - signal must be -1, 0, or 1
+    - request_id must reference a real VibeRequest row
+    - The authenticated user must own that VibeRequest (prevents spoofing)
+    """
+    # Validate signal value
+    if feedback.signal not in (-1, 0, 1):
+        raise HTTPException(status_code=422, detail="signal must be -1, 0, or 1")
+
+    # Decode user from token
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Verify the VibeRequest exists and belongs to this user
+    # Skip ownership check if request_id is "unlogged" (DB logging failed upstream)
+    if feedback.request_id != "unlogged":
+        try:
+            vibe_req = await db.viberequest.find_unique(where={"id": feedback.request_id})
+            if vibe_req is None:
+                raise HTTPException(status_code=404, detail="VibeRequest not found")
+            if vibe_req.userId != user_id:
+                raise HTTPException(status_code=403, detail="Not your request")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Feedback: DB lookup error: {e}")
+            raise HTTPException(status_code=500, detail="Database error")
+
+    # Write the feedback row
+    try:
+        row = await db.trackfeedback.create(data={
+            "vibeRequestId":  feedback.request_id if feedback.request_id != "unlogged" else None,
+            "userId":         user_id,
+            "trackTitle":     feedback.track_title,
+            "trackArtist":    feedback.track_artist,
+            "signal":         feedback.signal,
+            "position":       feedback.position,
+            "previewSeconds": feedback.preview_seconds,
+        })
+        signal_label = {1: "👍 LIKE", 0: "▶ PLAY", -1: "👎 SKIP"}.get(feedback.signal, "?")
+        logger.info(
+            f"Feedback logged: [{signal_label}] '{feedback.track_title}' by '{feedback.track_artist}' "
+            f"(pos={feedback.position}, user={user_id[:8]}..., req={feedback.request_id[:8]}...)"
+        )
+        return {"status": "ok", "id": row.id}
+    except Exception as e:
+        logger.error(f"Feedback: write error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save feedback")

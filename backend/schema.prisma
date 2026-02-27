@@ -10,7 +10,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL") // ADDED: Required by Supabase for building tables
+  directUrl = env("DIRECT_URL") // Required by Supabase for building tables
 }
 
 // --- CORE USER ARCHITECTURE ---
@@ -19,27 +19,28 @@ model User {
   id              String          @id @default(uuid())
   email           String          @unique
   username        String          @unique
-  hashedPassword  String?         
+  hashedPassword  String?
   avatarUrl       String?
   createdAt       DateTime        @default(now())
-  
+
   oauthIdentities OAuthIdentity[]
   playlists       Playlist[]
   forumPosts      ForumPost[]
   comments        Comment[]
+  vibeRequests    VibeRequest[]   // NEW: Analysis session log
 }
 
 model OAuthIdentity {
   id           String   @id @default(uuid())
-  providerName String   
-  providerId   String   
+  providerName String
+  providerId   String
   accessToken  String
   refreshToken String?
   userId       String
-  
+
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  @@unique([providerName, providerId]) 
+
+  @@unique([providerName, providerId])
 }
 
 // --- MUSIC & DISCOVERY LAYER ---
@@ -48,35 +49,123 @@ model Playlist {
   id          String   @id @default(uuid())
   title       String
   description String?
-  smartlink   String?  @unique 
+  smartlink   String?  @unique
   userId      String
   createdAt   DateTime @default(now())
-  
+
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tracks      Track[]
 }
 
 model Track {
-  id            String   @id @default(uuid())
-  spotifyId     String?  
-  appleMusicId  String?  
-  isrc          String?  
-  title         String
-  artist        String
-  playlistId    String
-  
-  playlist      Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  id           String   @id @default(uuid())
+  spotifyId    String?
+  appleMusicId String?
+  isrc         String?
+  title        String
+  artist       String
+  playlistId   String
+
+  playlist     Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
 }
 
-// --- INTELLIGENCE LAYER (NEW) ---
+// --- INTELLIGENCE LAYER ---
 
 model ArtistDirectory {
   id        String   @id @default(uuid())
   name      String   @unique
   genres    String   // e.g., "lo-fi, r&b, alternative"
   niche     String?  // e.g., "sadboy"
-  songs     String?  // NEW: comma-separated top songs for direct matching
+  songs     String?  // comma-separated top songs for direct matching
   createdAt DateTime @default(now())
+}
+
+// ─── FEEDBACK & LEARNING LAYER (NEW) ──────────────────────────────────────────
+//
+// Two-table design:
+//   VibeRequest  — one row per /api/vibe/analyze call. Captures the full prompt,
+//                  NLP result, and returned track list so we can reconstruct any
+//                  session later without relying on the client.
+//
+//   TrackFeedback — one row per thumbs up / thumbs down / full-play event.
+//                   References VibeRequest so every signal is traceable back to
+//                   the exact engine state that produced it. This is the table
+//                   that will train the future ranker.
+//
+// Both tables are append-only. We never update or delete — every interaction is
+// permanent history. Soft-deleting a user cascades both tables.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model VibeRequest {
+  id              String          @id @default(uuid())
+  userId          String
+  promptText      String          // Raw user input exactly as received
+
+  // NLP Engine output snapshot
+  dominantVibe    String          // e.g. "heartbreak"
+  secondaryVibe   String?         // e.g. "dreamy"
+  confidence      Float           // 0.0 – 1.0
+  bpmRange        String          // e.g. "60-80"
+  genres          String          // JSON array stringified: '["Dream Pop","Shoegaze"]'
+  matchedKeywords String          // JSON array stringified: '["fragile","tender"]'
+
+  // Entity scanner state
+  detectedArtist  String?
+  detectedSong    String?
+
+  // Engine config snapshot (so we can replay or diff later)
+  artistFocus     Int             @default(50)
+  nicheness       Int             @default(50)
+  bpmFocus        Int             @default(50)
+  trackLimit      Int             @default(5)
+  usedFallback    Boolean         @default(false)
+  usedSemantic    Boolean         @default(false) // was sentence-transformer used?
+
+  // Returned tracks (JSON stringified list of {title, artist})
+  returnedTracks  String
+
+  createdAt       DateTime        @default(now())
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedback        TrackFeedback[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([dominantVibe])
+}
+
+model TrackFeedback {
+  id            String      @id @default(uuid())
+  vibeRequestId String      // which analysis session produced this track
+  userId        String      // denormalized for query convenience
+
+  // Track identity — we store both so we can join against ArtistDirectory later
+  trackTitle    String
+  trackArtist   String
+
+  // The core signal.
+  //  1  = thumbs up  (user explicitly liked it)
+  //  0  = played through without rating (implicit positive — weaker signal)
+  // -1  = thumbs down (user explicitly skipped / disliked)
+  signal        Int
+
+  // Position in the returned list (1-indexed). A thumbs-up on track #4 means
+  // the top 3 were at least tolerable, which is also useful training signal.
+  position      Int
+
+  // Optional: how many seconds of the preview the user listened to before rating.
+  // Null if they rated without playing.
+  previewSeconds Int?
+
+  createdAt     DateTime    @default(now())
+
+  vibeRequest   VibeRequest @relation(fields: [vibeRequestId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([vibeRequestId])
+  @@index([trackArtist])
+  @@index([signal])
+  @@index([createdAt])
 }
 
 // --- SOCIAL GRAPH & FORUM LAYER ---
@@ -87,19 +176,19 @@ model ForumPost {
   content   String
   userId    String
   createdAt DateTime  @default(now())
-  
+
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   comments  Comment[]
 }
 
 model Comment {
-  id          String    @id @default(uuid())
-  content     String
-  userId      String
-  postId      String
-  parentId    String?   
-  createdAt   DateTime  @default(now())
-  
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post        ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id        String    @id @default(uuid())
+  content   String
+  userId    String
+  postId    String
+  parentId  String?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 }
