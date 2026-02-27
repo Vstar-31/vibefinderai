@@ -12,6 +12,13 @@ const buildApiUrl = (path) => {
   return path;
 };
 
+/* ─── LANGUAGE OPTIONS ──────────────────────────────────────── */
+const LANGUAGES = [
+  "Any", "Hindi", "Punjabi", "English", "Tamil", "Telugu",
+  "Kannada", "Malayalam", "Bengali", "Urdu",
+  "Korean", "Japanese", "Spanish", "Portuguese", "French", "Arabic", "Afrobeats"
+];
+
 /* ─── SVG ICONS ─────────────────────────────────────────────── */
 const IconLock    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
 const IconUnlock  = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>;
@@ -445,6 +452,7 @@ export default function App() {
   // Feedback state — tracks which tracks have been rated this session
   // key: "title|artist", value: 1 (liked) | -1 (disliked)
   const [feedbackGiven, setFeedbackGiven] = useState({});
+  const [language, setLanguage]           = useState("Any"); // ← Language filter
 
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
@@ -561,6 +569,7 @@ export default function App() {
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ 
           text: prompt,
+          language: language,
           artist_focus: Math.round(knobs.artist),
           nicheness: Math.round(knobs.nicheness), 
           bpm_focus: Math.round(knobs.bpm),
@@ -742,6 +751,51 @@ export default function App() {
                     onBlur={e => { e.target.style.borderColor = "rgba(120,80,20,0.35)"; e.target.style.boxShadow = "none"; }} 
                 />
                 {!token && <div style={S.lockOverlay}><button onClick={() => setShowAuthModal(true)} style={S.lockBtn}><IconLock /> Authentication Required</button></div>}
+              </div>
+
+              {/* ── LANGUAGE SELECTOR ── */}
+              <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                <label style={{
+                  fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase",
+                  letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace", whiteSpace: "nowrap"
+                }}>
+                  🌐 Language
+                </label>
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  disabled={!token || loading}
+                  style={{
+                    background: "rgba(10,5,2,0.8)",
+                    border: `1px solid ${language !== "Any" ? activeColor : "rgba(120,80,20,0.4)"}`,
+                    borderRadius: "6px",
+                    padding: "7px 12px",
+                    color: language !== "Any" ? activeColor : "rgba(180,140,80,0.6)",
+                    fontSize: "11px",
+                    fontFamily: "'DM Mono', monospace",
+                    outline: "none",
+                    cursor: token ? "pointer" : "default",
+                    opacity: token ? 1 : 0.5,
+                    transition: "border-color 0.2s, color 0.2s",
+                    minWidth: "130px",
+                  }}
+                  onFocus={e => e.target.style.borderColor = activeColor}
+                  onBlur={e => e.target.style.borderColor = language !== "Any" ? activeColor : "rgba(120,80,20,0.4)"}
+                >
+                  {LANGUAGES.map(l => (
+                    <option key={l} value={l} style={{ background: "#0e0903", color: "#e8d5a3" }}>
+                      {l === "Any" ? "Any Language" : l}
+                    </option>
+                  ))}
+                </select>
+                {language !== "Any" && (
+                  <span style={{
+                    fontSize: "9px", color: "rgba(180,140,80,0.4)",
+                    fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em"
+                  }}>
+                    // pool locked to {language.toLowerCase()}
+                  </span>
+                )}
               </div>
 
               {/* ── PRO MODE OVERRIDES ── */}

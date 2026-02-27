@@ -979,6 +979,216 @@ BLEED: dict[str, dict[str, float]] = {
 # =============================================================================
 #  THE GRAND VIBE MAP — V4.2 FULL DATASET w/ MEGA GENRES & DECADES
 # =============================================================================
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LANGUAGE → LAST.FM TAG MAP
+# When the user selects a language in the frontend, this overrides genres[0]
+# with a real, working Last.fm tag for that language + vibe combination.
+# "Any" = no override (uses vibe genres[0] as-is — original behaviour).
+# ══════════════════════════════════════════════════════════════════════════════
+LANGUAGE_TAG_MAP: dict[str, dict[str, str | None]] = {
+    "Any": {
+        "default": None,
+    },
+    "Hindi": {
+        "default":       "bollywood",
+        "romantic":      "bollywood",
+        "bollywood_sad": "bollywood",
+        "heartbreak":    "hindi",
+        "desi":          "bollywood",
+        "soulful":       "ghazal",
+        "calm":          "hindi",
+        "chill":         "hindi",
+        "retro":         "old bollywood",
+        "party":         "bollywood dance",
+        "hype":          "hindi hip hop",
+        "happy":         "bollywood",
+        "dreamy":        "bollywood",
+        "focus":         "hindi",
+        "indie_folk":    "hindi folk",
+        "intense":       "hindi",
+        "ambient":       "hindi",
+        "euphoric":      "bollywood",
+    },
+    "Punjabi": {
+        "default":       "punjabi",
+        "romantic":      "punjabi",
+        "punjabi_soft":  "punjabi",
+        "heartbreak":    "punjabi",
+        "desi":          "bhangra",
+        "party":         "bhangra",
+        "hype":          "punjabi hip hop",
+        "happy":         "bhangra",
+        "calm":          "punjabi",
+        "soulful":       "punjabi",
+        "retro":         "punjabi folk",
+        "chill":         "punjabi",
+        "dreamy":        "punjabi",
+        "euphoric":      "bhangra",
+    },
+    "Tamil": {
+        "default":       "kollywood",
+        "romantic":      "tamil",
+        "heartbreak":    "kollywood",
+        "party":         "tamil pop",
+        "happy":         "kollywood",
+        "hype":          "tamil hip hop",
+        "calm":          "carnatic",
+        "soulful":       "tamil",
+        "retro":         "old tamil songs",
+        "dreamy":        "tamil",
+        "chill":         "tamil",
+    },
+    "Telugu": {
+        "default":       "tollywood",
+        "romantic":      "telugu",
+        "heartbreak":    "tollywood",
+        "party":         "telugu pop",
+        "happy":         "tollywood",
+        "calm":          "telugu",
+        "soulful":       "carnatic",
+        "dreamy":        "telugu",
+        "chill":         "telugu",
+    },
+    "Kannada": {
+        "default":       "kannada",
+        "romantic":      "kannada",
+        "heartbreak":    "kannada",
+        "party":         "kannada pop",
+        "happy":         "kannada",
+        "calm":          "kannada",
+        "soulful":       "kannada",
+    },
+    "Malayalam": {
+        "default":       "malayalam",
+        "romantic":      "malayalam",
+        "heartbreak":    "malayalam",
+        "calm":          "malayalam",
+        "soulful":       "malayalam",
+        "dreamy":        "malayalam",
+        "chill":         "malayalam",
+    },
+    "Bengali": {
+        "default":       "bengali",
+        "romantic":      "bengali",
+        "heartbreak":    "rabindra sangeet",
+        "calm":          "rabindra sangeet",
+        "soulful":       "baul",
+        "indie_folk":    "baul",
+        "dreamy":        "bengali",
+        "party":         "bengali",
+    },
+    "Urdu": {
+        "default":       "ghazal",
+        "romantic":      "ghazal",
+        "heartbreak":    "ghazal",
+        "soulful":       "qawwali",
+        "calm":          "ghazal",
+        "desi":          "ghazal",
+        "dreamy":        "ghazal",
+    },
+    "English": {
+        "default":       None,
+        "romantic":      "rnb",
+        "heartbreak":    "sad",
+        "party":         "dance pop",
+        "hype":          "hip hop",
+        "calm":          "ambient",
+        "soulful":       "soul",
+        "happy":         "pop",
+        "retro":         "80s",
+        "chill":         "chillout",
+        "dreamy":        "dream pop",
+        "dark":          "darkwave",
+        "indie_folk":    "indie folk",
+        "focus":         "study music",
+        "intense":       "metal",
+        "rock":          "rock",
+        "country":       "country",
+        "euphoric":      "trance",
+        "ambient":       "ambient",
+        "punjabisoft":   "rnb",
+        "bollywood_sad": "sad",
+    },
+    "Korean": {
+        "default":       "k-pop",
+        "romantic":      "k-pop",
+        "heartbreak":    "k-indie",
+        "party":         "k-pop",
+        "calm":          "k-indie",
+        "chill":         "k-indie",
+        "happy":         "k-pop",
+        "soulful":       "korean rnb",
+        "hype":          "k-pop",
+        "dreamy":        "k-indie",
+        "euphoric":      "k-pop",
+    },
+    "Japanese": {
+        "default":       "j-pop",
+        "romantic":      "j-pop",
+        "heartbreak":    "j-pop",
+        "calm":          "city pop",
+        "retro":         "city pop",
+        "party":         "j-pop",
+        "dreamy":        "shoegaze",
+        "chill":         "japanese lofi",
+        "soulful":       "japanese soul",
+        "happy":         "j-pop",
+    },
+    "Spanish": {
+        "default":       "latin",
+        "romantic":      "latin pop",
+        "party":         "reggaeton",
+        "hype":          "reggaeton",
+        "heartbreak":    "latin",
+        "happy":         "latin pop",
+        "calm":          "bossa nova",
+        "soulful":       "latin soul",
+        "dreamy":        "latin",
+        "chill":         "latin",
+    },
+    "Portuguese": {
+        "default":       "mpb",
+        "romantic":      "bossa nova",
+        "calm":          "bossa nova",
+        "soulful":       "mpb",
+        "party":         "samba",
+        "happy":         "samba",
+        "heartbreak":    "mpb",
+        "dreamy":        "bossa nova",
+    },
+    "French": {
+        "default":       "french pop",
+        "romantic":      "chanson",
+        "calm":          "chanson",
+        "party":         "french house",
+        "hype":          "french rap",
+        "soulful":       "chanson",
+        "retro":         "french pop",
+        "heartbreak":    "chanson",
+        "dreamy":        "chanson",
+    },
+    "Arabic": {
+        "default":       "arabic",
+        "romantic":      "arabic pop",
+        "soulful":       "arabic",
+        "heartbreak":    "arabic",
+        "calm":          "arabic",
+        "party":         "arabic pop",
+        "dreamy":        "arabic",
+    },
+    "Afrobeats": {
+        "default":       "afrobeats",
+        "romantic":      "afrobeats",
+        "party":         "afrobeats",
+        "hype":          "afrobeats",
+        "happy":         "afrobeats",
+        "calm":          "afrobeats",
+        "soulful":       "afrobeats",
+        "heartbreak":    "afrobeats",
+    },
+}
+
 VIBE_MAP: dict[str, dict] = {
 
     "rock": {
@@ -1018,46 +1228,6 @@ VIBE_MAP: dict[str, dict] = {
             "Folk Rock", "Blues Rock", "Post-Hardcore", "Surf Rock", "Krautrock"
         ],
     },
-    "punjabisoft": {
-        "keywords": [
-            "punjabi soft", "soft punjabi", "ap dhillon", "punjabi romantic",
-            "punjabi slow", "punjabi love song", "maan meri jaan", "punjabi feelings",
-            "punjabi emotional", "satinder sartaaj", "punjabi ballad", "sufiana",
-        ],
-        "phrases": [
-            "ap dhillon vibes", "punjabi soft pop", "soft punjabi song",
-            "punjabi feelings", "romantic punjabi",
-        ],
-        "context": ["mohabbat", "ishq", "punjabi love", "desi romance"],
-        "artists": [
-            "ap dhillon", "gurnam bhullar", "satinder sartaaj", "hardy sandhu",
-            "ammy virk", "harrdy sandhu", "nimrat khaira", "jass manak",
-            "b praak", "jaani", "parmish verma",
-        ],
-        "bpm": "60-95",
-        "genres": ["punjabi pop", "punjabi", "indian pop", "desi", "bhangra"],
-    },
-
-    "bollywoodsad": {
-        "keywords": [
-            "bollywood sad", "hindi sad", "arijit vibes", "sad hindi", "hindi ballad",
-            "teri kami", "bewafa", "judai", "dard", "phir bhi tumko", "tum hi ho",
-            "raabta", "kesariya", "hindi heartbreak", "bollywood heartbreak", "filmy sad",
-        ],
-        "phrases": [
-            "arijit vibes", "sad bollywood", "hindi breakup songs", "crying to arijit",
-            "bollywood crying", "filmy feels",
-        ],
-        "context": ["breakup", "judai", "dard", "rona", "dil", "mohabbat"],
-        "artists": [
-            "arijit singh", "atif aslam", "jubin nautiyal", "b praak",
-            "darshan raval", "armaan malik", "mohit chauhan", "sonu nigam",
-            "shreya ghoshal", "a.r. rahman", "pritam", "amit trivedi",
-        ],
-        "bpm": "55-90",
-        "genres": ["hindi ballad", "bollywood", "indian pop", "desi", "hindi"],
-    },
-
 
     "hype": {
         "keywords": [
@@ -1823,8 +1993,7 @@ VIBE_MAP: dict[str, dict] = {
             "gurnam bhullar", "akhil", "ravinder grewal",
         ],
         "bpm": "65-105",
-        "genres": ["punjabi", "bhangra", "indian pop", "desi",
-                   "Punjabi Soft Pop", "Punjabi Ballad", "Punjabi Sufi", "Punjabi Acoustic",
+        "genres": ["punjabi", "bhangra", "Punjabi Soft Pop", "Punjabi Ballad", "Punjabi Sufi", "Punjabi Acoustic",
                    "Punjabi R&B", "Desi Soul", "Punjabi Ghazal", "Soft Bhangra"],
     },
 
@@ -1886,8 +2055,7 @@ VIBE_MAP: dict[str, dict] = {
             "b praak", "vishal mishra", "payal dev",
         ],
         "bpm": "55-95",
-        "genres": ["bollywood", "hindi", "indian", "filmi", "arijit singh",
-                   "Bollywood Sad", "Hindi Ballad", "Filmi Ghazal", "Desi Soul",
+        "genres": ["bollywood", "hindi", "Bollywood Sad", "Hindi Ballad", "Filmi Ghazal", "Desi Soul",
                    "Bollywood Heartbreak", "Hindi Sufi Sad", "Soft Bollywood",
                    "Romantic Bollywood Sad", "90s Hindi Sad"],
     },
@@ -1974,8 +2142,7 @@ VIBE_MAP: dict[str, dict] = {
             "lana del rey", "lorde", "troye sivan",
         ],
         "bpm": "60-110",
-        "genres": ["rnb", "neo soul", "soul", "slow jam", "love songs",
-                   "Romantic R&B", "Neo Soul", "Slow Jam", "Love Pop", "Indie Romance",
+        "genres": ["rnb", "neo soul", "soul", "Romantic R&B", "Slow Jam", "Love Pop", "Indie Romance",
                    "Soul Ballad", "Contemporary R&B", "Bedroom Pop", "Soft Rock",
                    "Acoustic Love", "R&B Ballad", "Dream Pop Romance"],
     },
@@ -2220,15 +2387,6 @@ def _intensity_multiplier(text: str, match_start: int, window_chars: int = 35) -
 #  MAIN ANALYSIS ENGINE  (v4.2)
 # =============================================================================
 
-
-# =============================================================
-# FIX 2 v6.0: CULTURAL VIBE TRUMP CARD CONSTANTS
-# Cultural vibes get a 1.6x score multiplier after BLEED so
-# broad vibes (party, hype) can't drown out specific cultural ones.
-# =============================================================
-CULTURAL_VIBE_NAMES = {"desi", "punjabi", "haryanvi", "bollywoodsad", "punjabisoft", "romantic"}
-CULTURAL_BOOST_MULTIPLIER = 1.6
-
 def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int = 50, bpm_focus: int = 50) -> dict:
     """
     Vibe Analysis Engine v5.0 — QA Regression Fix + Desi Expansion Edition
@@ -2354,13 +2512,6 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
         if pre_bleed.get(vibe, 0) > 0:
             for neighbor, factor in bleed_map.items():
                 scores[neighbor] += pre_bleed[vibe] * factor
-
-    # FIX v6.0: CULTURAL VIBE TRUMP CARD BOOST
-    # Applied right after BLEED so cultural vibes survive the sort.
-    for _cv in CULTURAL_VIBE_NAMES:
-        if scores.get(_cv, 0) > 0:
-            scores[_cv] *= CULTURAL_BOOST_MULTIPLIER
-
 
     # ── STEP 8: RESULT ASSEMBLY (Calibrated Math) ─────────────────────────────
     positive_scores = {v: s for v, s in scores.items() if s > 0}
