@@ -97,6 +97,18 @@ COMMON_WORDS_BLACKLIST = {
         "rain", "coffee", "drive", "party", "chill", "focus", "work", 
         "sleep", "wake", "morning", "midnight", "fire", "magic", "dream"
     }
+
+# v1.2 — Chronic result spam protection.
+# Tracks that appeared in 10%+ of all QA results regardless of prompt.
+# These get a score penalty in the scoring engine so they don't dominate every playlist.
+TRACK_BLOCKLIST: set[str] = {
+    "trap queen|fetty wap",
+    "circumambient|grimes",        # appears in almost every dark result
+    "slow|my bloody valentine",    # leads every dreamy result
+    "slowdive|slowdive",           # same pool monopoly
+    "moanin'|art blakey & the jazz messengers",  # leads every soulful result
+    "time moves slow|badbadnotgood",
+}
 # ---------------------------------------------------------
 # Pydantic Models
 # ---------------------------------------------------------
@@ -310,6 +322,12 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
         global_popularity_bonus = max(0.0, (1.0 - (i / max(len(tracks), 100))) * 10.0)
         score += global_popularity_bonus
         
+        # v1.2 Fix: Chronic spam penalty — tracks that appear in every request
+        # get a significant downrank so the pool naturally diversifies.
+        track_ident_bl = f"{title}|{artist}"
+        if track_ident_bl in TRACK_BLOCKLIST:
+            score -= 40
+            
         score += random.uniform(0, 1.5)
         scored_tracks.append((score, t))
         
@@ -480,8 +498,28 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     vibe_data["detected_artist"] = detected_artist
     vibe_data["detected_song"] = detected_song
 
+    # v1.2 FIX: If entity scanner locked an artist/song but the NLP scored
+    # a legitimate vibe, don't let a 0%-confidence "neutral" overwrite it.
+    # Only accept the entity lock if either:
+    #   a) NLP confidence is below threshold (< 0.30), meaning NLP needs help, OR
+    #   b) The entity was found alongside a genuine vibe signal (artist matched)
+    # If NLP confidence is solid (≥ 0.30) and the lock was song-only (no artist
+    # context in the prompt), drop the song lock to avoid "calm down → Rema" hijacks.
+    if detected_song and not detected_artist and vibe_data.get("confidence", 0) >= 0.30:
+        logger.info(f"Entity Scanner: Dropping standalone song lock '{detected_song}' — NLP confidence is {vibe_data.get('confidence')} (≥ 0.30), vibe signal is strong enough.")
+        vibe_data["detected_song"] = None
+
     # 3. DYNAMIC TARGET GENRE RESOLUTION
-    if request.override_genre:
+    # v1.2 FIX: If we have an entity lock but vibe scored neutral/0%, that means the
+    # NLP had no signal beyond the entity name. Rather than serving "Lo-Fi, Ambient Pop,
+    # Electronic" (the neutral fallback genres), we fetch the artist's discography
+    # directly and let the scoring engine do the rest. Flag the vibe as entity-driven.
+    if detected_artist and vibe_data.get("confidence", 0) < 0.10:
+        logger.info(f"Entity lock active but NLP confidence near-zero. Forcing artist discography fetch for '{detected_artist}'.")
+        vibe_data["dominant_vibe"] = "artist_driven"
+        # Use the artist fetch path below
+        target_genre = None
+    elif request.override_genre:
         target_genre = request.override_genre
         logger.info(f"Pro Mode OVERRIDE applied. Target Genre forced to: {target_genre}")
     elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
@@ -506,9 +544,21 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         raw_pool = await fetch_lastfm_track_search(request.text, limit=100)
         logger.info(f"Fallback Search returned {len(raw_pool)} tracks.")
         
-    elif request.override_artist:
-        logger.info(f"Fetching direct discography for overridden artist: {request.override_artist}")
-        raw_pool = await fetch_lastfm_artist_tracks(artist=request.override_artist, limit=200)
+        # v1.2 FIX: Filter out junk fallback results (podcasts, news, YouTube videos)
+        # Indicators: very long titles, known podcast/news channel patterns
+        JUNK_PATTERNS = re.compile(
+            r'\b(podcast|episode|news|npr|bbc|ted talk|morning edition|'
+            r'kitchen nightmares|speedrunning|let me explain|'
+            r'how to make|react(?:ion)?|compilation|highlights)\b',
+            re.IGNORECASE
+        )
+        raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(f"{t.get('title','')} {t.get('artist','')}")]
+        logger.info(f"After junk filter: {len(raw_pool)} tracks remain.")
+        
+    elif request.override_artist or vibe_data.get("dominant_vibe") == "artist_driven":
+        artist_target = request.override_artist or detected_artist
+        logger.info(f"Fetching direct discography for artist: {artist_target}")
+        raw_pool = await fetch_lastfm_artist_tracks(artist=artist_target, limit=200)
     else:
         logger.info(f"Fetching primary genre pool for: {target_genre}")
         genre_pool = await fetch_lastfm_tracks(genre=target_genre, limit=200)

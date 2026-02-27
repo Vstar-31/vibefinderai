@@ -358,7 +358,242 @@ SYNONYMS: dict[str, list[str]] = {
     "pluggnb": ["chill", "hyperpop"],
     "rage beat": ["hype", "intense"],
 
-    # ── emoji signals ────────────────────────────────────────────────────────
+    # ── joy / giddiness adjacent ───────────────────────────────────────────
+    "giddy": ["euphoric", "party"],
+    "childlike": ["euphoric", "calm"],
+    "carefree": ["euphoric", "calm"],
+    "elated": ["euphoric"],
+    "overjoyed": ["euphoric"],
+    "glee": ["euphoric", "party"],
+    "lighthearted": ["euphoric", "calm"],
+    "playful": ["euphoric", "party"],
+    "bubbly": ["euphoric", "party"],
+    "breezy": ["calm", "euphoric"],
+    "innocent": ["calm", "dreamy"],
+    "pure joy": ["euphoric"],
+    "wholehearted": ["euphoric", "soulful"],
+    "beaming": ["euphoric"],
+    "bright-eyed": ["euphoric", "calm"],
+    "fizzy": ["euphoric", "hyperpop"],
+    "elation": ["euphoric"],
+
+    # ── pride / triumph / vindication adjacent ─────────────────────────────
+    "proud": ["euphoric", "soulful"],
+    "pride": ["euphoric", "soulful"],
+    "vindicated": ["euphoric", "intense"],
+    "victorious": ["euphoric", "hype"],
+    "triumph": ["euphoric", "cinematic"],
+    "accomplished": ["euphoric", "focus"],
+    "satisfied": ["calm", "euphoric"],
+    "smug": ["hype", "chill"],
+    "relieved": ["calm", "euphoric"],
+    "validated": ["euphoric", "soulful"],
+    "deserved": ["euphoric", "soulful"],
+    "earned": ["euphoric", "hype"],
+    "winning": ["hype", "euphoric"],
+    "champion": ["hype", "euphoric"],
+    "proved them wrong": ["hype", "euphoric"],
+    "on top": ["hype", "euphoric"],
+
+    # ── anticipation / nervous energy adjacent ──────────────────────────────
+    "nervous excitement": ["euphoric", "hype"],
+    "nervous": ["heartbreak", "dreamy"],
+    "anxious": ["heartbreak", "intense"],
+    "excited": ["hype", "euphoric"],
+    "anticipation": ["euphoric", "dreamy"],
+    "butterflies": ["euphoric", "heartbreak"],
+    "life-changing": ["cinematic", "euphoric"],
+    "butterflies in stomach": ["euphoric", "heartbreak"],
+    "first date": ["euphoric", "soulful"],
+    "about to happen": ["cinematic", "euphoric"],
+
+    # ── endorphin / runner's high adjacent ─────────────────────────────────
+    "endorphins": ["euphoric", "hype"],
+    "runner's high": ["euphoric", "hype"],
+    "runner high": ["euphoric", "hype"],
+    "long run": ["hype", "euphoric"],
+    "euphoric run": ["euphoric", "hype"],
+    "post-workout": ["euphoric", "chill"],
+    "post workout": ["euphoric", "chill"],
+    "physically tired": ["chill", "calm"],
+
+    # ── complex/ambiguous emotional states ─────────────────────────────────
+    "bittersweet": ["heartbreak", "euphoric"],
+    "melancholic": ["heartbreak", "dreamy"],
+    "melancholy": ["heartbreak", "dreamy"],
+    "wistful": ["heartbreak", "dreamy"],
+    "contemplative": ["focus", "calm"],
+    "introspective": ["focus", "heartbreak"],
+    "conflicted": ["heartbreak", "intense"],
+    "overwhelmed": ["intense", "heartbreak"],
+    "overjoyed and sad": ["euphoric", "heartbreak"],
+    "joyful sadness": ["euphoric", "heartbreak"],
+    "crying happy tears": ["euphoric", "heartbreak"],
+    "laughing and crying": ["euphoric", "heartbreak"],
+    "heavy hearted": ["heartbreak", "soulful"],
+    "tender": ["soulful", "calm"],
+    "fragile": ["heartbreak", "calm"],
+    "raw": ["heartbreak", "soulful"],
+    "vulnerable": ["heartbreak", "soulful"],
+    "numb": ["heartbreak", "dark"],
+    "hollow": ["heartbreak", "dark"],
+    "crumbling": ["heartbreak", "dark"],
+    "holding it together": ["heartbreak", "focus"],
+    "pretending to be fine": ["heartbreak", "dark"],
+    "facade": ["heartbreak", "dark"],
+    "weight of": ["heartbreak", "cinematic"],
+    "weight of sadness": ["heartbreak", "soulful"],
+    "carrying sadness": ["heartbreak", "soulful"],
+    "someone else's pain": ["heartbreak", "soulful"],
+    "grief": ["heartbreak", "soulful"],
+    "grieving": ["heartbreak", "soulful"],
+    "mourning": ["heartbreak", "soulful"],
+    "loss": ["heartbreak", "soulful"],
+    "bereavement": ["heartbreak", "soulful"],
+    "shiva": ["heartbreak", "soulful"],
+    "funeral": ["heartbreak", "calm"],
+    "memorial": ["heartbreak", "calm"],
+    "wake": ["heartbreak", "soulful"],
+    "remembering": ["heartbreak", "dreamy"],
+
+    # ── ambition / drive adjacent ───────────────────────────────────────────
+    "ambitious": ["hype", "focus"],
+    "ambition": ["hype", "focus"],
+    "hungry": ["hype", "intense"],
+    "hunger": ["hype", "focus"],
+    "burning desire": ["hype", "intense"],
+    "relentless": ["hype", "intense"],
+    "driven": ["focus", "hype"],
+    "determined": ["focus", "hype"],
+    "obsessed": ["focus", "intense"],
+    "building": ["focus", "hype"],
+    "launched": ["euphoric", "hype"],
+    "shipped it": ["euphoric", "hype"],
+    "finished": ["euphoric", "calm"],
+    "breakthrough": ["euphoric", "hype"],
+
+    # ── contentment / ordinary life adjacent ───────────────────────────────
+    "content": ["calm", "euphoric"],
+    "ordinary": ["calm", "chill"],
+    "simple pleasure": ["calm", "euphoric"],
+    "mundane": ["chill", "calm"],
+    "comfortable": ["calm", "chill"],
+    "pleasant": ["calm", "euphoric"],
+    "nothing happening": ["calm", "chill"],
+    "lazy day": ["chill", "calm"],
+    "restful": ["calm"],
+    "procrastinating": ["chill", "focus"],
+    "procrastination": ["chill", "focus"],
+    "background noise": ["focus", "chill"],
+    "background music": ["focus", "calm"],
+    "dinner party": ["soulful", "calm"],
+    "cooking": ["calm", "soulful"],
+    "hosting": ["soulful", "party"],
+    "karaoke": ["party", "hype"],
+    "road trip": ["hype", "chill"],
+    "long flight": ["chill", "calm"],
+    "commute": ["chill", "focus"],
+    "grocery shopping": ["chill", "calm"],
+    "running errands": ["chill", "calm"],
+    "getting ready": ["party", "hype"],
+    "first day": ["hype", "euphoric"],
+    "moving day": ["euphoric", "heartbreak"],
+    "leaving forever": ["heartbreak", "cinematic"],
+    "watching my city": ["heartbreak", "cinematic"],
+    "empty nest": ["heartbreak", "calm"],
+    "kid leaving": ["heartbreak", "soulful"],
+    "sobriety": ["calm", "heartbreak"],
+    "sober": ["focus", "calm"],
+    "recovery": ["calm", "soulful"],
+    "therapy": ["calm", "soulful"],
+    "creative block": ["heartbreak", "focus"],
+    "inspiration": ["euphoric", "focus"],
+    "flow": ["focus", "euphoric"],
+    "ideas flowing": ["euphoric", "focus"],
+
+    # ── texture / sensory prompts ────────────────────────────────────────────
+    "velvet": ["soulful", "chill"],
+    "silk": ["chill", "soulful"],
+    "honey": ["chill", "soulful"],
+    "petrichor": ["calm", "dreamy"],
+    "pine": ["calm", "dark"],
+    "cold air": ["calm", "dark"],
+    "sunscreen": ["tropical", "euphoric"],
+    "sand": ["tropical", "calm"],
+    "waterfall": ["calm", "dreamy"],
+    "underwater": ["dreamy", "calm"],
+    "static": ["industrial", "dark"],
+    "fog": ["dreamy", "dark"],
+    "mist": ["dreamy", "calm"],
+    "foghorn": ["cinematic", "dark"],
+    "distant": ["dreamy", "heartbreak"],
+    "glass cracking": ["intense", "dark"],
+    "silver": ["dreamy", "calm"],
+    "gold": ["soulful", "euphoric"],
+    "purple": ["soulful", "dreamy"],
+    "burnt orange": ["chill", "soulful"],
+    "deep blue": ["dreamy", "calm"],
+    "free falling": ["dreamy", "euphoric"],
+    "slow motion": ["dreamy", "cinematic"],
+    "swimming through": ["dreamy", "calm"],
+    "bruise": ["heartbreak", "calm"],
+    "smiling": ["euphoric", "calm"],
+    "delirious": ["dreamy", "euphoric"],
+    "deliriously tired": ["chill", "dreamy"],
+    "tired but happy": ["chill", "euphoric"],
+    "crumbling": ["heartbreak", "dark"],
+    "facade": ["heartbreak", "dark"],
+    "holding it together": ["heartbreak", "focus"],
+    "at peace with being alone": ["calm", "soulful"],
+    "peace with being alone": ["calm", "soulful"],
+    "at peace": ["calm", "euphoric"],
+    "homesick": ["heartbreak", "dreamy"],
+    "home that never": ["heartbreak", "dreamy"],
+    "never heard before": ["dreamy", "chill"],
+    "familiar but never": ["dreamy", "heartbreak"],
+    "background music": ["focus", "calm"],
+    "first date at home": ["soulful", "calm"],
+    "waltz": ["cinematic", "calm"],
+    "waltzing": ["cinematic", "calm"],
+    "candlelight": ["soulful", "calm"],
+    "techno": ["industrial", "dark"],
+    "berlin": ["industrial", "dark"],
+    "4am": ["dark", "industrial"],
+    "at 4am": ["dark", "industrial"],
+    "long flight": ["calm", "chill"],
+    "looks like": ["dreamy", "cinematic"],
+    "feels like": ["heartbreak", "dreamy"],
+    "sounds like": ["dreamy", "focus"],
+    "tastes like": ["dreamy", "retro"],
+
+    # ── niche genre terms that were SIGNAL LOST ──────────────────────────────
+    "techno": ["industrial", "dark"],
+    "berlin techno": ["industrial", "dark"],
+    "underground techno": ["industrial", "dark"],
+    "acid techno": ["industrial", "hype"],
+    "progressive bluegrass": ["country", "focus"],
+    "bluegrass gospel": ["country", "soulful"],
+    "proto-punk": ["intense", "retro"],
+    "chamber pop": ["cinematic", "focus"],
+    "baroque pop": ["cinematic", "focus"],
+    "baroque": ["cinematic", "focus"],
+    "dembow": ["tropical", "party"],
+    "reggaeton": ["tropical", "party"],
+    "raga": ["focus", "dreamy"],
+    "psychedelic": ["dreamy", "retro"],
+    "wonky": ["industrial", "focus"],
+    "outlaw country": ["country", "dark"],
+    "grunge": ["intense", "dark"],
+    "seattle": ["intense", "dark"],
+    "acid rock": ["retro", "intense"],
+    "disco": ["party", "retro"],
+    "nairobi": ["tropical", "chill"],
+    "afro-fusion": ["tropical", "chill"],
+    "victorian": ["cinematic", "soulful"],
+    "waltz": ["cinematic", "calm"],
+    "viking": ["cinematic", "intense"],
+    "waltzing": ["cinematic", "calm"],
+    "candlelight": ["soulful", "calm"],
     "🔥": ["hype", "energy"],
     "💀": ["hype", "intense"],
     "😤": ["hype", "intense"],
@@ -396,8 +631,11 @@ SYNONYMS: dict[str, list[str]] = {
 }
 
 # ─── NEGATION WORDS ───────────────────────────────────────────────────────────
+# NOTE: "never" intentionally excluded — it appears in emotional phrases like
+# "a childhood I never had" or "never heard this before" and causes false negation.
+# The entity scanner has its own separate NEGATION_TOKENS set for entity locks.
 NEGATION_TOKENS = {
-    "not", "no", "never", "dont", "don't", "doesnt", "doesn't", "without",
+    "not", "no", "dont", "don't", "doesnt", "doesn't", "without",
     "zero", "none", "nothing", "neither", "nor", "hate", "avoid", "skip",
     "anti", "opposite", "except", "less", "minus", "forget",
 }
@@ -1279,6 +1517,11 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
     # ── STEP 0: ANTI-VIBE DETECTION ──────────────────────────────────────────
     anti_vibes = _detect_anti_vibes(lower_text)
 
+    # ── STEP 0b: "LIKE X BUT Y" MODIFIER BOOST ───────────────────────────────
+    modifier_boosts = _extract_modifier_boost(lower_text)
+    for vibe, boost_val in modifier_boosts.items():
+        scores[vibe] += boost_val
+
     # ── STEP 1: SYNONYM EXPANSION ─────────────────────────────────────────────
     synonym_hits = _expand_synonyms(lower_text)
     for canonical, count in synonym_hits.items():
@@ -1385,14 +1628,17 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
     total_raw_score = sum(positive_scores.values())
 
     if not positive_scores or total_raw_score == 0:
+        # Last-resort: for prompts with some emotional content, default to dreamy.
+        # This prevents "neutral 0%" on abstract/sensory prompts that scored nothing.
+        # The caller (main.py) will use this as its Last.fm fetch target.
         return {
-            "dominant_vibe": "neutral",
-            "confidence": 0.0,
-            "bpm_range": "90-120",
-            "genres": ["Lo-Fi", "Ambient Pop", "Electronic"],
+            "dominant_vibe": "dreamy",
+            "confidence": 0.05,
+            "bpm_range": "65-105",
+            "genres": ["Dream Pop", "Ambient Pop", "Indie Folk", "Lo-Fi", "Shoegaze"],
             "matched_keywords": [],
-            "secondary_vibe": None,
-            "secondary_confidence": 0.0,
+            "secondary_vibe": "calm",
+            "secondary_confidence": 0.05,
         }
 
     ranked = sorted(positive_scores.items(), key=lambda x: x[1], reverse=True)
@@ -1424,6 +1670,65 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
         "secondary_confidence": secondary_confidence,
     }
 
+
+def _extract_modifier_boost(text: str) -> dict[str, float]:
+    """
+    v1.2 — "Like X but Y" Modifier Awareness.
+    Detects patterns like "sounds like Radiohead but more electronic" or
+    "like Bon Iver but warmer" and returns a score boost map for the Y modifier.
+    The entity lock handles X; this function ensures Y also influences the result.
+    """
+    lower = text.lower()
+    boost: dict[str, float] = {}
+
+    # Match: "like/sounds like/in the vein of X but [more/less/a bit] Y"
+    modifier_pattern = re.compile(
+        r'(?:sounds?\s+like|like|in the vein of|in the world of|à la)'
+        r'.+?\bbut\b\s+(?:more|less|a\s+bit|even|way|much|slightly)?\s*([\w\s]{2,30})',
+        re.IGNORECASE
+    )
+    MODIFIER_TO_VIBE: dict[str, list[str]] = {
+        "electronic": ["industrial", "focus"],
+        "acoustic": ["calm", "country"],
+        "warmer": ["soulful", "calm"],
+        "darker": ["dark"],
+        "sadder": ["heartbreak"],
+        "heavier": ["intense"],
+        "lighter": ["calm", "euphoric"],
+        "more atmospheric": ["dreamy", "dark"],
+        "atmospheric": ["dreamy", "dark"],
+        "melodic": ["dreamy", "euphoric"],
+        "upbeat": ["hype", "euphoric"],
+        "slower": ["calm", "dreamy"],
+        "faster": ["hype"],
+        "punchier": ["hype", "intense"],
+        "shorter": ["hype"],
+        "danceable": ["party"],
+        "louder": ["intense", "hype"],
+        "quieter": ["calm"],
+        "nostalgic": ["retro", "dreamy"],
+        "futuristic": ["industrial", "focus"],
+        "psychedelic": ["dreamy", "retro"],
+        "cinematic": ["cinematic"],
+        "experimental": ["industrial", "focus"],
+        "hopeful": ["euphoric", "calm"],
+        "chaotic": ["intense", "hype"],
+        "chill": ["chill"],
+        "groovy": ["chill", "soulful"],
+        "intimate": ["soulful", "calm"],
+        "epic": ["cinematic"],
+    }
+
+    for m in modifier_pattern.finditer(lower):
+        modifier = m.group(1).strip()
+        # Try exact then partial match
+        for key, vibes in MODIFIER_TO_VIBE.items():
+            if key in modifier:
+                for v in vibes:
+                    boost[v] = boost.get(v, 0) + 4.0  # meaningful but not dominant
+                break
+
+    return boost
 
 if __name__ == "__main__":
     print(analyze_vibe_algorithm("Dark jazz club, trumpet, noir energy"))
