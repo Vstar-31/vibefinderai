@@ -963,17 +963,7 @@ BLEED: dict[str, dict[str, float]] = {
     "tropical":     {"party": 0.25, "chill": 0.15},
     "industrial":   {"dark": 0.25, "intense": 0.20},
     "desi":         {"party": 0.25, "hype": 0.15, "soulful": 0.10},
-    "rock":         {"intense": 0.20, "retro": 0.20, "hype": 0.15, "party": 0.10, "chill": 0.05}
-
-# =============================================================
-# FIX 2 v6.0: CULTURAL VIBE TRUMP CARD
-# Cultural vibes get a post-scoring multiplier so broad generic
-# vibes (party, chill, hype) cannot drown them out.
-# Any cultural vibe with at least 1 keyword hit gets x1.6.
-# =============================================================
-CULTURAL_VIBE_NAMES = {"desi", "punjabi", "haryanvi", "bollywoodsad", "punjabisoft", "romantic"}
-CULTURAL_BOOST_MULTIPLIER = 1.6
-,
+    "rock":         {"intense": 0.20, "retro": 0.20, "hype": 0.15, "party": 0.10, "chill": 0.05},
     # NEW v5.0
     "happy":        {"euphoric": 0.30, "party": 0.20, "calm": 0.15},
     "romantic":     {"soulful": 0.20, "chill": 0.15, "heartbreak": 0.10},
@@ -2312,12 +2302,6 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
         if pre_bleed.get(vibe, 0) > 0:
             for neighbor, factor in bleed_map.items():
                 scores[neighbor] += pre_bleed[vibe] * factor
-
-    # FIX 2 v6.0: CULTURAL VIBE TRUMP CARD BOOST
-    # Applied right after BLEED so cultural vibes survive the sort against party/hype.
-    for _cv in CULTURAL_VIBE_NAMES:
-        if scores.get(_cv, 0) > 0:
-            scores[_cv] *= CULTURAL_BOOST_MULTIPLIER
 
     # ── STEP 8: RESULT ASSEMBLY (Calibrated Math) ─────────────────────────────
     positive_scores = {v: s for v, s in scores.items() if s > 0}
