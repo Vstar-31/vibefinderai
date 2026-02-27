@@ -963,17 +963,7 @@ BLEED: dict[str, dict[str, float]] = {
     "tropical":     {"party": 0.25, "chill": 0.15},
     "industrial":   {"dark": 0.25, "intense": 0.20},
     "desi":         {"party": 0.25, "hype": 0.15, "soulful": 0.10},
-    "rock":         {"intense": 0.20, "retro": 0.20, "hype": 0.15, "party": 0.10, "chill": 0.05}
-
-# =============================================================
-# FIX 2 v6.0: CULTURAL VIBE TRUMP CARD
-# Cultural vibes get a post-scoring multiplier so broad generic
-# vibes (party, chill, hype) cannot drown them out.
-# Any cultural vibe with at least 1 keyword hit gets x1.6.
-# =============================================================
-CULTURAL_VIBE_NAMES = {"desi", "punjabi", "haryanvi", "bollywoodsad", "punjabisoft", "romantic"}
-CULTURAL_BOOST_MULTIPLIER = 1.6
-,
+    "rock":         {"intense": 0.20, "retro": 0.20, "hype": 0.15, "party": 0.10, "chill": 0.05},
     # NEW v5.0
     "happy":        {"euphoric": 0.30, "party": 0.20, "calm": 0.15},
     "romantic":     {"soulful": 0.20, "chill": 0.15, "heartbreak": 0.10},
@@ -1028,6 +1018,46 @@ VIBE_MAP: dict[str, dict] = {
             "Folk Rock", "Blues Rock", "Post-Hardcore", "Surf Rock", "Krautrock"
         ],
     },
+    "punjabisoft": {
+        "keywords": [
+            "punjabi soft", "soft punjabi", "ap dhillon", "punjabi romantic",
+            "punjabi slow", "punjabi love song", "maan meri jaan", "punjabi feelings",
+            "punjabi emotional", "satinder sartaaj", "punjabi ballad", "sufiana",
+        ],
+        "phrases": [
+            "ap dhillon vibes", "punjabi soft pop", "soft punjabi song",
+            "punjabi feelings", "romantic punjabi",
+        ],
+        "context": ["mohabbat", "ishq", "punjabi love", "desi romance"],
+        "artists": [
+            "ap dhillon", "gurnam bhullar", "satinder sartaaj", "hardy sandhu",
+            "ammy virk", "harrdy sandhu", "nimrat khaira", "jass manak",
+            "b praak", "jaani", "parmish verma",
+        ],
+        "bpm": "60-95",
+        "genres": ["punjabi pop", "punjabi", "indian pop", "desi", "bhangra"],
+    },
+
+    "bollywoodsad": {
+        "keywords": [
+            "bollywood sad", "hindi sad", "arijit vibes", "sad hindi", "hindi ballad",
+            "teri kami", "bewafa", "judai", "dard", "phir bhi tumko", "tum hi ho",
+            "raabta", "kesariya", "hindi heartbreak", "bollywood heartbreak", "filmy sad",
+        ],
+        "phrases": [
+            "arijit vibes", "sad bollywood", "hindi breakup songs", "crying to arijit",
+            "bollywood crying", "filmy feels",
+        ],
+        "context": ["breakup", "judai", "dard", "rona", "dil", "mohabbat"],
+        "artists": [
+            "arijit singh", "atif aslam", "jubin nautiyal", "b praak",
+            "darshan raval", "armaan malik", "mohit chauhan", "sonu nigam",
+            "shreya ghoshal", "a.r. rahman", "pritam", "amit trivedi",
+        ],
+        "bpm": "55-90",
+        "genres": ["hindi ballad", "bollywood", "indian pop", "desi", "hindi"],
+    },
+
 
     "hype": {
         "keywords": [
@@ -2187,6 +2217,15 @@ def _intensity_multiplier(text: str, match_start: int, window_chars: int = 35) -
 #  MAIN ANALYSIS ENGINE  (v4.2)
 # =============================================================================
 
+
+# =============================================================
+# FIX 2 v6.0: CULTURAL VIBE TRUMP CARD CONSTANTS
+# Cultural vibes get a 1.6x score multiplier after BLEED so
+# broad vibes (party, hype) can't drown out specific cultural ones.
+# =============================================================
+CULTURAL_VIBE_NAMES = {"desi", "punjabi", "haryanvi", "bollywoodsad", "punjabisoft", "romantic"}
+CULTURAL_BOOST_MULTIPLIER = 1.6
+
 def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int = 50, bpm_focus: int = 50) -> dict:
     """
     Vibe Analysis Engine v5.0 — QA Regression Fix + Desi Expansion Edition
@@ -2313,11 +2352,12 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
             for neighbor, factor in bleed_map.items():
                 scores[neighbor] += pre_bleed[vibe] * factor
 
-    # FIX 2 v6.0: CULTURAL VIBE TRUMP CARD BOOST
-    # Applied right after BLEED so cultural vibes survive the sort against party/hype.
+    # FIX v6.0: CULTURAL VIBE TRUMP CARD BOOST
+    # Applied right after BLEED so cultural vibes survive the sort.
     for _cv in CULTURAL_VIBE_NAMES:
         if scores.get(_cv, 0) > 0:
             scores[_cv] *= CULTURAL_BOOST_MULTIPLIER
+
 
     # ── STEP 8: RESULT ASSEMBLY (Calibrated Math) ─────────────────────────────
     positive_scores = {v: s for v, s in scores.items() if s > 0}
