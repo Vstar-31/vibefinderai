@@ -711,9 +711,9 @@ PROMPTS = build_prompts()
 # ══════════════════════════════════════════════════════════════════════════════
 # LOGGER SETUP
 # ══════════════════════════════════════════════════════════════════════════════
-logger = logging.getLogger("VibeFinder_v10k_2")
+logger = logging.getLogger("VibeFinder_v10k")
 logger.setLevel(logging.INFO)
-fh = logging.FileHandler("qa_batch_v10k_2.log", encoding="utf-8")
+fh = logging.FileHandler("qa_batch_v10k.log", encoding="utf-8")
 sh = logging.StreamHandler()
 fmt = logging.Formatter("%(message)s")
 fh.setFormatter(fmt)
@@ -858,6 +858,24 @@ async def run_batch():
                 f"{t.get('title','')} {t.get('artist','')}"
             )]
 
+            # v8 FIX: Multi-stage retry when direct search returns empty
+            if not raw_pool:
+                STOP_WORDS = {"the","a","an","of","for","to","at","in","is","type","vibe","music",
+                              "song","playlist","chill","feel","style","kind","sort","genre"}
+                kws = [w for w in re.findall(r"[a-z']+", request.text.lower())
+                       if w not in STOP_WORDS and len(w) > 2]
+                if kws:
+                    stage1_q = " ".join(kws[:4])
+                    raw_pool = await fetch_lastfm_track_search(stage1_q, limit=100)
+                    raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(
+                        f"{t.get('title','')} {t.get('artist','')}")]
+            if not raw_pool:
+                words_by_len = sorted([w for w in re.findall(r"[a-z']+", request.text.lower()) if len(w)>4], key=len, reverse=True)
+                if words_by_len:
+                    raw_pool = await fetch_lastfm_artist_tracks(artist=words_by_len[0], limit=100)
+            if not raw_pool:
+                raw_pool = await fetch_lastfm_tracks("dream pop", limit=80)
+
         elif vibe_data.get("dominant_vibe") == "artist_driven":
             raw_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=200)
 
@@ -889,6 +907,16 @@ async def run_batch():
                         genre_pool.extend(r)
             else:
                 genre_pool = []
+
+            # v8 FIX: If genre pool came back empty for non-English, retry language-agnostic
+            if not genre_pool and _lang != "Any":
+                _fallback_tags = [target_genre] if target_genre else ["ambient"]
+                fallback_results = await asyncio.gather(
+                    *[fetch_lastfm_tracks(tag, limit=100) for tag in _fallback_tags[:2]],
+                    return_exceptions=True
+                )
+                for r in fallback_results:
+                    if isinstance(r, list): genre_pool.extend(r)
 
             artist_pool = []
             if detected_artist and request.artist_focus > 25:
