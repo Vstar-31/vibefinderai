@@ -31,71 +31,6 @@ from collections import defaultdict
 # Maps any user word or phrase to one or more canonical tokens that appear in
 # VIBE_MAP keyword/context lists. Applied BEFORE scoring.
 SYNONYMS: dict[str, list[str]] = {
-
-    # ── v8 FIX: Typo-tolerant abbreviations (stress-test recoveries) ────────
-    "amient":   ["ambient"],
-    "ambint":   ["ambient"],
-    "ambnt":    ["ambient"],
-    "drk":      ["dark"],
-    "slp":      ["calm", "ambient"],
-    "gthic":    ["dark"],
-    "vbies":    ["chill", "happy"],
-    "vbes":     ["chill", "happy"],
-    "hapy":     ["happy"],
-    "hpy":      ["happy"],
-    "onyl":     ["happy"],            # "happy vibes onyl" → happy
-    "onely":    ["happy"],            # "good vibes onely" → happy
-    "fst":      ["hype", "intense"],
-    "jzz":      ["jazz", "soulful"],
-    "clb":      ["party"],
-    "nigt":     ["chill", "party"],   # "night" context
-    "pujabi":   ["desi"],
-    "dace":     ["party"],
-    "hrad":     ["hype", "intense"],
-    "reggaetn": ["tropical", "party"],
-    "sft":      ["calm"],
-    "lov":      ["heartbreak", "chill"],
-    "luv":      ["heartbreak", "chill"],
-    "sng":      ["chill"],            # "song" qualifier → neutral chill
-    "shogaze":  ["dreamy"],
-    "gtar":     ["rock"],
-    "vaprwav":  ["retro"],
-    "aesthtic": ["chill"],
-    "aesthtc":  ["chill"],
-    "vilin":    ["dark", "intense"],
-    "vilain":   ["dark", "intense"],
-    # ── v8 FIX: Abstract/emotional phrases → nearest vibe ───────────────────
-    "leaving toxic":          ["heartbreak", "euphoric"],
-    "toxic relationship":     ["heartbreak"],
-    "terrifyingly free":      ["euphoric", "heartbreak"],
-    "beginning of a crush":   ["happy", "dreamy"],
-    "start of a crush":       ["happy", "dreamy"],
-    "hour before":            ["focus", "cinematic"],
-    "big decision":           ["focus", "cinematic"],
-    "long distance":          ["heartbreak"],
-    "ended badly":            ["heartbreak", "sad"],
-    "bored excitement":       ["chill", "happy"],
-    "ordered randomness":     ["ambient", "focus"],
-    "purposeful accident":    ["dreamy"],
-    "unknown familiarity":    ["dreamy", "chill"],
-    "airport departure":      ["calm", "cinematic"],
-    "departure gate":         ["calm", "cinematic"],
-    "gate at night":          ["calm", "cinematic"],
-    # ── v8 FIX: Regional & cultural slang ───────────────────────────────────
-    "braai":          ["tropical", "party"],
-    "bgm":            ["focus", "cinematic"],
-    "mass bgm":       ["cinematic", "intense"],
-    "south indian":   ["desi"],
-    "dilwale":        ["desi", "soulful"],
-    "dulhania":       ["desi", "soulful"],
-    "marrakech":      ["chill"],
-    "souk":           ["chill"],
-    "sakanaction":    ["dreamy", "rock"],
-    "new amor":       ["dreamy", "calm"],
-    "half waif":      ["dreamy", "heartbreak"],
-    "tokyo subway":   ["ambient", "calm"],
-    "tokyo train":    ["ambient", "calm"],
-
     # ── decades / eras adjacent ──────────────────────────────────────────────
     "1950s": ["retro", "rock", "soulful"],
     "50s": ["retro", "rock", "soulful"],
@@ -1041,56 +976,150 @@ BLEED: dict[str, dict[str, float]] = {
 }
 
 
-
-# ─── VIBE_TAG_MATRIX — v8 FIX: Language-aware tag routing ─────────────────────
-# Maps (vibe, language) → list of Last.fm tags to fetch for that combination.
-# Falls back to "Any" if no language-specific entry.
-VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
-    "ambient": {
-        "Any":      ["ambient", "drone", "field recording", "minimalism"],
-        "Japanese": ["japanese ambient", "ambient", "instrumental", "japanese electronic"],
-        "Korean":   ["korean ambient", "ambient", "instrumental"],
-    },
-    "calm": {
-        "Any":      ["ambient", "chill", "relaxing", "lo-fi"],
-        "Japanese": ["japanese lo-fi", "ambient", "japanese instrumental"],
-        "Korean":   ["korean indie", "lo-fi"],
-        "Hindi":    ["bollywood instrumental", "ambient"],
-    },
-    "dreamy": {
-        "Any":      ["dream pop", "shoegaze", "indie pop", "chillwave"],
-        "Japanese": ["city pop", "japanese dream pop", "japanese indie"],
-        "Korean":   ["korean indie", "k-indie", "dreamy"],
-    },
-    "desi": {
-        "Any":      ["bollywood", "desi pop", "bhangra", "punjabi pop"],
-        "Hindi":    ["bollywood", "hindi pop", "desi hip hop"],
-        "Punjabi":  ["bhangra", "punjabi pop", "punjabi hip hop"],
-    },
-    "party": {
-        "Any":      ["dance pop", "house", "club", "edm"],
-        "Hindi":    ["bollywood", "desi pop", "hindi dance"],
-        "Punjabi":  ["bhangra", "punjabi pop", "punjabi dance"],
-        "Korean":   ["k-pop", "korean pop"],
-        "Afrobeats":["afrobeats", "amapiano", "afro house"],
-        "Spanish":  ["reggaeton", "latin pop", "cumbia"],
-    },
-    "hype": {
-        "Any":      ["hip hop", "trap", "rap", "drill"],
-        "Hindi":    ["desi hip hop", "hindi rap"],
-        "Punjabi":  ["punjabi hip hop", "punjabi trap"],
-        "Korean":   ["k-hip hop", "korean rap"],
-    },
-    "heartbreak": {
-        "Any":      ["sad", "heartbreak", "indie pop", "emo"],
-        "Hindi":    ["bollywood sad", "hindi sad songs"],
-        "Korean":   ["k-ballad", "korean ballad"],
-    },
-}
-
 # =============================================================================
 #  THE GRAND VIBE MAP — V4.2 FULL DATASET w/ MEGA GENRES & DECADES
 # =============================================================================
+# =============================================================================
+# LANGUAGE TAG MAP
+# Maps (language, dominant_vibe) → Last.fm tag to use instead of genres[0]
+# Ensures language-tagged prompts get the right regional pool.
+# =============================================================================
+LANGUAGE_TAG_MAP: dict[str, dict[str, str | None]] = {
+    "Hindi": {
+        "default":        "bollywood",
+        "romantic":       "bollywood",
+        "heartbreak":     "bollywood",
+        "bollywood_sad":  "bollywood",
+        "calm":           "hindi",
+        "chill":          "hindi",
+        "happy":          "bollywood",
+        "party":          "bollywood",
+        "hype":           "bollywood",
+        "desi":           "bollywood",
+        "soulful":        "ghazal",
+        "dreamy":         "hindi",
+        "focus":          "hindi",
+        "ambient":        "hindi",
+    },
+    "Punjabi": {
+        "default":        "punjabi",
+        "romantic":       "punjabi",
+        "heartbreak":     "punjabi",
+        "punjabi_soft":   "punjabi",
+        "calm":           "punjabi",
+        "chill":          "punjabi",
+        "happy":          "bhangra",
+        "party":          "bhangra",
+        "hype":           "bhangra",
+        "desi":           "punjabi",
+        "soulful":        "punjabi",
+    },
+    "English": {
+        "default":        None,
+        "romantic":       "rnb",
+        "heartbreak":     "indie",
+        "calm":           "indie",
+        "party":          "pop",
+        "hype":           "hip-hop",
+        "soulful":        "soul",
+    },
+    "Tamil": {
+        "default":        "kollywood",
+        "party":          "kollywood",
+        "hype":           "kollywood",
+        "romantic":       "kollywood",
+        "heartbreak":     "kollywood",
+        "cinematic":  "kollywood",
+    },
+    "Telugu": {
+        "default":        "tollywood",
+        "party":          "tollywood",
+        "hype":           "tollywood",
+        "romantic":       "tollywood",
+        "heartbreak":     "tollywood",
+    },
+    "Korean": {
+        "default":        "k-pop",
+        "party":          "k-pop",
+        "hype":           "k-pop",
+        "ambient":    "korean post-rock",
+        "romantic":       "k-pop",
+        "heartbreak":     "k-pop",
+        "calm":           "k-pop",
+        "dreamy":         "k-pop",
+    },
+    "Japanese": {
+        "default":    "j-pop",
+        "party":      "j-pop",
+        "hype":       "j-hip hop",
+        "romantic":   "j-pop",
+        "heartbreak": "j-ballad",
+        "calm":       "japanese ambient",     
+        "chill":      "japanese city pop",
+        "dreamy":     "japanese dream pop",
+        "ambient":    "kankyo ongaku",        
+        "focus":      "japanese ambient",
+        "retro":      "city pop",
+        "soulful":    "japanese r&b",
+        "intense":    "j-rock",
+        "dark":       "japanese post-rock",
+    },
+
+    "Spanish": {
+        "default":        "latin",
+        "party":          "reggaeton",
+        "hype":           "reggaeton",
+        "romantic":       "latin",
+        "calm":           "latin",
+    },
+    "Portuguese": {
+        "default":        "mpb",
+        "party":          "baile funk",
+        "romantic":       "bossa nova",
+        "calm":           "bossa nova",
+    },
+    "French": {
+        "default":        "french pop",
+        "romantic":       "chanson",
+        "calm":           "chanson",
+    },
+    "Arabic": {
+        "default":        "arabic",
+        "romantic":       "arabic",
+        "calm":           "arabic",
+    },
+    "Afrobeats": {
+        "default":        "afrobeats",
+        "party":          "afrobeats",
+        "hype":           "afrobeats",
+        "romantic":       "afrobeats",
+        "calm":           "afrobeats",
+        "chill":          "afrobeats",
+    },
+    "Bengali": {
+        "default":        "bengali",
+        "romantic":       "bengali",
+        "heartbreak":     "bengali",
+    },
+    "Urdu": {
+        "default":        "ghazal",
+        "romantic":       "ghazal",
+        "soulful":        "qawwali",
+        "calm":           "ghazal",
+    },
+    "Kannada": {
+        "default":        "kannada",
+        "party":          "kannada",
+        "romantic":       "kannada",
+    },
+    "Malayalam": {
+        "default":        "malayalam",
+        "party":          "malayalam",
+        "romantic":       "malayalam",
+    },
+    "Any": {},
+}
+
 VIBE_MAP: dict[str, dict] = {
 
     "rock": {
@@ -1409,9 +1438,17 @@ VIBE_MAP: dict[str, dict] = {
             "lalah hathaway", "angie stone", "tweet", "floetry",
             "raheem devaughn", "anthony hamilton", "jaheim",
             "lucky daye", "giveon", "eli henderson", "lola young",
+            "anderson .paak", "silk sonic", "lucky daye", "mac ayres",
+            "snoh aalegra", "moonchild", "hiatus kaiyote",
+            "thundercat", "terrace martin", "robert glasper",
+
         ],
-        "bpm": "50-110",
-        "genres": ["Jazz", "Blues", "Classic Soul", "Gospel", "Neo-Soul", "Contemporary R&B", "Motown", "Northern Soul", "Quiet Storm", "Jazz Fusion", "Spiritual Jazz", "Rhythm and Blues", "Gospel Soul"],
+        "bpm": "60-105",
+        "genres": [
+            "Neo-Soul", "Contemporary R&B", "Indie R&B", "Soul Pop",
+            "Soulful House", "Funk Soul", "Classic Soul", "Gospel Soul",
+            "Jazz Soul", "Motown", "Quiet Storm", "Smooth Soul", "Jazz Hop",
+        ],
     },
 
     "retro": {
@@ -1895,7 +1932,7 @@ VIBE_MAP: dict[str, dict] = {
             "gurnam bhullar", "akhil", "ravinder grewal",
         ],
         "bpm": "65-105",
-        "genres": ["Punjabi Soft Pop", "Punjabi Ballad", "Punjabi Sufi", "Punjabi Acoustic",
+        "genres": ["punjabi", "bhangra", "Punjabi Soft Pop", "Punjabi Ballad", "Punjabi Sufi", "Punjabi Acoustic",
                    "Punjabi R&B", "Desi Soul", "Punjabi Ghazal", "Soft Bhangra"],
     },
 
@@ -1925,7 +1962,7 @@ VIBE_MAP: dict[str, dict] = {
             "pardeep boora",
         ],
         "bpm": "90-130",
-        "genres": ["Haryanvi Folk", "Haryanvi Pop", "Ragini", "Haryanvi EDM",
+        "genres": ["bhangra", "bollywood", "Haryanvi Folk", "Haryanvi Pop", "Ragini", "Haryanvi EDM",
                    "Haryanvi Hip Hop", "Desi Folk", "North Indian Folk"],
     },
 
@@ -1957,7 +1994,7 @@ VIBE_MAP: dict[str, dict] = {
             "b praak", "vishal mishra", "payal dev",
         ],
         "bpm": "55-95",
-        "genres": ["Bollywood Sad", "Hindi Ballad", "Filmi Ghazal", "Desi Soul",
+        "genres": ["bollywood", "hindi", "Bollywood Sad", "Hindi Ballad", "Filmi Ghazal", "Desi Soul",
                    "Bollywood Heartbreak", "Hindi Sufi Sad", "Soft Bollywood",
                    "Romantic Bollywood Sad", "90s Hindi Sad"],
     },
@@ -2044,7 +2081,7 @@ VIBE_MAP: dict[str, dict] = {
             "lana del rey", "lorde", "troye sivan",
         ],
         "bpm": "60-110",
-        "genres": ["Romantic R&B", "Neo Soul", "Slow Jam", "Love Pop", "Indie Romance",
+        "genres": ["rnb", "neo soul", "soul", "Romantic R&B", "Slow Jam", "Love Pop", "Indie Romance",
                    "Soul Ballad", "Contemporary R&B", "Bedroom Pop", "Soft Rock",
                    "Acoustic Love", "R&B Ballad", "Dream Pop Romance"],
     },

@@ -711,9 +711,9 @@ PROMPTS = build_prompts()
 # ══════════════════════════════════════════════════════════════════════════════
 # LOGGER SETUP
 # ══════════════════════════════════════════════════════════════════════════════
-logger = logging.getLogger("VibeFinder_v10k_2")
+logger = logging.getLogger("VibeFinder_v10k")
 logger.setLevel(logging.INFO)
-fh = logging.FileHandler("qa_batch_v10k_2.log", encoding="utf-8")
+fh = logging.FileHandler("qa_batch_v10k.log", encoding="utf-8")
 sh = logging.StreamHandler()
 fmt = logging.Formatter("%(message)s")
 fh.setFormatter(fmt)
