@@ -465,7 +465,7 @@ export default function LandingPage({ onLaunch }) {
           <h2 style={S.sectionTitle}>What makes it different</h2>
           <p style={S.sectionDesc}>Not a playlist generator. Not a genre picker. An acoustic intelligence layer that maps language to sound.</p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 1, background: "rgba(150,100,25,0.26)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: 16, overflow: "hidden" }}>
-            <FeatureCard icon="🧠" title="Natural Language Vibe Analysis"  desc="Describe a moment, emotion, or scene in plain language. The AI extracts semantic concepts, dominant moods, and audio attributes from your text." badge="Gemini AI" />
+            <FeatureCard icon="🧠" title="Natural Language Vibe Analysis"  desc="Describe a moment, emotion, or scene in plain language. The AI extracts semantic concepts, dominant moods, and audio attributes from your text." badge="Pure Metadata Maths" />
             <FeatureCard icon="🎯" title="Artist & Genre Anchoring"         desc="Mention an artist in your description and the engine locks onto their sonic profile. Genre tags in the results are clickable hard filters." badge="Smart Detection" />
             <FeatureCard icon="🌐" title="16-Language Support"              desc="Deep routing for Indian regional music — Hindi, Punjabi, Tamil, Telugu, Kannada, Malayalam, Bengali, Urdu — plus Korean, Japanese, Spanish, Arabic and more." badge="Regional Music" />
             <FeatureCard icon="🎛️" title="Pro Mode Overrides"               desc="Force a specific artist, lock to a genre, or hard-switch to the secondary vibe. Designed for power users who want full control." badge="Pro Mode" />
