@@ -6,32 +6,32 @@
 //
 //   MusicBrainz   — CC0 core data. Free non-commercial. Commercial plans exist
 //                   via MetaBrainz if you monetise. Rate limit: 1 req/s.
-//                   ⚠️  If you monetise: contact MetaBrainz for a commercial plan.
+//                     If you monetise: contact MetaBrainz for a commercial plan.
 //
 //   ListenBrainz  — CC0 / open data. Available for commercial use (see MetaBrainz
 //                   commercial tiers). Rate limit: dynamic headers, generous.
-//                   ✅  Safe to monetise.
+//                     Safe to monetise.
 //
 //   TheAudioDB    — Free test key "2", 2 req/s. For production/commercial use
 //                   you need their $8/mo Patreon key. Free key fine for dev.
-//                   ⚠️  If you monetise: upgrade to $8/mo Patreon key.
+//                     If you monetise: upgrade to $8/mo Patreon key.
 //
 //   Last.fm       — Free, attribution required. Commercial use allowed with ToS
 //                   compliance (no scraping, must show Last.fm attribution).
-//                   ✅  Safe to monetise with attribution.
+//                     Safe to monetise with attribution.
 //
 //   Spotify Web API — Free. OAuth required for playlist creation. For commercial
 //                   apps: submit for Quota Extension. Preview URLs limited to 30s.
-//                   ⚠️  If you monetise: apply for Extended Quota.
+//                     If you monetise: apply for Extended Quota.
 //
 //   AcousticBrainz — Frozen dataset (stopped collecting 2022). CC0 core data.
 //                   Still queryable for existing MBIDs. Supplement with
 //                   ReccoBeats for newer tracks.
-//                   ✅  Safe to monetise.
+//                     Safe to monetise.
 //
 //   ReccoBeats    — Free tier. Audio features (BPM, energy, valence etc).
 //                   Check their current ToS before commercial launch.
-//                   ⚠️  Verify commercial terms before monetising.
+//                     Verify commercial terms before monetising.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -3,8 +3,11 @@ seed_artists.py
 ───────────────
 VibeFinderAI — Artist Directory Seeder
 
-Seeds 1000+ essential artists into ArtistDirectory across all genres.
+Seeds essential artists into ArtistDirectory across all genres.
 Run once after your first `prisma migrate deploy`.
+
+NEW: Run `python seed_artists.py --scrape` to massively expand the 
+database by pulling thousands of top artists dynamically from Last.fm!
 
 After seeding, run enrich_artists.py to populate MBID, LB similar artists,
 and TheAudioDB metadata for each entry.
@@ -17,11 +20,12 @@ FIXES vs previous version:
 
 import asyncio
 import os
+import argparse
+import httpx
 from dotenv import load_dotenv
 from prisma import Prisma
 
 load_dotenv()
-
 
 async def seed():
     db = Prisma()
@@ -175,8 +179,6 @@ async def seed():
         {"name": "Tejas",                "genres": "indie pop, alternative","niche": "mumbai indie",       "songs": "Tejas hits, Liggi collaborations"},
 
         # ─── INDIAN HIP HOP / DESI RAP ───────────────────────────────────────
-        # NOTE: These were accidentally placed outside the list in the previous
-        # version of this file and were never seeded. Fixed here.
         {"name": "Divine",         "genres": "indian hip hop, desi rap",       "niche": "gully rap pioneer",    "songs": "Mere Gully Mein, Jungli Sher, Farak, Nazar"},
         {"name": "KR$NA",          "genres": "indian hip hop, rap",            "niche": "technical lyricist",   "songs": "Khol De, Dilli, Aafat, Underground Authority"},
         {"name": "MC Stan",        "genres": "indian hip hop, desi drill",     "niche": "pune underground",     "songs": "Wata, Basti Ka Hasti, Tadipaar, Insaan"},
@@ -188,7 +190,6 @@ async def seed():
         {"name": "Brodha V",       "genres": "indian hip hop, conscious rap",  "niche": "bangalore conscious",  "songs": "Aigiri Nandini Hip Hop, Mera Mann, Brahmanda"},
         {"name": "Encore ABJ",     "genres": "indian hip hop, trap",           "niche": "mumbai trap",          "songs": "Chal Maar, Morni, Trap House"},
         {"name": "Ikka",           "genres": "indian hip hop, punjabi rap",    "niche": "haryanvi rap",         "songs": "Meri Maa, Teri Gali, Changa Munda"},
-        {"name": "Prabh Deep",     "genres": "indian hip hop, conscious rap",  "niche": "delhi conscious",      "songs": "Class-Sick, Suno, Taana Baana"},
 
         # ─── ALTERNATIVE / INDIE / ROCK ──────────────────────────────────────
         {"name": "Radiohead",       "genres": "alternative, art rock",     "niche": "ok computer",       "songs": "Creep, Karma Police, No Surprises, Everything in Its Right Place"},
@@ -201,7 +202,6 @@ async def seed():
         {"name": "Hozier",          "genres": "folk, soul",                "niche": "take me to church", "songs": "Take Me to Church, Work Song, Cherry Wine, Almost"},
         {"name": "Bon Iver",        "genres": "indie folk, ambient",       "niche": "for emma",          "songs": "Skinny Love, Holocene, Perth, Towers"},
         {"name": "Sufjan Stevens",  "genres": "indie folk, chamber pop",   "niche": "illinoise",         "songs": "Chicago, Death With Dignity, Mystery of Love, Death Shall Have No Dominion"},
-        {"name": "Radiohead",       "genres": "alternative, art rock",     "niche": "ok computer",       "songs": "Creep, Karma Police, No Surprises"},
         {"name": "The National",    "genres": "indie rock, art rock",      "niche": "sleep well beast",  "songs": "Bloodbuzz Ohio, Sorrow, I Need My Girl, Fake Empire"},
         {"name": "Fleet Foxes",     "genres": "indie folk, baroque pop",   "niche": "helplessness blues","songs": "White Winter Hymnal, Helplessness Blues, Mykonos"},
         {"name": "Vampire Weekend", "genres": "indie rock, afro-pop",      "niche": "father of the bride","songs":"A-Punk, Oxford Comma, Harmony Hall, Sunflower"},
@@ -282,6 +282,28 @@ async def seed():
         {"name": "Noah Kahan",       "genres": "folk, indie pop",     "niche": "stick season",      "songs": "Stick Season, Dial Drunk, Northern Attitude, Forever"},
         {"name": "boygenius",        "genres": "indie folk, rock",    "niche": "the record",        "songs": "Not Strong Enough, True Blue, Emily I'm Sorry"},
         {"name": "Gillian Welch",    "genres": "folk, americana",     "niche": "time the revelator","songs":"Everything Is Free, Dark Turn of Mind, The Way It Goes"},
+
+        # ─── [NEW BASELINE] CLASSICAL & NEO-CLASSICAL ────────────────────────
+        {"name": "Ludovico Einaudi", "genres": "neo-classical, piano", "niche": "minimalist", "songs": "Experience, Nuvole Bianche, Una Mattina"},
+        {"name": "Hania Rani",       "genres": "neo-classical, ambient", "niche": "modern piano", "songs": "Glass, Eden, Hawaii Oslo"},
+        {"name": "Claude Debussy",   "genres": "classical, impressionist", "niche": "dreamy piano", "songs": "Clair de lune, Rêverie, Arabesque No. 1"},
+        {"name": "Erik Satie",       "genres": "classical, avant-garde", "niche": "gymnopédies", "songs": "Gymnopédie No.1, Gnossienne No.1"},
+        {"name": "Yann Tiersen",     "genres": "neo-classical, score", "niche": "amelie", "songs": "Comptine d'un autre été, La Valse d'Amélie"},
+        {"name": "Philip Glass",     "genres": "classical, minimalist", "niche": "glassworks", "songs": "Opening, Truman Sleeps, Metamorphosis: One"},
+        
+        # ─── [NEW BASELINE] DEEP HOUSE & TECHNO ──────────────────────────────
+        {"name": "Bicep",            "genres": "electronic, techno", "niche": "isles", "songs": "Glue, Apricots, Aura"},
+        {"name": "Peggy Gou",        "genres": "house, electronic", "niche": "k-house", "songs": "Starry Night, It Goes Like (Nanana), I Go"},
+        {"name": "Amelie Lens",      "genres": "techno, electronic", "niche": "hard techno", "songs": "Feel It, Higher, Basiel"},
+        {"name": "CamelPhat",        "genres": "house, tech house", "niche": "club anthem", "songs": "Cola, Panic Room, Breathe"},
+        {"name": "Gorgon City",      "genres": "house, electronic", "niche": "vocal house", "songs": "Ready for Your Love, Imagination, Voodoo"},
+
+        # ─── [NEW BASELINE] METAL & HEAVY ────────────────────────────────────
+        {"name": "Sleep Token",      "genres": "metal, alternative", "niche": "worship", "songs": "The Summoning, Chokehold, Take Me Back To Eden"},
+        {"name": "Bring Me The Horizon", "genres": "metalcore, rock", "niche": "sempiternal", "songs": "Can You Feel My Heart, Throne, Drown"},
+        {"name": "Bad Omens",        "genres": "metalcore, alternative", "niche": "tdopom", "songs": "Just Pretend, The Death of Peace of Mind, Like A Villain"},
+        {"name": "Lorna Shore",      "genres": "deathcore, metal", "niche": "pain remains", "songs": "To the Hellfire, Pain Remains I, Into the Earth"},
+        {"name": "Deftones",         "genres": "alt metal, shoegaze", "niche": "white pony", "songs": "Change, My Own Summer, Cherry Waves"},
     ]
 
     # Deduplicate by name (preserves first occurrence)
@@ -292,7 +314,7 @@ async def seed():
             seen.add(a["name"])
             unique_artists.append(a)
 
-    print(f"Seeding {len(unique_artists)} unique artists...")
+    print(f"Seeding {len(unique_artists)} high-quality baseline artists...")
 
     success = 0
     failed = 0
@@ -306,7 +328,6 @@ async def seed():
                         "genres": a["genres"],
                         "niche":  a.get("niche", ""),
                         "songs":  a.get("songs", ""),
-                        # New fields — left null here, populated by enrich_artists.py
                         "mbid":             None,
                         "mbTags":           None,
                         "lbSimilarArtists": None,
@@ -319,7 +340,6 @@ async def seed():
                         "genres": a["genres"],
                         "niche":  a.get("niche", ""),
                         "songs":  a.get("songs", ""),
-                        # Don't overwrite enrichment fields on re-seed
                     },
                 },
             )
@@ -329,10 +349,94 @@ async def seed():
             print(f"  ❌ {a['name']}: {e}")
             failed += 1
 
-    await db.disconnect()
-    print(f"\n🚀 Seed complete — {success} seeded, {failed} failed")
-    print(f"\nNext step: run enrich_artists.py to populate MBID, similar artists, and TADB metadata.")
+    print(f"\n🚀 Baseline Seed complete — {success} seeded, {failed} failed")
 
+
+async def scrape_massive_library_from_lastfm(db: Prisma):
+    """
+    The Gigabrain Scraper: Pulls top 50-100 artists across 25+ vibe tags 
+    directly from Last.fm to populate thousands of diverse artists.
+    Fast, doesn't break rate limits, and uses the API key you already have.
+    """
+    LASTFM_API_KEY = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
+    
+    # Covering all the vibe bases in your vibe_engine
+    tags = [
+        "pop", "k-pop", "j-pop", "hip-hop", "rap", "trap", "rnb", "soul", "jazz",
+        "indie rock", "alternative", "shoegaze", "dream pop", "ambient", "drone",
+        "electronic", "house", "techno", "synthwave", "hyperpop", "industrial",
+        "metal", "metalcore", "deathcore", "classic rock", "country", "folk",
+        "americana", "afrobeats", "reggaeton", "dancehall", "bollywood", "bhangra",
+        "punjabi", "classical", "neo-classical", "film score"
+    ]
+    
+    print(f"\n🌍 Initating Massive Scrape from Last.fm across {len(tags)} genres...")
+    print("Hold tight bro, this is about to inject pure data into your DB.\n")
+    
+    success = 0
+    async with httpx.AsyncClient() as client:
+        for tag in tags:
+            try:
+                # Ask Last.fm for top 50 artists for this tag
+                url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettopartists&tag={tag}&api_key={LASTFM_API_KEY}&format=json&limit=50"
+                r = await client.get(url, timeout=10)
+                
+                if r.status_code == 200:
+                    data = r.json()
+                    lastfm_artists = data.get("topartists", {}).get("artist", [])
+                    
+                    for a in lastfm_artists:
+                        name = a.get("name")
+                        if not name: 
+                            continue
+                        
+                        # Upsert them without songs.
+                        # Don't worry, your enrich_artists.py will pick them up
+                        # and populate their tadbTop10 tracks and MBID later!
+                        await db.artistdirectory.upsert(
+                            where={"name": name},
+                            data={
+                                "create": {
+                                    "name": name,
+                                    "genres": tag,
+                                    "niche": f"lastfm top {tag}",
+                                    "songs": "", 
+                                },
+                                "update": {} # If they exist, don't overwrite their curated data
+                            }
+                        )
+                        success += 1
+                        
+                    print(f"  🔥 Scraped & Injected {len(lastfm_artists)} top artists for '{tag}'")
+                else:
+                    print(f"  ⚠️ Bad response from Last.fm for '{tag}': {r.status_code}")
+                
+                # Chill out so we don't get banned by Last.fm
+                await asyncio.sleep(0.5)
+                
+            except Exception as e:
+                print(f"  ❌ Failed scraping '{tag}': {e}")
+                
+    print(f"\n🚀 MASSIVE SCRAPE COMPLETE! Injected {success} artist records dynamically.")
+    print("Next step: run `python enrich_artists.py` to fill out their metadata and top tracks!")
+
+
+async def main():
+    parser = argparse.ArgumentParser(description="Seed the ArtistDirectory")
+    parser.add_argument("--scrape", action="store_true", help="Run the Last.fm massive scraper after baseline seeding")
+    args = parser.parse_args()
+
+    db = Prisma()
+    
+    # 1. Run the safe, hardcoded baseline
+    await seed()
+    
+    # 2. If you asked for the massive expansion, run the scraper
+    if args.scrape:
+        await db.connect() # Ensure connection is open for the second pass
+        await scrape_massive_library_from_lastfm(db)
+        await db.disconnect()
+        
 
 if __name__ == "__main__":
-    asyncio.run(seed())
+    asyncio.run(main())
