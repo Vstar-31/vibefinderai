@@ -1052,32 +1052,33 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         vibe_data["detected_song"] = None
 
     # 3. DYNAMIC TARGET GENRE RESOLUTION
-    # v1.2 FIX: If we have an entity lock but vibe scored neutral/0%, that means the
-    # NLP had no signal beyond the entity name. Rather than serving "Lo-Fi, Ambient Pop,
-    # Electronic" (the neutral fallback genres), we fetch the artist's discography
-    # directly and let the scoring engine do the rest. Flag the vibe as entity-driven.
+    # Extract these early to prevent NameError scope leaks during multi-tag fetch
+    _lang = (request.language or "Any").strip()
+    _dominant = vibe_data.get("dominant_vibe", "")
+    active_vibe_for_tags = _dominant
+
     if detected_artist and vibe_data.get("confidence", 0) < 0.10:
         logger.info(f"Entity lock active but NLP confidence near-zero. Forcing artist discography fetch for '{detected_artist}'.")
         vibe_data["dominant_vibe"] = "artist_driven"
-        # Use the artist fetch path below
+        active_vibe_for_tags = "artist_driven"
         target_genre = None
     elif request.override_genre:
         target_genre = request.override_genre
+        active_vibe_for_tags = "override" # Force VIBE_TAG_MATRIX to miss and strictly use fallback
         logger.info(f"Pro Mode OVERRIDE applied. Target Genre forced to: {target_genre}")
     elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
         sec_vibe_name = vibe_data["secondary_vibe"]
+        active_vibe_for_tags = sec_vibe_name # We pivoted!
         mapped_genres = vibe_engine.VIBE_MAP.get(sec_vibe_name, {}).get("genres", [sec_vibe_name])
-        _lang_map_sec = vibe_engine.LANGUAGE_TAG_MAP.get((request.language or "Any"), {})
+        _lang_map_sec = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
         target_genre  = (
             _lang_map_sec.get(sec_vibe_name)
             or _lang_map_sec.get("default")
             or mapped_genres[0]
         )
-        logger.info(f"PIVOT ACTIVE: Lang={request.language} Vibe={sec_vibe_name} Genre -> {target_genre}")
+        logger.info(f"PIVOT ACTIVE: Lang={_lang} Vibe={sec_vibe_name} Genre -> {target_genre}")
     else:
-        _lang     = (request.language or "Any").strip()
         _lang_map = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
-        _dominant = vibe_data.get("dominant_vibe", "")
         target_genre = (
             _lang_map.get(_dominant)
             or _lang_map.get("default")
@@ -1188,8 +1189,8 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             genre_pool = await fetch_lastfm_track_search(request.text, limit=150)
         else:
                 # ── MULTI-TAG PARALLEL FETCH v6.0 ───────────────────────────
-                _vibe_tags = get_vibe_tags(_dominant, _lang, target_genre)
-                logger.info(f"Multi-tag fetch: lang={_lang} vibe={_dominant} tags={_vibe_tags}")
+                _vibe_tags = get_vibe_tags(active_vibe_for_tags, _lang, target_genre)
+                logger.info(f"Multi-tag fetch: lang={_lang} vibe={active_vibe_for_tags} tags={_vibe_tags}")
 
                 _per_tag_limit = max(60, 200 // len(_vibe_tags))
                 _tag_results = await asyncio.gather(
@@ -1203,7 +1204,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
 
                 # ── VIBE-ARTIST SEEDING ──────────────────────────────────────
                 _seed_artists: list[str] = (
-                    vibe_engine.VIBE_MAP.get(_dominant, {}).get("artists", [])[:3]
+                    vibe_engine.VIBE_MAP.get(active_vibe_for_tags, {}).get("artists", [])[:3]
                 )
                 _seed_pool: list[dict] = []
                 if _seed_artists:
