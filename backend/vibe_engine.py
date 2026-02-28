@@ -1042,6 +1042,126 @@ BLEED: dict[str, dict[str, float]] = {
 
 
 
+
+# ─── LANGUAGE_TAG_MAP — v8 FIX: Language-aware primary genre routing ──────────
+# Maps language → dominant_vibe → best Last.fm tag for that combo.
+# Used by batch_tester to resolve target_genre for non-English queries.
+# "default" key = fallback when dominant_vibe has no specific entry for that language.
+LANGUAGE_TAG_MAP: dict[str, dict[str, str]] = {
+    "Any": {
+        "default":    "indie pop",
+        "ambient":    "ambient",
+        "calm":       "ambient",
+        "chill":      "chillwave",
+        "dreamy":     "dream pop",
+        "focus":      "lo-fi hip hop",
+        "heartbreak": "sad",
+        "happy":      "indie pop",
+        "hype":       "hip hop",
+        "party":      "dance pop",
+        "rock":       "indie rock",
+        "dark":       "post-punk",
+        "intense":    "metal",
+        "soulful":    "soul",
+        "retro":      "80s",
+        "cinematic":  "cinematic",
+        "euphoric":   "edm",
+        "tropical":   "reggaeton",
+        "desi":       "bollywood",
+        "industrial": "industrial",
+        "indie_folk": "folk",
+        "romantic":   "r&b",
+        "hyperpop":   "hyperpop",
+        "country":    "country",
+        "jazz":       "jazz",
+        "classical":  "classical",
+        "punk":       "punk",
+    },
+    "Hindi": {
+        "default":    "bollywood",
+        "party":      "bollywood dance",
+        "hype":       "desi hip hop",
+        "calm":       "bollywood instrumental",
+        "heartbreak": "bollywood sad",
+        "soulful":    "hindi romantic",
+        "desi":       "bollywood",
+        "ambient":    "bollywood instrumental",
+        "dreamy":     "hindi indie",
+        "retro":      "retro bollywood",
+        "romantic":   "hindi romantic",
+    },
+    "Punjabi": {
+        "default":    "bhangra",
+        "party":      "punjabi pop",
+        "hype":       "punjabi hip hop",
+        "calm":       "punjabi folk",
+        "heartbreak": "punjabi sad",
+        "desi":       "bhangra",
+        "rock":       "punjabi rock",
+        "intense":    "punjabi trap",
+    },
+    "Japanese": {
+        "default":    "japanese pop",
+        "ambient":    "japanese ambient",
+        "calm":       "japanese instrumental",
+        "dreamy":     "city pop",
+        "party":      "j-pop",
+        "rock":       "j-rock",
+        "hype":       "j-hip hop",
+        "heartbreak": "japanese ballad",
+        "retro":      "city pop",
+        "focus":      "japanese lo-fi",
+    },
+    "Korean": {
+        "default":    "k-pop",
+        "ambient":    "korean ambient",
+        "calm":       "korean indie",
+        "dreamy":     "k-indie",
+        "party":      "k-pop",
+        "rock":       "k-rock",
+        "hype":       "k-hip hop",
+        "heartbreak": "k-ballad",
+        "soulful":    "korean r&b",
+    },
+    "Spanish": {
+        "default":    "latin pop",
+        "party":      "reggaeton",
+        "hype":       "latin trap",
+        "calm":       "bossa nova",
+        "heartbreak": "latin ballad",
+        "tropical":   "cumbia",
+        "romantic":   "latin romance",
+    },
+    "Afrobeats": {
+        "default":    "afrobeats",
+        "party":      "amapiano",
+        "hype":       "afro drill",
+        "calm":       "afro soul",
+        "tropical":   "afrobeats",
+        "soulful":    "afro soul",
+    },
+    "Arabic": {
+        "default":    "arabic pop",
+        "calm":       "arabic instrumental",
+        "soulful":    "arabic soul",
+        "heartbreak": "arabic ballad",
+        "party":      "arabic dance",
+    },
+    "Tamil": {
+        "default":    "tamil pop",
+        "hype":       "kollywood",
+        "heartbreak": "tamil sad",
+        "party":      "tollywood",
+        "calm":       "carnatic",
+    },
+    "Telugu": {
+        "default":    "telugu pop",
+        "hype":       "tollywood",
+        "calm":       "carnatic",
+        "heartbreak": "telugu sad",
+    },
+}
+
 # ─── VIBE_TAG_MATRIX — v8 FIX: Language-aware tag routing ─────────────────────
 # Maps (vibe, language) → list of Last.fm tags to fetch for that combination.
 # Falls back to "Any" if no language-specific entry.
