@@ -64,6 +64,44 @@ async def lifespan(app: FastAPI):
     await db.disconnect()
 
 # Initialize core app with lifespan hook
+import difflib as _difflib
+
+# ── Known words for typo normalization ──
+_KNOWN_WORDS = [
+    "happy","sad","calm","chill","dark","dreamy","ambient","romantic","heartbreak",
+    "hype","intense","party","retro","soulful","focus","euphoric","cinematic",
+    "industrial","tropical","indie","folk","punjabi","hindi","bollywood","bhangra",
+    "desi","haryanvi","sufi","ghazal","qawwali","lofi","rap","trap","drill","rnb",
+    "soul","jazz","rock","metal","pop","electronic","edm","house","techno","classical",
+    "country","reggae","afrobeats","amapiano","dancehall","reggaeton","kpop","jpop",
+    "vaporwave","shoegaze","acoustic","alternative","grunge","hardstyle","phonk",
+    "hyperpop","gothic","darkwave","night","drive","summer","winter","rain","love",
+    "dance","workout","sleep","study","meditation","guitar","bass","piano","vocal",
+    "smooth","heavy","soft","hard","fast","slow","loud","quiet","warm","cold",
+]
+
+def normalize_input(text: str) -> str:
+    """Restore consonant-skeleton typos (e.g. 'pujabi dace hrad' → 'punjabi dance hard')."""
+    if not text or len(text.strip()) < 3:
+        return text
+    words = text.strip().split()
+    corrected, changed = [], False
+    for word in words:
+        w = word.lower()
+        vowel_ratio = sum(1 for c in w if c in "aeiou") / max(len(w), 1)
+        if vowel_ratio < 0.2 and len(w) > 2 and w.isalpha():
+            matches = _difflib.get_close_matches(w, _KNOWN_WORDS, n=1, cutoff=0.62)
+            if matches:
+                corrected.append(matches[0])
+                changed = True
+                continue
+        corrected.append(word)
+    result = " ".join(corrected)
+    if changed:
+        import logging as _log
+        _log.getLogger(__name__).info(f"normalize_input: '{text}' → '{result}'")
+    return result
+
 app = FastAPI(
     title="VibeFinderAI API", 
     description="Core backend for music discovery and NLP integrations",
@@ -159,7 +197,7 @@ class UserCreate(BaseModel):
 
 class VibeRequest(BaseModel):
     text: str
-    language: str = "Any"      # ← Language filter: Any / Hindi / Punjabi / English / etc.
+    language: str = "Any"      # e.g. Any / Hindi / Punjabi / Korean / Japanese / Tamil
     artist_focus: int = 50 
     nicheness: int = 50    
     bpm_focus: int = 50
@@ -466,6 +504,9 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     logger.info(f"Prompt: '{request.text}' | Limit: {request.track_limit}")
     
     # 1. NLP Core Analysis
+    # Normalize typos before vibe detection
+    request = request.model_copy(update={"text": normalize_input(request.text)})
+
     vibe_data = vibe_engine.analyze_vibe_algorithm(
         text=request.text,
         artist_focus=request.artist_focus, 
@@ -588,17 +629,17 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             or _lang_map_sec.get("default")
             or mapped_genres[0]
         )
-        logger.info(f"PIVOT ACTIVE: Lang={request.language} | Switched to Secondary Vibe -> {target_genre}")
+        logger.info(f"PIVOT ACTIVE: Lang={request.language} Vibe={sec_vibe_name} Genre -> {target_genre}")
     else:
-        _lang        = (request.language or "Any").strip()
-        _lang_map    = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
-        _dominant    = vibe_data.get("dominant_vibe", "")
+        _lang     = (request.language or "Any").strip()
+        _lang_map = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
+        _dominant = vibe_data.get("dominant_vibe", "")
         target_genre = (
             _lang_map.get(_dominant)
             or _lang_map.get("default")
             or vibe_data.get("genres", ["electronic"])[0]
         )
-        logger.info(f"Standard AI Resolution: Lang={_lang} | Vibe={_dominant} | Target Genre -> {target_genre}")
+        logger.info(f"Standard AI Resolution: Lang={_lang} Vibe={_dominant} Genre -> {target_genre}")
         
     vibe_data["target_genre_override"] = target_genre
 
@@ -651,8 +692,14 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         logger.info(f"Fetching direct discography for artist: {artist_target}")
         raw_pool = await fetch_lastfm_artist_tracks(artist=artist_target, limit=200)
     else:
-        logger.info(f"Fetching primary genre pool for: {target_genre}")
-        genre_pool = await fetch_lastfm_tracks(genre=target_genre, limit=200)
+        _dominant_vibe = vibe_data.get("dominant_vibe", "")
+        if _dominant_vibe == "unknown" and not request.override_genre:
+            is_fallback = True
+            logger.info(f"Unknown vibe — direct text search: '{request.text}'")
+            genre_pool = await fetch_lastfm_track_search(request.text, limit=150)
+        else:
+            logger.info(f"Fetching primary genre pool for: {target_genre}")
+            genre_pool = await fetch_lastfm_tracks(genre=target_genre, limit=200)
         artist_pool = []
         if detected_artist and request.artist_focus > 25:
             logger.info(f"Injecting discography blend for detected artist: {detected_artist}")
