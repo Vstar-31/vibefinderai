@@ -1098,7 +1098,52 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         vibe_data["secondary_vibe"] = "Fallback Mode"
         raw_pool = await fetch_lastfm_track_search(request.text, limit=100)
         logger.info(f"Fallback Search returned {len(raw_pool)} tracks.")
-        
+
+        # v8.0: 3-STAGE DIRECT SEARCH FALLBACK — fires when primary search yields 0
+        if not raw_pool:
+            logger.warning("Stage 1 DS: Zero results — retrying with stripped keywords.")
+            # Stage 1: Strip stopwords, retry with top 4 meaningful tokens
+            _STOPWORDS = {
+                "a","an","the","and","or","but","for","with","at","by","of","in",
+                "on","to","is","it","my","me","we","be","as","so","up","type","vibe",
+                "music","songs","playlist","feel","feeling","i","need","want","give",
+            }
+            _tokens = [
+                w for w in re.sub(r"[^\w\s]", " ", request.text.lower()).split()
+                if w not in _STOPWORDS and len(w) > 2
+            ]
+            _stage1_query = " ".join(_tokens[:4])
+            if _stage1_query:
+                raw_pool = await fetch_lastfm_track_search(_stage1_query, limit=100)
+                logger.info(f"Stage 1 DS retry '{_stage1_query}': {len(raw_pool)} tracks.")
+
+        if not raw_pool:
+            logger.warning("Stage 2 DS: Zero results — trying artist-guess from longest token.")
+            # Stage 2: Treat longest token as a potential artist name
+            _all_tokens = [
+                w for w in re.sub(r"[^\w\s]", " ", request.text.lower()).split()
+                if len(w) > 3
+            ]
+            if _all_tokens:
+                _artist_guess = max(_all_tokens, key=len)
+                logger.info(f"Stage 2 DS: artist guess = '{_artist_guess}'")
+                raw_pool = await fetch_lastfm_artist_tracks(artist=_artist_guess, limit=100)
+                logger.info(f"Stage 2 DS artist tracks: {len(raw_pool)} tracks.")
+
+        if not raw_pool:
+            logger.warning("Stage 3 DS: Hard fallback — fetching dream pop / chillwave safety pool.")
+            # Stage 3: Hard fallback — guaranteed non-empty genre pool
+            _s3_results = await asyncio.gather(
+                fetch_lastfm_tracks("dream pop", limit=60),
+                fetch_lastfm_tracks("indie pop", limit=60),
+                fetch_lastfm_tracks("chillwave", limit=60),
+                return_exceptions=True,
+            )
+            for _r in _s3_results:
+                if isinstance(_r, list):
+                    raw_pool.extend(_r)
+            logger.info(f"Stage 3 DS safety pool: {len(raw_pool)} tracks.")
+
         # v1.2 FIX: Filter out junk fallback results (podcasts, news, YouTube videos)
         # v5.0: Massively expanded junk patterns based on QA review
         JUNK_PATTERNS = re.compile(
