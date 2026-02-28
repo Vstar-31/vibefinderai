@@ -101,6 +101,12 @@ def normalize_input(text: str) -> str:
         import logging as _log
         _log.getLogger(__name__).info(f"normalize_input: '{text}' → '{result}'")
     return result
+import unicodedata
+
+def _normalize_for_matching(text: str) -> str:
+    """Strip combining accents so Ólafur == olafur, Sigur Rós == sigur ros."""
+    nfkd = unicodedata.normalize("NFD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 app = FastAPI(
     title="VibeFinderAI API", 
@@ -149,18 +155,26 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 # Bcrypt context - pinned for passlib compatibility
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# ── Module-level (around line 60) ──────────────────────────────────────
 COMMON_WORDS_BLACKLIST = {
-        "alone", "beautiful", "water", "time", "burn", "lights", 
-        "independent", "deep", "passion", "holiday", "eve", "chicago", 
-        "slow", "love", "night", "good", "bad", "happy", "sad", "summer", 
-        "rain", "coffee", "drive", "party", "chill", "focus", "work", 
-        "sleep", "wake", "morning", "midnight", "fire", "magic", "dream",
-        # v5.0 additions — prevent false entity locks from common adjectives
-        "smooth", "fragile", "resolute", "kiss", "paralyzed", "ready",
-        "electric", "bright", "warm", "cold", "sweet", "bitter",
-        "lost", "found", "free", "bound", "broken", "whole",
-        "still", "moving", "running", "falling", "rising", "flying",
-    }
+    "alone", "beautiful", "water", "time", "burn", "lights",
+    "independent", "deep", "passion", "holiday", "eve", "chicago",
+    "slow", "love", "night", "good", "bad", "happy", "sad", "summer",
+    "rain", "coffee", "drive", "party", "chill", "focus", "work",
+    "sleep", "wake", "morning", "midnight", "fire", "magic", "dream",
+    "smooth", "fragile", "resolute", "kiss", "paralyzed", "ready",
+    "electric", "bright", "warm", "cold", "sweet", "bitter",
+    "lost", "found", "free", "bound", "broken", "whole",
+    "still", "moving", "running", "falling", "rising", "flying",
+    # ── v5.1 additions: place names + ultra-common nouns ──
+    "paris", "london", "tokyo", "berlin", "miami",
+    "california", "vegas", "brooklyn", "texas", "heaven", "hell", "home",
+    "stay", "leave", "run", "go", "come", "back", "waiting",
+    "gone", "over", "forever", "again", "always", "never",
+    "heart", "soul", "mind", "eyes", "hands", "voice", "tears",
+    "perfect", "wonderful", "amazing", "dangerous", "crazy", "wild",
+}
+
 # Tracks that appeared in 10%+ of all QA results regardless of prompt.
 # These get a score penalty in the scoring engine so they don't dominate every playlist.
 TRACK_BLOCKLIST: set[str] = {
@@ -806,10 +820,24 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
             if kw.lower() in title or kw.lower() in artist:
                 score += 20 
                 
-        # 4. BPM MATCH (Marker based)
-        markers = fast_markers if is_fast else slow_markers
-        if any(m in title for m in markers):
-            score += 30 * (request.bpm_focus / 50.0)
+        # 4. BPM MATCH — direction-aware (replaces old flat multiplier)
+        fast_hit = any(m in title for m in fast_markers)
+        slow_hit = any(m in title for m in slow_markers)
+
+        if request.bpm_focus > 60:                          # user wants fast
+            bpm_strength = (request.bpm_focus - 50) / 50.0  # 0.2 → 1.0
+            if fast_hit:
+                score += 30 * bpm_strength
+            elif slow_hit:
+                score -= 20 * bpm_strength
+        elif request.bpm_focus < 40:                         # user wants slow/chill
+            bpm_strength = (50 - request.bpm_focus) / 50.0
+            if slow_hit:
+                score += 30 * bpm_strength
+            elif fast_hit:
+                score -= 20 * bpm_strength
+        # bpm_focus 40–60: fully neutral, no bonus or penalty
+
             
         # REMIX EXCLUSION
         if "remix" in title or "edit" in title or "instrumental" in title:
@@ -834,6 +862,7 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
             score -= 40
             
         score += random.uniform(0, 1.5)
+        t["score"] = round(score, 4)   # ← stamp score onto the dict before stashing
         scored_tracks.append((score, t))
         
     scored_tracks.sort(key=lambda x: x[0], reverse=True)
@@ -965,10 +994,10 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         try:
             db_artists = await db.artistdirectory.find_many()
             for a in db_artists:
-                artist_name = a.name.lower()
+                artist_name = _normalize_for_matching(a.name)
+                _prompt_norm = _normalize_for_matching(request.text)
                 artist_pattern = rf'\b{re.escape(artist_name)}\b'
-                
-                if re.search(artist_pattern, prompt_lower):
+                if re.search(artist_pattern, _prompt_norm):
                     # v1.2 Fix #1: Negative Intent Shield — discard if negated
                     if _is_negated_entity(artist_name, prompt_lower):
                         logger.info(f"Entity Scanner: Negation detected before artist '{a.name}' — lock discarded.")
@@ -1161,6 +1190,22 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                     f"Multi-tag pool: {len(raw_pool)} tracks "
                     f"({len(genre_pool)} tags + {len(_seed_pool)} seed + {len(artist_pool)} artist)"
                 )
+                # ── HEARTBREAK POOL GUARD ──────────────────────────────────────────────────
+                # Heartbreak is the thinnest genre pool on Last.fm — "sad" tags return fewer
+                # than 100 tracks regularly. Top up silently before scoring kicks in.
+                if vibe_data.get("dominant_vibe") == "heartbreak" and len(raw_pool) < 100:
+                    logger.warning(f"Heartbreak pool thin ({len(raw_pool)} tracks). Topping up...")
+                    _hb_tags = ["sad indie", "breakup songs", "sad pop", "indie sad"]
+                    _hb_fetches = await asyncio.gather(*[
+                        fetch_lastfm_tracks(genre=tag, limit=60) for tag in _hb_tags
+                    ])
+                    _hb_seen = {f"{t['title'].lower()}|{t['artist'].lower()}" for t in raw_pool}
+                    for _hb_track in [t for sublist in _hb_fetches for t in sublist]:
+                        _hb_key = f"{_hb_track['title'].lower()}|{_hb_track['artist'].lower()}"
+                        if _hb_key not in _hb_seen:
+                            raw_pool.append(_hb_track)
+                            _hb_seen.add(_hb_key)
+                    logger.info(f"Heartbreak pool after top-up: {len(raw_pool)} tracks.")
                 
     # 🚨 ZERO RESULTS SAFETY NET 🚨
     if not raw_pool:
