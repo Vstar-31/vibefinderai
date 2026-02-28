@@ -1,6 +1,39 @@
-// ----------------------------------------------------------------
-// VibeFinderAI - Prisma Schema for Supabase (PostgreSQL)
-// ----------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// VibeFinderAI — Prisma Schema for Supabase (PostgreSQL)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// EXTERNAL API INTEGRATIONS (all free tiers, safe for hobby → early commercial):
+//
+//   MusicBrainz   — CC0 core data. Free non-commercial. Commercial plans exist
+//                   via MetaBrainz if you monetise. Rate limit: 1 req/s.
+//                   ⚠️  If you monetise: contact MetaBrainz for a commercial plan.
+//
+//   ListenBrainz  — CC0 / open data. Available for commercial use (see MetaBrainz
+//                   commercial tiers). Rate limit: dynamic headers, generous.
+//                   ✅  Safe to monetise.
+//
+//   TheAudioDB    — Free test key "2", 2 req/s. For production/commercial use
+//                   you need their $8/mo Patreon key. Free key fine for dev.
+//                   ⚠️  If you monetise: upgrade to $8/mo Patreon key.
+//
+//   Last.fm       — Free, attribution required. Commercial use allowed with ToS
+//                   compliance (no scraping, must show Last.fm attribution).
+//                   ✅  Safe to monetise with attribution.
+//
+//   Spotify Web API — Free. OAuth required for playlist creation. For commercial
+//                   apps: submit for Quota Extension. Preview URLs limited to 30s.
+//                   ⚠️  If you monetise: apply for Extended Quota.
+//
+//   AcousticBrainz — Frozen dataset (stopped collecting 2022). CC0 core data.
+//                   Still queryable for existing MBIDs. Supplement with
+//                   ReccoBeats for newer tracks.
+//                   ✅  Safe to monetise.
+//
+//   ReccoBeats    — Free tier. Audio features (BPM, energy, valence etc).
+//                   Check their current ToS before commercial launch.
+//                   ⚠️  Verify commercial terms before monetising.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 
 generator client {
   provider             = "prisma-client-py"
@@ -11,24 +44,26 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL") // Required by Supabase for building tables
+  directUrl = env("DIRECT_URL")
 }
 
-// --- CORE USER ARCHITECTURE ---
+// ─────────────────────────────────────────────────────────────────────────────
+// CORE USER ARCHITECTURE
+// ─────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id              String          @id @default(uuid())
-  email           String          @unique
-  username        String          @unique
-  hashedPassword  String?
-  avatarUrl       String?
-  createdAt       DateTime        @default(now())
+  id             String          @id @default(uuid())
+  email          String          @unique
+  username       String          @unique
+  hashedPassword String?
+  avatarUrl      String?
+  createdAt      DateTime        @default(now())
 
   oauthIdentities OAuthIdentity[]
   playlists       Playlist[]
   forumPosts      ForumPost[]
   comments        Comment[]
-  vibeRequests    VibeRequest[]   // NEW: Analysis session log
+  vibeRequests    VibeRequest[]
 }
 
 model OAuthIdentity {
@@ -44,7 +79,9 @@ model OAuthIdentity {
   @@unique([providerName, providerId])
 }
 
-// --- MUSIC & DISCOVERY LAYER ---
+// ─────────────────────────────────────────────────────────────────────────────
+// MUSIC & DISCOVERY LAYER
+// ─────────────────────────────────────────────────────────────────────────────
 
 model Playlist {
   id          String   @id @default(uuid())
@@ -63,6 +100,7 @@ model Track {
   spotifyId    String?
   appleMusicId String?
   isrc         String?
+  mbid         String?  // MusicBrainz Recording ID — links to AcousticBrainz + LB
   title        String
   artist       String
   playlistId   String
@@ -70,62 +108,162 @@ model Track {
   playlist     Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
 }
 
-// --- INTELLIGENCE LAYER ---
+// ─────────────────────────────────────────────────────────────────────────────
+// INTELLIGENCE LAYER — Artist Directory
+// ─────────────────────────────────────────────────────────────────────────────
 
 model ArtistDirectory {
   id        String   @id @default(uuid())
   name      String   @unique
-  genres    String   // e.g., "lo-fi, r&b, alternative"
-  niche     String?  // e.g., "sadboy"
-  songs     String?  // comma-separated top songs for direct matching
+  genres    String   // e.g. "lo-fi, r&b, alternative"
+  niche     String?  // e.g. "sadboy"
+  songs     String?  // comma-separated top songs for entity matching
+
+  // ── MusicBrainz enrichment (populated by enrich_artists.py) ──────────────
+  // MusicBrainz core data is CC0 — safe for all use including commercial.
+  mbid      String?  // MusicBrainz Artist ID (UUID) — stable cross-database key
+  mbTags    String?  // Comma-sep community tags from MB, e.g. "shoegaze,dreampop"
+
+  // ── ListenBrainz enrichment ───────────────────────────────────────────────
+  // ListenBrainz data is open/CC0. Commercial use allowed per MetaBrainz ToS.
+  lbSimilarArtists String? // JSON: list of {name, mbid, similarity} from LB radio
+
+  // ── TheAudioDB enrichment (populated by enrich_artists.py) ───────────────
+  // Free test key "2" for dev. $8/mo Patreon key for production.
+  tadbId    Int?     // TheAudioDB artist integer ID
+  tadbMood  String?  // e.g. "melancholic", "energetic" — from strMood field
+  tadbStyle String?  // e.g. "Alternative Rock" — from strStyle field
+  tadbTop10 String?  // JSON: list of {title, tadbTrackId} — top 10 tracks
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-// ─── FEEDBACK & LEARNING LAYER (NEW) ──────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// TRACK FEATURE CACHE
+// Stores audio features from ReccoBeats + mood scores from AcousticBrainz.
+// Keyed by Spotify ID (fast lookup from existing pipeline) with MBID secondary.
 //
-// Two-table design:
-//   VibeRequest  — one row per /api/vibe/analyze call. Captures the full prompt,
-//                  NLP result, and returned track list so we can reconstruct any
-//                  session later without relying on the client.
+// WHY CACHE: ReccoBeats free tier is rate-limited and shouldn't be in hot path.
+// AcousticBrainz is frozen (no new data) but great for pre-2022 tracks.
+// This table is populated by enrich_tracks.py (offline/cron) and read at
+// query time to power the BPM knob and vibe scoring.
 //
-//   TrackFeedback — one row per thumbs up / thumbs down / full-play event.
-//                   References VibeRequest so every signal is traceable back to
-//                   the exact engine state that produced it. This is the table
-//                   that will train the future ranker.
+// Licensing note:
+//   ReccoBeats features: check their ToS before commercial launch.
+//   AcousticBrainz data: CC0 core — safe for all use.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model TrackFeatureCache {
+  id               String   @id @default(uuid())
+  spotifyId        String?  @unique  // primary lookup key
+  mbid             String?  @unique  // secondary key (MusicBrainz Recording ID)
+  isrc             String?           // ISRC for cross-referencing
+
+  title            String
+  artist           String
+
+  // ── ReccoBeats / Audio Features ───────────────────────────────────────────
+  // Scale: all floats 0.0–1.0 except tempo (BPM, raw float)
+  tempo            Float?   // Real BPM — powers the BPM knob
+  energy           Float?   // 0=calm, 1=intense — maps to hype/chill vibes
+  valence          Float?   // 0=sad/dark, 1=happy/euphoric — maps to mood vibes
+  danceability     Float?   // 0=ambient, 1=club — maps to party/ambient routing
+  acousticness     Float?   // 0=electric, 1=acoustic — indie_folk/ambient signal
+  instrumentalness Float?   // 0=vocal, 1=instrumental — focus/ambient signal
+  loudness         Float?   // Raw dB (typically -60 to 0)
+  speechiness      Float?   // 0=music, 1=spoken word — junk track filter signal
+  featureSource    String?  // "reccobeats" | "acousticbrainz" | "estimated"
+
+  // ── AcousticBrainz Mood Scores ────────────────────────────────────────────
+  // Pre-computed ML mood probabilities — maps directly to your vibe categories.
+  // Only populated for tracks with a valid MBID that AcousticBrainz has data for.
+  moodHappy        Float?   // P(happy)   — maps to: happy, euphoric, party
+  moodSad          Float?   // P(sad)     — maps to: heartbreak, bollywood_sad
+  moodRelaxed      Float?   // P(relaxed) — maps to: chill, calm, ambient
+  moodAggressive   Float?   // P(aggressive) — maps to: intense, hype, industrial
+  moodParty        Float?   // P(party)   — maps to: party, hype
+  moodAcoustic     Float?   // P(acoustic) — maps to: indie_folk, country, calm
+  moodElectronic   Float?   // P(electronic) — maps to: hyperpop, industrial, retro
+
+  fetchedAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([spotifyId])
+  @@index([mbid])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MUSICBRAINZ / LISTENBRAINZ THIN POOL CACHE
+// Pre-fetched track pools for Language×Vibe combos that consistently return
+// fewer than 20 tracks from Last.fm (identified in batch QA runs).
 //
-// Both tables are append-only. We never update or delete — every interaction is
-// permanent history. Soft-deleting a user cascades both tables.
-// ──────────────────────────────────────────────────────────────────────────────
+// Populated offline by enrich_thin_pools.py. Read at query time as Stage 2
+// fallback before the hardcoded dream-pop safety pool.
+//
+// KNOWN THIN COMBOS (from QA batch analysis — 10k run):
+//   Japanese×ambient, Japanese×heartbreak, Korean×Direct,
+//   Tamil×Direct, Hindi×Direct, Arabic×Direct, Afrobeats×Direct,
+//   Portuguese×Direct, Any×Direct (all SIGNAL LOST cases)
+//
+// Licensing: ListenBrainz CC0/open data. MusicBrainz CC0 core. Both safe.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ThinPoolCache {
+  id          String   @id @default(uuid())
+  // cacheKey format: "{language}|{vibe}" e.g. "Japanese|ambient", "Any|Direct"
+  cacheKey    String   @unique
+  tracksJson  String   // JSON: list of {title, artist, mbid?, spotifyId?}
+  trackCount  Int      // denormalised for quick health checks
+  source      String   // "listenbrainz" | "musicbrainz" | "theaudiodb" | "mixed"
+  fetchedAt   DateTime @default(now())
+  expiresAt   DateTime // rotate weekly — set to fetchedAt + 7 days
+
+  @@index([cacheKey])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEEDBACK & LEARNING LAYER
+// ─────────────────────────────────────────────────────────────────────────────
 
 model VibeRequest {
-  id              String          @id @default(uuid())
+  id              String   @id @default(uuid())
   userId          String
-  promptText      String          // Raw user input exactly as received
+
+  // Raw prompt
+  promptText      String
 
   // NLP Engine output snapshot
-  dominantVibe    String          // e.g. "heartbreak"
-  secondaryVibe   String?         // e.g. "dreamy"
-  confidence      Float           // 0.0 – 1.0
-  bpmRange        String          // e.g. "60-80"
-  genres          String          // JSON array stringified: '["Dream Pop","Shoegaze"]'
-  matchedKeywords String          // JSON array stringified: '["fragile","tender"]'
+  dominantVibe    String
+  secondaryVibe   String?
+  confidence      Float
+  bpmRange        String
+  genres          String   // JSON array string
+  matchedKeywords String   // JSON array string
 
   // Entity scanner state
   detectedArtist  String?
   detectedSong    String?
 
-  // Engine config snapshot (so we can replay or diff later)
-  artistFocus     Int             @default(50)
-  nicheness       Int             @default(50)
-  bpmFocus        Int             @default(50)
-  trackLimit      Int             @default(5)
-  usedFallback    Boolean         @default(false)
-  usedSemantic    Boolean         @default(false) // was sentence-transformer used?
+  // Engine config snapshot
+  artistFocus     Int      @default(50)
+  nicheness       Int      @default(50)
+  bpmFocus        Int      @default(50)
+  trackLimit      Int      @default(5)
+  language        String?  // e.g. "Hindi", "Japanese", null = Any
+  usedFallback    Boolean  @default(false)
+  usedSemantic    Boolean  @default(false)
+  usedThinCache   Boolean  @default(false)  // was ThinPoolCache used?
+  usedLBRadio     Boolean  @default(false)  // was ListenBrainz Radio used?
 
-  // Returned tracks (JSON stringified list of {title, artist})
-  returnedTracks  String
+  // Which pool sources contributed tracks (comma-sep for analysis)
+  poolSources     String?  // e.g. "lastfm,listenbrainz,theaudiodb"
 
-  createdAt       DateTime        @default(now())
+  // Returned tracks
+  returnedTracks  String   // JSON list of {title, artist, spotifyId?}
+
+  createdAt       DateTime @default(now())
 
   user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   feedback        TrackFeedback[]
@@ -133,32 +271,27 @@ model VibeRequest {
   @@index([userId])
   @@index([createdAt])
   @@index([dominantVibe])
+  @@index([language])
 }
 
 model TrackFeedback {
-  id            String      @id @default(uuid())
-  vibeRequestId String      // which analysis session produced this track
-  userId        String      // denormalized for query convenience
+  id            String   @id @default(uuid())
+  vibeRequestId String
+  userId        String
 
-  // Track identity — we store both so we can join against ArtistDirectory later
   trackTitle    String
   trackArtist   String
+  trackSpotifyId String? // denormalised for joining against TrackFeatureCache
 
-  // The core signal.
-  //  1  = thumbs up  (user explicitly liked it)
-  //  0  = played through without rating (implicit positive — weaker signal)
-  // -1  = thumbs down (user explicitly skipped / disliked)
+  //  1 = thumbs up
+  //  0 = played through (implicit positive)
+  // -1 = thumbs down
   signal        Int
 
-  // Position in the returned list (1-indexed). A thumbs-up on track #4 means
-  // the top 3 were at least tolerable, which is also useful training signal.
-  position      Int
+  position      Int      // 1-indexed rank in returned list
+  previewSeconds Int?    // seconds listened before rating (null = rated unplayed)
 
-  // Optional: how many seconds of the preview the user listened to before rating.
-  // Null if they rated without playing.
-  previewSeconds Int?
-
-  createdAt     DateTime    @default(now())
+  createdAt     DateTime @default(now())
 
   vibeRequest   VibeRequest @relation(fields: [vibeRequestId], references: [id], onDelete: Cascade)
 
@@ -167,9 +300,12 @@ model TrackFeedback {
   @@index([trackArtist])
   @@index([signal])
   @@index([createdAt])
+  @@index([trackSpotifyId])
 }
 
-// --- SOCIAL GRAPH & FORUM LAYER ---
+// ─────────────────────────────────────────────────────────────────────────────
+// SOCIAL GRAPH & FORUM LAYER
+// ─────────────────────────────────────────────────────────────────────────────
 
 model ForumPost {
   id        String    @id @default(uuid())
