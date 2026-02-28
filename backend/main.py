@@ -197,7 +197,7 @@ class UserCreate(BaseModel):
 
 class VibeRequest(BaseModel):
     text: str
-    language: str = "Any"      # e.g. Any / Hindi / Punjabi / Korean / Japanese / Tamil
+    language: str | None = "Any"    # e.g. Any / Hindi / Punjabi / Korean / Japanese / Tamil
     artist_focus: int = 50 
     nicheness: int = 50    
     bpm_focus: int = 50
