@@ -61,7 +61,7 @@ function Oscilloscope({ active }) {
   }, [active]);
   return (
     <div style={{
-      background: "rgba(8,5,2,0.8)", border: "1px solid rgba(120,80,20,0.4)",
+      background: "rgba(16,10,4,0.80)", border: "1px solid rgba(120,80,20,0.4)",
       borderRadius: 8, padding: "6px 10px",
       display: "flex", alignItems: "center", gap: 8,
     }}>
@@ -76,11 +76,11 @@ function Step({ num, title, desc, tip, tag }) {
   return (
     <div style={{
       display: "grid", gridTemplateColumns: "56px 1fr", gap: "1.4rem",
-      padding: "1.8rem 0", borderBottom: "1px solid rgba(120,80,20,0.2)",
+      padding: "1.8rem 0", borderBottom: "1px solid rgba(150,100,25,0.26)",
     }}>
       <div style={{
         width: 44, height: 44, flexShrink: 0,
-        background: "rgba(28,18,6,0.8)", border: "1px solid rgba(120,80,20,0.35)",
+        background: "rgba(28,18,6,0.8)", border: "1px solid rgba(160,110,30,0.42)",
         borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
         fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(180,140,80,0.6)",
         letterSpacing: "0.1em",
@@ -94,7 +94,7 @@ function Step({ num, title, desc, tip, tag }) {
         {tip && (
           <div style={{
             marginTop: 10, padding: "10px 14px",
-            background: "rgba(8,5,2,0.6)", borderLeft: "2px solid rgba(217,119,6,0.6)",
+            background: "rgba(16,10,4,0.62)", borderLeft: "2px solid rgba(217,119,6,0.6)",
             borderRadius: "0 6px 6px 0",
             fontFamily: "'DM Mono', monospace", fontStyle: "italic",
             fontSize: 11, color: "rgba(180,140,80,0.55)", lineHeight: 1.7,
@@ -120,7 +120,7 @@ function FeatureCard({ icon, title, desc, badge }) {
         padding: "1.8rem 1.6rem",
         background: hov
           ? "linear-gradient(160deg, rgba(36,22,7,0.95), rgba(18,11,3,0.98))"
-          : "linear-gradient(160deg, rgba(28,18,6,0.9), rgba(14,9,3,0.95))",
+          : "linear-gradient(160deg, rgba(44,30,12,0.92), rgba(24,15,5,0.96))",
         transition: "background .2s",
       }}
     >
@@ -141,8 +141,8 @@ function KnobDisplay({ emoji, name, desc }) {
       onMouseLeave={() => setHov(false)}
       style={{
         flex: 1, minWidth: 180,
-        background: "linear-gradient(160deg, rgba(28,18,6,0.9), rgba(14,9,3,0.95))",
-        border: `1px solid ${hov ? "rgba(217,119,6,0.5)" : "rgba(120,80,20,0.35)"}`,
+        background: "linear-gradient(160deg, rgba(44,30,12,0.92), rgba(24,15,5,0.96))",
+        border: `1px solid ${hov ? "rgba(217,119,6,0.5)" : "rgba(160,110,30,0.42)"}`,
         borderRadius: 14, padding: "1.6rem 1.4rem", textAlign: "center",
         transition: "border-color .2s",
       }}
@@ -182,7 +182,7 @@ function UseCaseCard({ emoji, title, desc, example }) {
       onMouseLeave={() => setHov(false)}
       style={{
         padding: "1.6rem",
-        border: `1px solid ${hov ? "rgba(217,119,6,0.4)" : "rgba(120,80,20,0.3)"}`,
+        border: `1px solid ${hov ? "rgba(217,119,6,0.4)" : "rgba(155,105,28,0.38)"}`,
         transform: hov ? "translateY(-2px)" : "none",
         transition: "border-color .2s, transform .15s",
       }}
@@ -192,7 +192,7 @@ function UseCaseCard({ emoji, title, desc, example }) {
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(180,140,80,0.6)", lineHeight: 1.65 }}>{desc}</div>
       <div style={{
         marginTop: 12, padding: "9px 12px",
-        background: "rgba(8,5,2,0.7)", borderLeft: "2px solid rgba(217,119,6,0.5)",
+        background: "rgba(14,9,3,0.72)", borderLeft: "2px solid rgba(217,119,6,0.5)",
         borderRadius: "0 6px 6px 0",
         fontFamily: "'DM Mono', monospace", fontStyle: "italic",
         fontSize: 11, color: "rgba(180,140,80,0.5)", lineHeight: 1.6,
@@ -207,7 +207,7 @@ function ResultPreview() {
     <div className="panel-card screws" style={{ overflow: "hidden" }}>
       <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(120,80,20,0.03) 7px, rgba(120,80,20,0.03) 8px)", pointerEvents: "none", borderRadius: 16 }} />
       <div style={{ position: "relative" }}>
-        <div style={{ borderBottom: "1px solid rgba(120,80,20,0.3)", padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(5,3,1,0.5)" }}>
+        <div style={{ borderBottom: "1px solid rgba(155,105,28,0.38)", padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(5,3,1,0.5)" }}>
           <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)" }}>// ANALYSIS COMPLETE</span>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399", animation: "pulse-glow 1.8s infinite" }} />
@@ -219,7 +219,7 @@ function ResultPreview() {
             { label: "Dominant Vibe", value: "CHILL",  sub: "Secondary → Heartbreak", conf: 0.53, color: "#60a5fa" },
             { label: "Target Tempo",  value: "70–100", sub: "Rhythmic Pulse",          bpm: true,  color: "#d97706" },
           ].map((cell, i) => (
-            <div key={i} style={{ background: "linear-gradient(160deg, rgba(28,18,6,0.9), rgba(14,9,3,0.95))", padding: "20px 22px" }}>
+            <div key={i} style={{ background: "linear-gradient(160deg, rgba(44,30,12,0.92), rgba(24,15,5,0.96))", padding: "20px 22px" }}>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(180,140,80,0.45)", marginBottom: 6 }}>{cell.label}</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                 <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#fde68a", textShadow: `0 0 20px ${cell.color}44` }}>{cell.value}</span>
@@ -254,9 +254,9 @@ function ResultPreview() {
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               {["👍", "👎", "▶ Preview"].map(act => (
-                <button key={act} style={{ background: "rgba(8,5,2,0.6)", border: "1px solid rgba(120,80,20,0.35)", borderRadius: 6, padding: "5px 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(180,140,80,0.55)", cursor: "pointer" }}>{act}</button>
+                <button key={act} style={{ background: "rgba(16,10,4,0.62)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: 6, padding: "5px 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(180,140,80,0.55)", cursor: "pointer" }}>{act}</button>
               ))}
-              <button style={{ background: "rgba(8,5,2,0.6)", border: "1px solid rgba(30,215,96,0.35)", borderRadius: 6, padding: "5px 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "#1ed760", cursor: "pointer" }}>Spotify</button>
+              <button style={{ background: "rgba(16,10,4,0.62)", border: "1px solid rgba(30,215,96,0.35)", borderRadius: 6, padding: "5px 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "#1ed760", cursor: "pointer" }}>Spotify</button>
             </div>
           </div>
         ))}
@@ -324,7 +324,7 @@ export default function LandingPage({ onLaunch }) {
       <nav style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, height: 58,
         background: navSolid ? "rgba(8,5,1,0.97)" : "rgba(8,5,1,0.85)",
-        backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(120,80,20,0.3)",
+        backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(155,105,28,0.38)",
         padding: "0 2rem", display: "flex", alignItems: "center", justifyContent: "space-between",
         transition: "background .3s", fontFamily: "'DM Mono', monospace",
       }}>
@@ -387,7 +387,7 @@ export default function LandingPage({ onLaunch }) {
             <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(120,80,20,0.03) 7px, rgba(120,80,20,0.03) 8px)", pointerEvents: "none", borderRadius: 16 }} />
             <div style={{ position: "relative" }}>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", textAlign: "left", marginBottom: 8 }}>// ACOUSTIC DESCRIPTOR INPUT</div>
-              <div style={{ background: "rgba(5,3,1,0.8)", border: "1px solid rgba(120,80,20,0.35)", borderRadius: 10, padding: "16px", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(180,140,80,0.7)", lineHeight: 1.65, textAlign: "left", minHeight: 72, marginBottom: "1.6rem", fontStyle: "italic" }}>
+              <div style={{ background: "rgba(5,3,1,0.8)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: 10, padding: "16px", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(180,140,80,0.7)", lineHeight: 1.65, textAlign: "left", minHeight: 72, marginBottom: "1.6rem", fontStyle: "italic" }}>
                 {typed}
                 <span style={{ display: "inline-block", width: 8, height: 14, background: "rgba(217,119,6,0.9)", marginLeft: 2, animation: "lpBlink 1s step-end infinite", verticalAlign: "text-bottom", boxShadow: "0 0 6px rgba(217,119,6,0.6)" }} />
               </div>
@@ -413,7 +413,7 @@ export default function LandingPage({ onLaunch }) {
           <p style={S.sectionLabel}>// Engine Protocol</p>
           <h2 style={S.sectionTitle}>How it works</h2>
           <p style={S.sectionDesc}>Six steps from description to playlist. The whole thing takes about 3–5 seconds.</p>
-          <div style={{ borderTop: "1px solid rgba(120,80,20,0.2)" }}>
+          <div style={{ borderTop: "1px solid rgba(150,100,25,0.26)" }}>
             <Step num="01" title="Describe the Vibe"
               desc="Type any mood, scene, activity, or feeling. You can be as specific or abstract as you want — the AI handles both."
               tip={<>"2am, can't sleep, soft piano, city rain outside the window"<br />"hard gym session, angry phonk, no thoughts just lifting"<br />"heartbreak road trip, indie folk, crying with sunglasses on"</>}
@@ -444,7 +444,7 @@ export default function LandingPage({ onLaunch }) {
       <hr style={S.divider} />
 
       {/* ── KNOBS ─────────────────────────────────────────── */}
-      <section style={{ padding: "80px 2rem", background: "rgba(14,9,3,0.95)" }}>
+      <section style={{ padding: "80px 2rem", background: "rgba(24,15,5,0.96)" }}>
         <div style={S.container}>
           <p style={S.sectionLabel}>// Acoustic Parameters</p>
           <h2 style={S.sectionTitle}>The three knobs</h2>
@@ -464,7 +464,7 @@ export default function LandingPage({ onLaunch }) {
           <p style={S.sectionLabel}>// Engine Capabilities</p>
           <h2 style={S.sectionTitle}>What makes it different</h2>
           <p style={S.sectionDesc}>Not a playlist generator. Not a genre picker. An acoustic intelligence layer that maps language to sound.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 1, background: "rgba(120,80,20,0.2)", border: "1px solid rgba(120,80,20,0.35)", borderRadius: 16, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 1, background: "rgba(150,100,25,0.26)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: 16, overflow: "hidden" }}>
             <FeatureCard icon="🧠" title="Natural Language Vibe Analysis"  desc="Describe a moment, emotion, or scene in plain language. The AI extracts semantic concepts, dominant moods, and audio attributes from your text." badge="Gemini AI" />
             <FeatureCard icon="🎯" title="Artist & Genre Anchoring"         desc="Mention an artist in your description and the engine locks onto their sonic profile. Genre tags in the results are clickable hard filters." badge="Smart Detection" />
             <FeatureCard icon="🌐" title="16-Language Support"              desc="Deep routing for Indian regional music — Hindi, Punjabi, Tamil, Telugu, Kannada, Malayalam, Bengali, Urdu — plus Korean, Japanese, Spanish, Arabic and more." badge="Regional Music" />
@@ -477,7 +477,7 @@ export default function LandingPage({ onLaunch }) {
       <hr style={S.divider} />
 
       {/* ── RESULT ANATOMY ────────────────────────────────── */}
-      <section style={{ padding: "80px 2rem", background: "rgba(14,9,3,0.95)" }}>
+      <section style={{ padding: "80px 2rem", background: "rgba(24,15,5,0.96)" }}>
         <div style={S.container}>
           <p style={S.sectionLabel}>// Output Anatomy</p>
           <h2 style={S.sectionTitle}>What you get back</h2>
@@ -510,7 +510,7 @@ export default function LandingPage({ onLaunch }) {
       <hr style={S.divider} />
 
       {/* ── LANGUAGES ─────────────────────────────────────── */}
-      <section id="languages" style={{ padding: "80px 2rem", background: "rgba(14,9,3,0.95)" }}>
+      <section id="languages" style={{ padding: "80px 2rem", background: "rgba(24,15,5,0.96)" }}>
         <div style={S.container}>
           <p style={S.sectionLabel}>// Language Routing</p>
           <h2 style={S.sectionTitle}>16 languages, regional-aware routing</h2>
@@ -568,7 +568,7 @@ export default function LandingPage({ onLaunch }) {
       </section>
 
       {/* ── FOOTER ───────────────────────────────────────── */}
-      <footer style={{ borderTop: "1px solid rgba(120,80,20,0.3)", padding: "1.6rem 2rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(120,80,20,0.6)", background: "#0a0602" }}>
+      <footer style={{ borderTop: "1px solid rgba(155,105,28,0.38)", padding: "1.6rem 2rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(120,80,20,0.6)", background: "#0a0602" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 22, height: 22, borderRadius: "50%", background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008)", border: "1px solid rgba(180,140,80,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "radial-gradient(circle, #d97706, #7a4f12)" }} />

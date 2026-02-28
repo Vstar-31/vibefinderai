@@ -1114,6 +1114,22 @@ async def seed():
         except Exception as e:
             print(f"❌ Failed to seed {a['name']}: {e}")
 
+    
+    # ── Indian Hip Hop / Desi Rap ───────────────────────────────────────────
+    {"name": "Divine",         "genres": "indian hip hop, desi rap",      "niche": "gully rap pioneer",   "songs": "Mere Gully Mein, Jungli Sher, Farak, Nazar"},
+    {"name": "Seedhe Maut",    "genres": "indian hip hop, boom bap",      "niche": "delhi underground",   "songs": "Nanchaku, Pehli Baar, Takht, Cheenti"},
+    {"name": "KR$NA",          "genres": "indian hip hop, rap",           "niche": "technical lyricist",  "songs": "Khol De, Dilli, Aafat, Underground Authority"},
+    {"name": "MC Stan",        "genres": "indian hip hop, desi drill",    "niche": "pune underground",    "songs": "Wata, Basti Ka Hasti, Tadipaar, Insaan"},
+    {"name": "Raftaar",        "genres": "indian hip hop, desi rap",      "niche": "mainstream desi rap", "songs": "Swag Mera Desi, Mantoiyat, Black, Dum Dum"},
+    {"name": "Emiway Bantai",  "genres": "indian hip hop, rap",           "niche": "independent grind",  "songs": "Machayenge, Firse Machayenge, Aur Bantai, Bounce Back"},
+    {"name": "Dino James",     "genres": "indian hip hop, rap",           "niche": "emotional rap",       "songs": "Girlfriend, Loser, Move On, Nahi Hoga"},
+    {"name": "Prabh Deep",     "genres": "indian hip hop, conscious rap", "niche": "delhi conscious",     "songs": "Class-Sick, Suno, Taana Baana, Choliyaan"},
+    {"name": "Bohemia",        "genres": "punjabi hip hop, rap",          "niche": "punjabi rap pioneer", "songs": "Kali Denali, Ik Tera, Tenu Lod Nahi, Keh Ke Lunga"},
+    {"name": "Karma",          "genres": "indian hip hop, mumbai rap",    "niche": "mumbai trap",         "songs": "Shayad, Yaad, Sone De, Laila"},
+    {"name": "Ikka",           "genres": "indian hip hop, punjabi rap",   "niche": "haryanvi rap",        "songs": "Meri Maa, Teri Gali, Changa Munda"},
+    {"name": "Brodha V",       "genres": "indian hip hop, conscious rap", "niche": "bangalore conscious", "songs": "Aigiri Nandini Hip Hop, Mera Mann, Brahmanda"},
+    {"name": "Encore ABJ",     "genres": "indian hip hop, trap",          "niche": "mumbai trap",         "songs": "Chal Maar, Morni, Trap House"},
+
     await db.disconnect()
     print(f"\n🚀 Database Seed Complete! {len(unique_artists)} artists seeded across all genres and languages.")
 

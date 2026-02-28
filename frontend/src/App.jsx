@@ -131,7 +131,7 @@ function Oscilloscope({ active }) {
 
   return (
     <div title="Neural Waveform Monitor (Visual Only)" style={{
-      background: "rgba(8,5,2,0.8)",
+      background: "rgba(16,10,4,0.80)",
       border: "1px solid rgba(120,80,20,0.4)",
       borderRadius: "8px",
       padding: "6px 10px",
@@ -208,7 +208,7 @@ function AudioInput({ icon, ...props }) {
         {...props}
         style={{
           width: "100%", boxSizing: "border-box",
-          background: "rgba(8,5,2,0.7)",
+          background: "rgba(14,9,3,0.72)",
           border: "1px solid rgba(120,80,20,0.4)",
           borderRadius: "8px",
           padding: "10px 14px 10px 40px",
@@ -319,7 +319,7 @@ function GlobalStyles() {
       html { scroll-behavior: smooth; }
 
       body {
-        background: #0a0602;
+        background: #17110b;
         background-image:
           radial-gradient(ellipse 80% 60% at 50% -10%, rgba(120,60,10,0.18) 0%, transparent 70%),
           url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
@@ -344,8 +344,8 @@ function GlobalStyles() {
       .dial-btn:active { transform: scale(0.97); }
 
       .panel-card {
-        background: linear-gradient(160deg, rgba(28,18,6,0.9) 0%, rgba(14,9,3,0.95) 100%);
-        border: 1px solid rgba(120,80,20,0.35);
+        background: linear-gradient(160deg, rgba(44,30,12,0.92) 0%, rgba(24,15,5,0.96) 100%);
+        border: 1px solid rgba(160,110,30,0.42);
         border-radius: 16px;
         position: relative;
         overflow: hidden;
@@ -431,7 +431,8 @@ export default function App() {
   const [vuLevel, setVuLevel]         = useState(0);
   
   const [knobs, setKnobs]             = useState({ artist: 50, nicheness: 50, bpm: 50 });
-  const [trackLimit, setTrackLimit]   = useState(5); 
+  const [trackLimit, setTrackLimit]   = useState(5);
+  const [language, setLanguage]       = useState("Any");
   
   // Override & Pro Mode State
   const [showOverrides, setShowOverrides]     = useState(false);
@@ -569,7 +570,8 @@ export default function App() {
           track_limit: trackLimit,
           use_secondary_vibe: finalSecondary,
           override_genre: finalGenre.trim() || null,
-          override_artist: finalArtist.trim() || null
+          override_artist: finalArtist.trim() || null,
+          language: language !== "Any" ? language : null,
         }),
       });
       
@@ -635,7 +637,7 @@ export default function App() {
   const S = {
     root: { minHeight: "100vh", padding: "24px 16px 60px", fontFamily: "'DM Mono', monospace" },
     inner: { maxWidth: "860px", margin: "0 auto" },
-    header: { display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "24px", borderBottom: "1px solid rgba(120,80,20,0.3)", marginBottom: "32px" },
+    header: { display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "24px", borderBottom: "1px solid rgba(155,105,28,0.38)", marginBottom: "32px" },
     logoWrap: { display: "flex", alignItems: "center", gap: "14px" },
     logoDisc: { width: "42px", height: "42px", borderRadius: "50%", background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008, #2e1a0a, #1a1008)", border: "2px solid rgba(180,140,80,0.4)", boxShadow: `0 0 18px ${activeColor}44, inset 0 0 10px rgba(0,0,0,0.5)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "box-shadow 0.5s ease" },
     logoDiscInner: { width: "10px", height: "10px", borderRadius: "50%", background: `radial-gradient(circle, ${activeColor}, #7a4f12)`, transition: "background 0.5s ease" },
@@ -647,7 +649,7 @@ export default function App() {
     signalLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)" },
     errorBox: { display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "rgba(60,10,10,0.5)", border: "1px solid rgba(180,40,40,0.3)", borderRadius: "10px", color: "#f87171", fontSize: "12px", marginBottom: "20px", lineHeight: "1.4" },
     textareaWrap: { position: "relative" },
-    textarea: { width: "100%", height: "130px", background: "rgba(5,3,1,0.8)", border: "1px solid rgba(120,80,20,0.35)", borderRadius: "10px", padding: "16px", color: "#e8d5a3", fontFamily: "'DM Mono', monospace", fontSize: "14px", lineHeight: "1.6", outline: "none", transition: "border-color 0.2s, box-shadow 0.2s" },
+    textarea: { width: "100%", height: "130px", background: "rgba(5,3,1,0.8)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: "10px", padding: "16px", color: "#e8d5a3", fontFamily: "'DM Mono', monospace", fontSize: "14px", lineHeight: "1.6", outline: "none", transition: "border-color 0.2s, box-shadow 0.2s" },
     lockOverlay: { position: "absolute", inset: 0, background: "rgba(5,3,1,0.75)", backdropFilter: "blur(4px)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 },
     lockBtn: { display: "flex", alignItems: "center", gap: "8px", padding: "10px 22px", background: "rgba(20,12,4,0.9)", border: "1px solid rgba(180,120,40,0.35)", borderRadius: "30px", color: "rgba(180,140,80,0.8)", fontSize: "12px", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "'DM Mono', monospace", transition: "border-color 0.2s, color 0.2s" },
     runBtn: (disabled) => ({ display: "flex", alignItems: "center", gap: "10px", padding: "12px 28px", background: disabled ? "rgba(50,30,8,0.4)" : "linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%)", border: "1px solid " + (disabled ? "rgba(80,50,10,0.3)" : "rgba(251,191,36,0.3)"), borderRadius: "10px", color: disabled ? "rgba(120,80,20,0.5)" : "#fef3c7", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.15em", textTransform: "uppercase", cursor: disabled ? "not-allowed" : "pointer", boxShadow: disabled ? "none" : `0 4px 20px ${activeColor}44`, transition: "all 0.2s" }),
@@ -664,6 +666,14 @@ export default function App() {
     submitBtn: { width: "100%", padding: "12px", marginTop: "24px", background: "linear-gradient(135deg, #92400e, #d97706)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "8px", color: "#fef3c7", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.18em", textTransform: "uppercase", cursor: "pointer", boxShadow: "0 4px 20px rgba(180,100,10,0.3)", transition: "opacity 0.2s" },
   };
 
+  // Browser back navigation
+  useEffect(() => {
+    if (!showLanding) window.history.pushState({ page: "engine" }, "");
+    const handlePop = () => setShowLanding(true);
+    window.addEventListener("popstate", handlePop);
+    return () => window.removeEventListener("popstate", handlePop);
+  }, [showLanding]);
+
   if (showLanding) return <LandingPage onLaunch={() => setShowLanding(false)} />;
 
   return (
@@ -678,18 +688,18 @@ export default function App() {
               <button onClick={() => setShowAuthModal(false)} style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", color: "rgba(180,140,80,0.4)", cursor: "pointer" }}><IconX /></button>
               <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(120,80,20,0.04) 5px, rgba(120,80,20,0.04) 6px)", borderRadius: "16px", pointerEvents: "none" }} />
               <div style={{ position: "relative" }}>
-                <p style={S.modalTitle}>{isLoginView ? "Signal Authenticated" : "New Listener"}</p>
-                <p style={S.modalSub}>{isLoginView ? "// ACCESS CONTROL SYSTEM" : "// REGISTER NEW ACCOUNT"}</p>
+                <p style={S.modalTitle}>{isLoginView ? "Welcome Back" : "Create Account"}</p>
+                <p style={S.modalSub}>{isLoginView ? "Sign in to continue" : "// CREATE YOUR ACCOUNT"}</p>
                 {error && <div style={{ ...S.errorBox, marginBottom: "20px" }}><div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", flexShrink: 0 }} />{error}</div>}
                 <form onSubmit={submitAuth} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                   {!isLoginView && <div><label style={S.formLabel}>Email Address</label><AudioInput icon={<IconMail />} type="email" name="email" value={authForm.email} onChange={handleAuthChange} required placeholder="listener@analog.audio" /></div>}
                   <div><label style={S.formLabel}>Username</label><AudioInput icon={<IconUser />} type="text" name="username" value={authForm.username} onChange={handleAuthChange} required placeholder="audiophile_001" /></div>
                   <div><label style={S.formLabel}>Passphrase</label><AudioInput icon={<IconLock />} type="password" name="password" value={authForm.password} onChange={handleAuthChange} required placeholder="••••••••••••" /></div>
-                  <button type="submit" disabled={loading} className="dial-btn" style={{ ...S.submitBtn, opacity: loading ? 0.5 : 1 }}>{loading ? "Handshaking..." : isLoginView ? "Authenticate" : "Initialize Account"}</button>
+                  <button type="submit" disabled={loading} className="dial-btn" style={{ ...S.submitBtn, opacity: loading ? 0.5 : 1 }}>{loading ? "Handshaking..." : isLoginView ? "Sign In" : "Create Account"}</button>
                 </form>
                 <p style={{ textAlign: "center", marginTop: "18px", fontSize: "11px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.05em" }}>
-                  {isLoginView ? "No account? " : "Have access? "}
-                  <button type="button" onClick={() => { setIsLoginView(!isLoginView); setError(""); setAuthForm({ email: "", username: "", password: "" }); }} style={{ background: "none", border: "none", color: "#d97706", cursor: "pointer", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{isLoginView ? "Register" : "Sign in"}</button>
+                  {isLoginView ? "New here? " : "Already have an account? "}
+                  <button type="button" onClick={() => { setIsLoginView(!isLoginView); setError(""); setAuthForm({ email: "", username: "", password: "" }); }} style={{ background: "none", border: "none", color: "#d97706", cursor: "pointer", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{isLoginView ? "Create one" : "Sign in"}</button>
                 </p>
               </div>
             </div>
@@ -702,12 +712,27 @@ export default function App() {
           {/* ── HEADER ─── */}
           <header style={S.header}>
             <div style={S.logoWrap}>
+          <button
+            onClick={() => setShowLanding(true)}
+            title="Back to Home"
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "rgba(180,140,80,0.45)", fontSize: "11px",
+              fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em",
+              textTransform: "uppercase", display: "flex", alignItems: "center",
+              gap: "5px", padding: "4px 10px 4px 0", transition: "color 0.2s",
+            }}
+            onMouseOver={e => e.currentTarget.style.color = "#e8d5a3"}
+            onMouseOut={e => e.currentTarget.style.color = "rgba(180,140,80,0.45)"}
+          >
+            &#8592; Home
+          </button>
               <div style={S.logoDisc}><div style={S.logoDiscInner} /></div>
               <div><div style={S.logoText}>VibeFinder</div><div style={S.logoSub}>Acoustic Intelligence Engine</div></div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
               <Oscilloscope active={loading || !!playingTrack} />
-              <button onClick={token ? handleLogout : () => setShowAuthModal(true)} className="dial-btn" style={S.authBtn(!!token)}>{token ? <IconUnlock /> : <IconLock />}{token ? "Disconnect" : "Authenticate"}</button>
+              <button onClick={token ? handleLogout : () => setShowAuthModal(true)} className="dial-btn" style={S.authBtn(!!token)}>{token ? <IconUnlock /> : <IconLock />}{token ? "Sign Out" : "Sign In"}</button>
             </div>
           </header>
 
@@ -743,10 +768,34 @@ export default function App() {
                     style={S.textarea} 
                     disabled={!token || loading} 
                     onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }} 
-                    onBlur={e => { e.target.style.borderColor = "rgba(120,80,20,0.35)"; e.target.style.boxShadow = "none"; }} 
+                    onBlur={e => { e.target.style.borderColor = "rgba(160,110,30,0.42)"; e.target.style.boxShadow = "none"; }} 
                 />
                 {!token && <div style={S.lockOverlay}><button onClick={() => setShowAuthModal(true)} style={S.lockBtn}><IconLock /> Authentication Required</button></div>}
               </div>
+              {/* Language Selector */}
+              <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "9px", color: "rgba(200,160,90,0.6)", textTransform: "uppercase", letterSpacing: "0.15em" }}>Language</span>
+                <select
+                  value={language}
+                  onChange={e => setLanguage(e.target.value)}
+                  disabled={!token || loading}
+                  style={{
+                    background: "rgba(14,9,3,0.72)", border: "1px solid rgba(160,110,30,0.42)",
+                    borderRadius: "8px", padding: "7px 14px", color: "#e8d5a3",
+                    fontFamily: "'DM Mono', monospace", fontSize: "12px",
+                    outline: "none", cursor: token ? "pointer" : "default", opacity: token ? 1 : 0.5,
+                  }}
+                  onFocus={e => { e.target.style.borderColor = "rgba(217,119,6,0.7)"; }}
+                  onBlur={e => { e.target.style.borderColor = "rgba(160,110,30,0.42)"; }}
+                >
+                  {["Any","English","Hindi","Punjabi","Tamil","Telugu","Kannada","Malayalam","Bengali","Urdu","Korean","Japanese","Spanish","Portuguese","French","Arabic","Afrobeats"].map(l => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+                {language !== "Any" && <span style={{ fontSize: "9px", color: "rgba(217,160,60,0.7)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{language} pool active</span>}
+              </div>
+
+
 
               {/* ── PRO MODE OVERRIDES ── */}
               <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -770,7 +819,7 @@ export default function App() {
                     </div>
                     
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "18px", cursor: "pointer", width: "100%" }} onClick={() => setUseSecondaryVibe(!useSecondaryVibe)}>
-                      <div style={{ width: "36px", height: "18px", borderRadius: "9px", background: useSecondaryVibe ? "rgba(217,119,6,0.6)" : "rgba(80,50,10,0.4)", position: "relative", transition: "background 0.2s", border: "1px solid rgba(120,80,20,0.3)" }}>
+                      <div style={{ width: "36px", height: "18px", borderRadius: "9px", background: useSecondaryVibe ? "rgba(217,119,6,0.6)" : "rgba(80,50,10,0.4)", position: "relative", transition: "background 0.2s", border: "1px solid rgba(155,105,28,0.38)" }}>
                          <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: useSecondaryVibe ? "#fde68a" : "rgba(180,140,80,0.6)", position: "absolute", top: "2px", left: useSecondaryVibe ? "20px" : "3px", transition: "left 0.2s, background 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.5)" }} />
                       </div>
                       <span style={{ fontSize: "10px", color: useSecondaryVibe ? "#fde68a" : "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Hard-Switch to Secondary Vibe</span>
@@ -807,7 +856,7 @@ export default function App() {
 
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tracks:</span>
-                    <div style={{ display: "flex", background: "rgba(10,5,2,0.6)", border: "1px solid rgba(120,80,20,0.3)", borderRadius: "6px", overflow: "hidden" }}>
+                    <div style={{ display: "flex", background: "rgba(10,5,2,0.6)", border: "1px solid rgba(155,105,28,0.38)", borderRadius: "6px", overflow: "hidden" }}>
                       {[5, 10, 20, 50].map(num => (
                         <button
                           key={num}
@@ -980,7 +1029,7 @@ export default function App() {
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                         width: "32px", height: "32px", borderRadius: "8px", border: "1px solid",
                                         background: given === 1 ? "rgba(52,211,153,0.2)" : "rgba(120,80,20,0.1)",
-                                        borderColor: given === 1 ? "#34d399" : "rgba(120,80,20,0.35)",
+                                        borderColor: given === 1 ? "#34d399" : "rgba(160,110,30,0.42)",
                                         color: given === 1 ? "#34d399" : "rgba(180,140,80,0.4)",
                                         cursor: "pointer", transition: "all 0.15s",
                                         boxShadow: given === 1 ? "0 0 8px rgba(52,211,153,0.3)" : "none",
@@ -996,7 +1045,7 @@ export default function App() {
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                         width: "32px", height: "32px", borderRadius: "8px", border: "1px solid",
                                         background: given === -1 ? "rgba(248,113,113,0.2)" : "rgba(120,80,20,0.1)",
-                                        borderColor: given === -1 ? "#f87171" : "rgba(120,80,20,0.35)",
+                                        borderColor: given === -1 ? "#f87171" : "rgba(160,110,30,0.42)",
                                         color: given === -1 ? "#f87171" : "rgba(180,140,80,0.4)",
                                         cursor: "pointer", transition: "all 0.15s",
                                         boxShadow: given === -1 ? "0 0 8px rgba(248,113,113,0.3)" : "none",
@@ -1068,7 +1117,7 @@ export default function App() {
                                 key={idx} 
                                 style={{ 
                                   padding: "5px 12px", 
-                                  background: "rgba(8,5,2,0.8)", 
+                                  background: "rgba(16,10,4,0.80)", 
                                   border: `1px solid ${activeColor}33`, 
                                   borderRadius: "6px", 
                                   fontSize: "11px", 
