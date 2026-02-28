@@ -1,7 +1,7 @@
 """
 enrich_artists.py
 ─────────────────
-VibeFinderAI — Offline Artist Enrichment Script
+VibeFinderAI — Offline Artist Enrichment Script (CONCURRENT EDITION 🚀)
 
 PURPOSE
 -------
@@ -27,7 +27,7 @@ APIS USED
 
 USAGE
 -----
-  python enrich_artists.py                  # enrich all artists
+  python enrich_artists.py                  # enrich all missing artists (resume mode)
   python enrich_artists.py --limit 50       # enrich first 50 (test run)
   python enrich_artists.py --artist "Adele" # enrich single artist
   python enrich_artists.py --phase mb       # MusicBrainz only
@@ -36,8 +36,8 @@ USAGE
 
 TIMING
 ------
-  ~1100 artists × 3 APIs × rate limiting ≈ 60-90 minutes total.
-  Run overnight or in a tmux session.
+  Uses async workers + strict global rate limiters to safely maximize throughput.
+  Theoretical max: ~3600 artists/hour (bottlenecked purely by MB's 1 req/s).
 """
 
 import asyncio
@@ -66,25 +66,43 @@ MB_USER_AGENT  = "VibeFinderAI/8.0 (https://github.com/yourusername/vibefinder; 
 LB_TOKEN       = os.getenv("LISTENBRAINZ_TOKEN", "")
 TADB_KEY       = os.getenv("THEAUDIODB_KEY", "2")  # "2" = free test key
 
-MB_RATE_LIMIT  = 1.1   # seconds between MB requests (1/s limit, slight buffer)
-LB_RATE_LIMIT  = 0.5   # ListenBrainz is more generous
-TADB_RATE_LIMIT = 0.55 # 2/s limit
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 log = logging.getLogger("VibeFinderAI.Enrich")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+# ─── GLOBAL RATE LIMITERS ────────────────────────────────────────────────────
+
+class RateLimiter:
+    """Guarantees strictly enforced delays between API calls across all concurrent workers."""
+    def __init__(self, rate: float):
+        self.rate = rate
+        self.last_check = 0.0
+        self.lock = asyncio.Lock()
+
+    async def acquire(self):
+        async with self.lock:
+            now = time.monotonic()
+            elapsed = now - self.last_check
+            if elapsed < self.rate:
+                await asyncio.sleep(self.rate - elapsed)
+                self.last_check = time.monotonic()
+            else:
+                self.last_check = now
+
+# Strict limits mapped to API docs
+MB_LIMITER   = RateLimiter(1.1)   # 1 req/s + 0.1s safety buffer
+LB_LIMITER   = RateLimiter(0.5)   # 2 req/s
+TADB_LIMITER = RateLimiter(0.55)  # ~2 req/s
 
 
 # ─── MUSICBRAINZ ─────────────────────────────────────────────────────────────
 
 async def mb_search_artist(client: httpx.AsyncClient, name: str) -> Optional[dict]:
-    """
-    Search MusicBrainz for an artist by name.
-    Returns the best match dict (with 'id' = MBID) or None.
-    Only trusts results with score >= 90.
-    """
+    await MB_LIMITER.acquire()
     try:
         r = await client.get(
             f"{MB_BASE}/artist",
@@ -96,7 +114,6 @@ async def mb_search_artist(client: httpx.AsyncClient, name: str) -> Optional[dic
         artists = r.json().get("artists", [])
         if not artists:
             return None
-        # Find best match with high confidence
         for a in artists:
             if a.get("score", 0) >= 90:
                 return a
@@ -105,12 +122,8 @@ async def mb_search_artist(client: httpx.AsyncClient, name: str) -> Optional[dic
         log.warning(f"[MB] search failed for '{name}': {e}")
         return None
 
-
 async def mb_get_artist_tags(client: httpx.AsyncClient, mbid: str) -> list[str]:
-    """
-    Fetch community tags for an artist by MBID.
-    Returns list of tag strings sorted by vote count.
-    """
+    await MB_LIMITER.acquire()
     try:
         r = await client.get(
             f"{MB_BASE}/artist/{mbid}",
@@ -120,10 +133,9 @@ async def mb_get_artist_tags(client: httpx.AsyncClient, mbid: str) -> list[str]:
         )
         r.raise_for_status()
         data = r.json()
-        # Merge tags and genres, sort by count
         raw_tags = data.get("tags", []) + data.get("genres", [])
         sorted_tags = sorted(raw_tags, key=lambda t: t.get("count", 0), reverse=True)
-        return [t["name"] for t in sorted_tags[:20]]  # top 20 tags
+        return [t["name"] for t in sorted_tags[:20]]
     except Exception as e:
         log.warning(f"[MB] tags failed for mbid {mbid}: {e}")
         return []
@@ -136,46 +148,57 @@ async def lb_get_similar_artists(
     mbid: str,
     limit: int = 8
 ) -> list[dict]:
-    """
-    Fetch similar artists via ListenBrainz radio endpoint.
-    Returns list of {name, mbid, similarity} dicts.
-    Requires a valid LB user token.
-
-    Endpoint: GET /1/lb-radio/artist/{mbid}/similar
-    This is collaborative filtering on real listening data — much better
-    than editorial similarity for niche/regional artists.
-    """
     if not LB_TOKEN:
-        log.warning("[LB] No LISTENBRAINZ_TOKEN set — skipping similar artists")
         return []
+    
+    await LB_LIMITER.acquire()
     try:
         r = await client.get(
-            f"{LB_BASE}/lb-radio/artist/{mbid}/similar",
+            f"{LB_BASE}/lb-radio/artist/{mbid}/similar/",
             params={"count": limit},
             headers={"Authorization": f"Token {LB_TOKEN}"},
             timeout=15,
+            follow_redirects=True
         )
         if r.status_code == 404:
-            return []  # artist not in LB — not an error
+            return []  
         r.raise_for_status()
         data = r.json()
 
-        results = []
-        for artist_mbid, tracks in data.items():
-            if not tracks:
-                continue
-            # LB radio returns {mbid: [{recording_mbid, artist_name, ...}]}
-            artist_name = tracks[0].get("artist_name", "") if tracks else ""
-            similarity = tracks[0].get("similarity", 0.0) if tracks else 0.0
-            results.append({
-                "mbid": artist_mbid,
-                "name": artist_name,
-                "similarity": round(similarity, 3),
-            })
+        found_similars = []
+        def _find(node):
+            if isinstance(node, list):
+                for item in node:
+                    if isinstance(item, dict) and "artist_name" in item and "similarity" in item:
+                        found_similars.append({
+                            "mbid": item.get("artist_mbid") or item.get("mbid", ""),
+                            "name": item.get("artist_name", ""),
+                            "similarity": round(float(item.get("similarity", 0.0)), 3)
+                        })
+                    else:
+                        _find(item)
+            elif isinstance(node, dict):
+                for k, v in node.items():
+                    if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict) and "artist_name" in v[0]:
+                        found_similars.append({
+                            "mbid": k,
+                            "name": v[0].get("artist_name", ""),
+                            "similarity": round(float(v[0].get("similarity", 0.0)), 3)
+                        })
+                    else:
+                        _find(v)
 
-        # Sort by similarity descending
+        _find(data)
+
+        unique_sims = {}
+        for s in found_similars:
+            if s["mbid"] not in unique_sims and s["name"]:
+                unique_sims[s["mbid"]] = s
+
+        results = list(unique_sims.values())
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results[:limit]
+        
     except Exception as e:
         log.warning(f"[LB] similar artists failed for mbid {mbid}: {e}")
         return []
@@ -187,11 +210,7 @@ async def tadb_search_artist(
     client: httpx.AsyncClient,
     name: str
 ) -> Optional[dict]:
-    """
-    Search TheAudioDB for an artist by name.
-    Returns first result dict or None.
-    Free key "2" limited to 1 search result per query.
-    """
+    await TADB_LIMITER.acquire()
     try:
         r = await client.get(
             f"{TADB_BASE}/{TADB_KEY}/search.php",
@@ -199,34 +218,32 @@ async def tadb_search_artist(
             timeout=10,
         )
         r.raise_for_status()
+        
+        if not r.text.strip():
+            return None
+            
         artists = r.json().get("artists") or []
         return artists[0] if artists else None
     except Exception as e:
         log.warning(f"[TADB] search failed for '{name}': {e}")
         return None
 
-
 async def tadb_get_top_tracks(
     client: httpx.AsyncClient,
     artist_name: str,
     tadb_id: Optional[int] = None
 ) -> list[dict]:
-    """
-    Fetch top 10 tracks for an artist from TheAudioDB.
-    Uses artist name (free tier endpoint).
-    Returns list of {title, tadbTrackId, duration}.
-    """
+    await TADB_LIMITER.acquire()
     try:
-        # Prefer ID lookup if we have it, else name search
-        if tadb_id:
-            url = f"{TADB_BASE}/{TADB_KEY}/track-top10.php"
-            params = {"m": tadb_id}
-        else:
-            url = f"{TADB_BASE}/{TADB_KEY}/track-top10.php"
-            params = {"s": artist_name}
+        url = f"{TADB_BASE}/{TADB_KEY}/track-top10.php"
+        params = {"s": artist_name}
 
         r = await client.get(url, params=params, timeout=10)
         r.raise_for_status()
+        
+        if not r.text.strip():
+            return []
+            
         tracks = r.json().get("track") or []
         return [
             {
@@ -250,70 +267,63 @@ async def enrich_artist(
     client: httpx.AsyncClient,
     artist: object,
     phases: set[str],
+    idx: int,
+    total: int
 ) -> None:
-    """
-    Enrich a single ArtistDirectory entry with data from MB, LB, TADB.
-    Skips phases that are already populated (idempotent).
-    """
     name = artist.name
     update_data = {}
+    
+    # ADDED: Perfect counter injected directly into the worker!
+    log.info(f"[{idx}/{total}] ⚡ Enriching: {name}")
 
     # ── Phase 1: MusicBrainz ─────────────────────────────────────────────────
     if "mb" in phases:
         current_mbid = artist.mbid
+        
         if not current_mbid:
-            log.info(f"[MB] Searching: {name}")
             mb_artist = await mb_search_artist(client, name)
-            await asyncio.sleep(MB_RATE_LIMIT)
-
             if mb_artist:
                 current_mbid = mb_artist["id"]
                 update_data["mbid"] = current_mbid
-                log.info(f"  ✅ MBID: {current_mbid}")
-            else:
-                log.info(f"  ⚠️  No confident MB match for '{name}'")
-
-        # Fetch tags if we now have a MBID and don't have tags yet
-        if current_mbid and not artist.mbTags:
+                
+        if current_mbid and artist.mbTags is None:
             tags = await mb_get_artist_tags(client, current_mbid)
-            await asyncio.sleep(MB_RATE_LIMIT)
-            if tags:
-                update_data["mbTags"] = ",".join(tags)
-                log.info(f"  🏷️  MB tags: {', '.join(tags[:5])}...")
+            update_data["mbTags"] = ",".join(tags) if tags else ""
+        elif not current_mbid and artist.mbTags is None:
+            update_data["mbTags"] = ""
 
     # ── Phase 2: ListenBrainz ─────────────────────────────────────────────────
     if "lb" in phases and LB_TOKEN:
         mbid_for_lb = update_data.get("mbid") or artist.mbid
-        if mbid_for_lb and not artist.lbSimilarArtists:
-            log.info(f"[LB] Similar artists for: {name}")
+        
+        if mbid_for_lb and (artist.lbSimilarArtists is None or "empty" in artist.lbSimilarArtists):
             similar = await lb_get_similar_artists(client, mbid_for_lb)
-            await asyncio.sleep(LB_RATE_LIMIT)
-            if similar:
-                update_data["lbSimilarArtists"] = json.dumps(similar)
-                names = [s["name"] for s in similar[:3]]
-                log.info(f"  🎵 Similar: {', '.join(names)}...")
+            update_data["lbSimilarArtists"] = json.dumps(similar) if similar else '[{"status": "empty"}]'
+        elif not mbid_for_lb and artist.lbSimilarArtists is None:
+            update_data["lbSimilarArtists"] = '[{"status": "empty"}]'
 
     # ── Phase 3: TheAudioDB ───────────────────────────────────────────────────
     if "tadb" in phases:
-        if not artist.tadbId:
-            log.info(f"[TADB] Searching: {name}")
+        current_tadb_id = artist.tadbId
+        
+        if not current_tadb_id:
             tadb_artist = await tadb_search_artist(client, name)
-            await asyncio.sleep(TADB_RATE_LIMIT)
-
             if tadb_artist:
-                tadb_id = int(tadb_artist.get("idArtist", 0)) or None
-                if tadb_id:
-                    update_data["tadbId"]    = tadb_id
-                    update_data["tadbMood"]  = tadb_artist.get("strMood") or None
-                    update_data["tadbStyle"] = tadb_artist.get("strStyle") or None
-                    log.info(f"  ✅ TADB ID: {tadb_id}, Mood: {tadb_artist.get('strMood')}")
+                current_tadb_id = int(tadb_artist.get("idArtist", 0)) or None
+                if current_tadb_id:
+                    update_data["tadbId"]    = current_tadb_id
+                    update_data["tadbMood"]  = tadb_artist.get("strMood") or ""
+                    update_data["tadbStyle"] = tadb_artist.get("strStyle") or ""
 
-                    # Top 10 tracks
-                    top10 = await tadb_get_top_tracks(client, name, tadb_id)
-                    await asyncio.sleep(TADB_RATE_LIMIT)
-                    if top10:
-                        update_data["tadbTop10"] = json.dumps(top10)
-                        log.info(f"  🎵 Top tracks: {', '.join(t['title'] for t in top10[:3])}...")
+        if current_tadb_id and artist.tadbTop10 in (None, "[]"):
+            top10 = await tadb_get_top_tracks(client, name, current_tadb_id)
+            if top10:
+                update_data["tadbTop10"] = json.dumps(top10)
+            else:
+                update_data["tadbTop10"] = '[{"status": "empty"}]'
+                
+        elif not current_tadb_id and artist.tadbTop10 in (None, "[]"):
+            update_data["tadbTop10"] = '[{"status": "empty"}]'
 
     # ── Persist ───────────────────────────────────────────────────────────────
     if update_data:
@@ -322,10 +332,11 @@ async def enrich_artist(
                 where={"name": name},
                 data=update_data,
             )
+            log.info(f"  ✅ Saved data for: {name}")
         except Exception as e:
-            log.error(f"DB update failed for '{name}': {e}")
+            log.error(f"  ❌ DB update failed for '{name}': {e}")
     else:
-        log.debug(f"[skip] '{name}' — all phases already populated or no data found")
+        pass
 
 
 async def main():
@@ -349,37 +360,65 @@ async def main():
     await db.connect()
 
     try:
+        # Targeting empty or corrupted rows 
+        target_query = {
+            "OR": [
+                {"tadbTop10": None},
+                {"tadbTop10": "[]"}
+            ]
+        }
+        
         if args.artist:
             artists = await db.artistdirectory.find_many(where={"name": args.artist})
         elif args.limit:
-            artists = await db.artistdirectory.find_many(take=args.limit)
+            artists = await db.artistdirectory.find_many(take=args.limit, where=target_query)
         else:
-            artists = await db.artistdirectory.find_many()
+            artists = await db.artistdirectory.find_many(where=target_query)
 
-        log.info(f"Processing {len(artists)} artists...")
+        total_artists = len(artists)
+        log.info(f"Processing {total_artists} missing/broken artists concurrently...")
+        if total_artists == 0:
+            log.info("All artists perfectly enriched! Nothing to do.")
+            return
+            
         t_start = time.time()
+        
+        # ── CONCURRENCY SETUP ──
+        # 15 concurrent workers. This limits database connections but
+        # maximizes the 1-second gaps required by MusicBrainz.
+        sem = asyncio.Semaphore(15)
+        completed = 0
 
-        async with httpx.AsyncClient() as client:
-            for i, artist in enumerate(artists, 1):
-                log.info(f"[{i}/{len(artists)}] {artist.name}")
-                await enrich_artist(db, client, artist, phases)
+        async def process_artist(artist, client, idx, total):
+            async with sem:
+                await enrich_artist(db, client, artist, phases, idx, total)
 
-                # Progress checkpoint every 50 artists
-                if i % 50 == 0:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Launch all workers, passing in their exact queue number (idx)
+            tasks = [
+                asyncio.create_task(process_artist(a, client, i, total_artists)) 
+                for i, a in enumerate(artists, 1)
+            ]
+
+            # Track progress as they finish asynchronously
+            for future in asyncio.as_completed(tasks):
+                await future
+                completed += 1
+
+                if completed % 50 == 0:
                     elapsed = time.time() - t_start
-                    remaining = (len(artists) - i) * (elapsed / i)
+                    remaining = (total_artists - completed) * (elapsed / completed)
                     log.info(
-                        f"  📊 Progress: {i}/{len(artists)} "
+                        f"  📊 Global Progress: {completed}/{total_artists} "
                         f"({elapsed/60:.1f}m elapsed, "
                         f"~{remaining/60:.1f}m remaining)"
                     )
 
-        total = time.time() - t_start
-        log.info(f"\n✅ Enrichment complete — {len(artists)} artists in {total/60:.1f} minutes")
+        total_time = time.time() - t_start
+        log.info(f"\n✅ Enrichment complete — {total_artists} artists in {total_time/60:.1f} minutes")
 
     finally:
         await db.disconnect()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
