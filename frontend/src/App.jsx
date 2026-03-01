@@ -238,31 +238,42 @@ function Knob({ label, value, onChange }) {
   const dragStart = useRef({ x: 0, y: 0, val: 0 });
 
   useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!isDragging) return;
-      const deltaX = e.clientX - dragStart.current.x;
-      let newVal = dragStart.current.val + (deltaX * 0.8);
-      if (newVal > 100) newVal = 100;
-      if (newVal < 0) newVal = 0;
+    const handleMove = (clientX) => {
+      const deltaX = clientX - dragStart.current.x;
+      let newVal = Math.max(0, Math.min(100, dragStart.current.val + deltaX * 0.8));
       setLocalVal(newVal);
       onChange(newVal);
     };
-    const handleMouseUp = () => setIsDragging(false);
+
+    const handleMouseMove = (e) => { if (isDragging) handleMove(e.clientX); };
+    const handleTouchMove = (e) => {
+      if (isDragging && e.touches[0]) {
+        e.preventDefault();
+        handleMove(e.touches[0].clientX);
+      }
+    };
+    const handleUp = () => setIsDragging(false);
 
     if (isDragging) {
       window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('mouseup', handleUp);
+      window.addEventListener('touchmove', handleTouchMove, { passive: false });
+      window.addEventListener('touchend', handleUp);
     }
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleUp);
     };
   }, [isDragging, onChange]);
 
-  const handleMouseDown = (e) => {
+  const startDrag = (clientX) => {
     setIsDragging(true);
-    dragStart.current = { x: e.clientX, y: e.clientY, val: localVal };
+    dragStart.current = { x: clientX, val: localVal };
   };
+  const handleMouseDown = (e) => startDrag(e.clientX);
+  const handleTouchStart = (e) => { if (e.touches[0]) startDrag(e.touches[0].clientX); };
 
   const renderTicks = () => {
     const ticks = [];
@@ -294,17 +305,79 @@ function Knob({ label, value, onChange }) {
         {renderTicks()}
         <div
           onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
           className="knob"
           style={{ 
             transform: `rotate(${rotation}deg)`, 
             cursor: isDragging ? 'grabbing' : 'pointer', 
             position: 'absolute', zIndex: 2, width: '32px', height: '32px',
-            boxShadow: isDragging ? '0 6px 12px rgba(0,0,0,0.9), inset 0 1px 2px rgba(255,200,80,0.3)' : ''
+            boxShadow: isDragging ? '0 6px 12px rgba(0,0,0,0.9), inset 0 1px 2px rgba(255,200,80,0.3)' : '',
+            touchAction: 'none', // prevent scroll interference on mobile
           }}
           title={`${label} Priority: ${Math.round(localVal)}%`}
         />
       </div>
       <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.6)", letterSpacing: "0.15em", textTransform: "uppercase", userSelect: "none", fontWeight: 600 }}>{label}</span>
+    </div>
+  );
+}
+
+/* ─── SKELETON TRACK CARD ─────────────────────────────────── */
+function SkeletonTrackCard() {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      flexWrap: "wrap", gap: "14px", padding: "14px 18px",
+      background: "rgba(8,5,2,0.6)", border: "1px solid rgba(120,80,20,0.25)",
+      borderRadius: "10px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+        {/* cover art skeleton */}
+        <div style={{
+          width: 44, height: 44, borderRadius: 6,
+          background: "rgba(120,80,20,0.15)",
+          position: "relative", overflow: "hidden",
+        }}>
+          <div style={{
+            position: "absolute", inset: 0,
+            background: "linear-gradient(90deg, transparent 0%, rgba(217,119,6,0.07) 50%, transparent 100%)",
+            animation: "shimmer 1.4s ease-in-out infinite",
+          }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {/* title skeleton */}
+          <div style={{
+            width: 160, height: 14, borderRadius: 4,
+            background: "rgba(120,80,20,0.2)", position: "relative", overflow: "hidden",
+          }}>
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, rgba(217,119,6,0.07), transparent)", animation: "shimmer 1.4s ease-in-out infinite" }} />
+          </div>
+          {/* artist skeleton */}
+          <div style={{
+            width: 100, height: 10, borderRadius: 4,
+            background: "rgba(120,80,20,0.12)", position: "relative", overflow: "hidden",
+          }}>
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, rgba(217,119,6,0.07), transparent)", animation: "shimmer 1.4s ease-in-out 0.2s infinite" }} />
+          </div>
+        </div>
+      </div>
+      {/* action buttons skeleton */}
+      <div style={{ display: "flex", gap: "8px" }}>
+        {[32, 32, 72, 72].map((w, i) => (
+          <div key={i} style={{
+            width: w, height: 32, borderRadius: 8,
+            background: "rgba(120,80,20,0.12)", position: "relative", overflow: "hidden",
+          }}>
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, rgba(217,119,6,0.07), transparent)", animation: `shimmer 1.4s ease-in-out ${i * 0.1}s infinite` }} />
+          </div>
+        ))}
+      </div>
+      <style>{`
+        @keyframes shimmer {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -419,7 +492,11 @@ function GlobalStyles() {
 ═══════════════════════════════════════════════════════════════ */
 export default function App() {
   const [showLanding, setShowLanding] = useState(true);
-  const [token, setToken]             = useState(null);
+  // Persist auth token across page reloads via localStorage
+  const [token, setToken] = useState(() => {
+    try { return localStorage.getItem("vf_token") || null; }
+    catch { return null; }
+  });
   const [prompt, setPrompt]           = useState("");
   const [lastPrompt, setLastPrompt]   = useState(""); // NEW: Tracks prompt changes for intelligent caching
   const [result, setResult]           = useState(null);
@@ -429,6 +506,7 @@ export default function App() {
   const [isLoginView, setIsLoginView] = useState(true);
   const [authForm, setAuthForm]       = useState({ email: "", username: "", password: "" });
   const [vuLevel, setVuLevel]         = useState(0);
+  const [isSkeletonLoading, setIsSkeletonLoading] = useState(false);
   
   const [knobs, setKnobs]             = useState({ artist: 50, nicheness: 50, bpm: 50 });
   const [trackLimit, setTrackLimit]   = useState(5);
@@ -516,6 +594,8 @@ export default function App() {
       });
       if (!logRes.ok) throw new Error("Authentication failed — check credentials");
       const data = await logRes.json();
+      // Persist token so page refresh doesn't log user out
+      try { localStorage.setItem("vf_token", data.access_token); } catch {}
       setToken(data.access_token);
       setShowAuthModal(false);
       setAuthForm({ email: "", username: "", password: "" });
@@ -524,13 +604,16 @@ export default function App() {
     finally { setLoading(false); }
   };
 
-  const handleLogout = () => { setToken(null); setResult(null); setPrompt(""); setVuLevel(0); };
+  const handleLogout = () => { 
+    try { localStorage.removeItem("vf_token"); } catch {}
+    setToken(null); setResult(null); setPrompt(""); setVuLevel(0); 
+  };
 
   // FIX: The New Intelligent Cache Engine & Auto-Run Handler
   const analyzeVibe = async (config = {}) => {
     if (!prompt.trim()) return;
     try {
-      setLoading(true); setError("");
+      setLoading(true); setError(""); setIsSkeletonLoading(true);
       
       let finalSecondary = useSecondaryVibe;
       let finalGenre = overrideGenre;
@@ -584,8 +667,9 @@ export default function App() {
       
       const data = await res.json();
       setResult(data);
+      setIsSkeletonLoading(false);
       setTimeout(() => { document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }); }, 150);
-    } catch (err) { setError(err.message); }
+    } catch (err) { setError(err.message); setIsSkeletonLoading(false); }
     finally { setLoading(false); }
   };
 
@@ -886,6 +970,24 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* ── SKELETON LOADING PLAYLIST ─── */}
+          {isSkeletonLoading && !result && (
+            <div className="animate-in" style={{ marginTop: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", paddingLeft: "4px" }}>
+                <div style={{ width: "24px", height: "1px", background: "rgba(217,119,6,0.4)" }} />
+                <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)" }}>Processing Signal…</span>
+                <div style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, rgba(217,119,6,0.4), transparent)" }} />
+              </div>
+              <div className="panel-card screws" style={{ padding: "24px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {Array.from({ length: trackLimit }).map((_, i) => (
+                    <SkeletonTrackCard key={i} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── RESULTS ─── */}
           {result && (

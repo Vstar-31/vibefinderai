@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from passlib.context import CryptContext
 from contextlib import asynccontextmanager
 from prisma import Prisma
-import urllib.request
 import urllib.parse
 import json
 import asyncio
@@ -18,6 +17,16 @@ import re
 import logging
 import sys
 import time
+import hashlib
+
+# aiohttp is the async-safe HTTP client (replaces urllib in hot paths)
+# Falls back gracefully to the sync urllib path if not installed.
+try:
+    import aiohttp as _aiohttp
+    _AIOHTTP_AVAILABLE = True
+except ImportError:
+    _AIOHTTP_AVAILABLE = False
+    import urllib.request  # kept only for the legacy sync fallback
 
 # Import our modularized vibe engine
 import vibe_engine
@@ -66,6 +75,19 @@ async def lifespan(app: FastAPI):
 # Initialize core app with lifespan hook
 import difflib as _difflib
 
+# ── Rate limiting (slowapi) ──────────────────────────────────────────────────
+# pip install slowapi
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    _limiter = Limiter(key_func=get_remote_address)
+    _RATE_LIMIT_AVAILABLE = True
+except ImportError:
+    _RATE_LIMIT_AVAILABLE = False
+    _limiter = None
+    logger.warning("slowapi not installed — rate limiting disabled. Run: pip install slowapi")
+
 # ── Known words for typo normalization ──
 _KNOWN_WORDS = [
     "happy","sad","calm","chill","dark","dreamy","ambient","romantic","heartbreak",
@@ -113,6 +135,12 @@ app = FastAPI(
     description="Core backend for music discovery and NLP integrations",
     lifespan=lifespan
 )
+
+# Wire rate limiter if available
+if _RATE_LIMIT_AVAILABLE:
+    app.state.limiter = _limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    logger.info("Rate limiting active via slowapi.")
 
 # ---------------------------------------------------------
 # CORS Configuration
@@ -566,12 +594,18 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
         "Any":        ["bhangra", "punjabi"],
     },
     "punjabi_soft": {
-        "Punjabi":    ["punjabi sad", "ap dhillon", "b praak", "punjabi ballad"],
-        "Any":        ["punjabi sad", "punjabi soft", "b praak"],
+        # FIX: Old tags ("b praak", "ap dhillon") are ARTIST names, not Last.fm tags.
+        # Last.fm tag.gettoptracks returns 0 results for artist names.
+        # Use real community tags that actually have track pools on Last.fm.
+        "Punjabi":    ["punjabi sad songs", "punjabi romantic", "punjabi ballad", "dard"],
+        "Hindi":      ["punjabi sad songs", "filmi sad", "punjabi ballad"],
+        "Any":        ["punjabi sad songs", "punjabi ballad", "dard", "punjabi soft"],
     },
     "haryanvi": {
-        "Hindi":      ["haryanvi", "haryanvi folk", "ragini", "haryanvi pop"],
-        "Any":        ["haryanvi", "haryanvi folk"],
+        # FIX: Expanded with real Last.fm tags that return results.
+        # "ragini" is too niche (< 5 tracks). Added mainstream haryanvi tags.
+        "Hindi":      ["haryanvi", "haryanvi folk songs", "haryanvi pop", "desi"],
+        "Any":        ["haryanvi", "haryanvi folk songs", "desi folk"],
     },
     "hyperpop": {
         "English":    ["hyperpop", "digicore", "pc music", "bubblegum bass"],
@@ -686,84 +720,122 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # ---------------------------------------------------------
-# Network Retry Helper (v1.2 — Fix #4: Network Resilience)
+# Network Retry Helper (v2.0 — Async-safe, non-blocking)
 # ---------------------------------------------------------
-def _fetch_with_retry(url: str, label: str, timeout: int = 5, max_retries: int = 3) -> dict | None:
+# CRITICAL FIX: The old version used time.sleep() inside an async app, which
+# blocked the entire FastAPI event loop during retries. This version uses
+# asyncio.sleep() so all concurrent requests continue while one backs off.
+# ---------------------------------------------------------
+
+async def _fetch_with_retry(url: str, label: str, timeout: int = 5, max_retries: int = 3) -> dict | None:
     """
-    GETs a URL and returns parsed JSON, with exponential backoff on failure.
+    Async GET with exponential backoff. Never blocks the event loop.
     Delays between retries: 1s → 2s → 4s.
-    Returns None after all retries are exhausted.
+    Returns parsed JSON dict, or None after all retries exhausted.
     """
-    for attempt in range(max_retries):
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'VibeFinderAI/2.0'})
-            with urllib.request.urlopen(req, timeout=timeout) as response:
-                return json.loads(response.read().decode())
-        except Exception as e:
-            wait = 2 ** attempt  # 1s, 2s, 4s
-            if attempt < max_retries - 1:
-                logger.warning(f"[Retry {attempt + 1}/{max_retries}] {label} — {e}. Backing off {wait}s...")
-                time.sleep(wait)
-            else:
-                logger.error(f"{label} failed after {max_retries} attempts: {e}")
-    return None
+    if _AIOHTTP_AVAILABLE:
+        for attempt in range(max_retries):
+            try:
+                connector = _aiohttp.TCPConnector(limit=100)
+                timeout_cfg = _aiohttp.ClientTimeout(total=timeout)
+                async with _aiohttp.ClientSession(
+                    connector=connector,
+                    headers={"User-Agent": "VibeFinderAI/2.0"},
+                    timeout=timeout_cfg,
+                ) as session:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            return await resp.json(content_type=None)
+                        logger.warning(f"[Retry {attempt+1}] {label} — HTTP {resp.status}")
+            except Exception as e:
+                wait = 2 ** attempt
+                if attempt < max_retries - 1:
+                    logger.warning(f"[Retry {attempt+1}/{max_retries}] {label} — {e}. Backing off {wait}s...")
+                    await asyncio.sleep(wait)  # ← non-blocking!
+                else:
+                    logger.error(f"{label} failed after {max_retries} attempts: {e}")
+        return None
+    else:
+        # Graceful degradation: run sync urllib in a thread so we don't block
+        import urllib.request as _urllib_req
+        def _sync_fetch():
+            for attempt in range(max_retries):
+                try:
+                    req = _urllib_req.Request(url, headers={"User-Agent": "VibeFinderAI/2.0"})
+                    with _urllib_req.urlopen(req, timeout=timeout) as r:
+                        return json.loads(r.read().decode())
+                except Exception as e:
+                    wait = 2 ** attempt
+                    if attempt < max_retries - 1:
+                        time.sleep(wait)
+                    else:
+                        logger.error(f"{label} failed after {max_retries} attempts: {e}")
+            return None
+        return await asyncio.to_thread(_sync_fetch)
 
 
 # ---------------------------------------------------------
-# Free Music Fetchers (Last.fm + iTunes)
+# Free Music Fetchers (Last.fm + iTunes) — All Async
 # ---------------------------------------------------------
-def fetch_lastfm_tracks_sync(genre: str, limit: int = 200):
-    """Hits the free Last.fm API to pull trending tracks."""
-    api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
+
+async def fetch_lastfm_tracks_sync(genre: str, limit: int = 200):
+    """Hits the free Last.fm API to pull trending tracks by tag."""
+    api_key = os.getenv("LASTFM_API_KEY")
+    if not api_key:
+        logger.error("LASTFM_API_KEY not set in environment. Cannot fetch tracks.")
+        return []
     url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
-    data = _fetch_with_retry(url, label=f"Last.fm genre fetch for '{genre}'")
+    data = await _fetch_with_retry(url, label=f"Last.fm genre fetch for '{genre}'")
     if data:
         tracks = data.get("tracks", {}).get("track", [])
         return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
     return []
 
-def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 200):
+async def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 200):
     """Hits the free Last.fm API to pull a SPECIFIC artist's discography."""
-    api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
+    api_key = os.getenv("LASTFM_API_KEY")
+    if not api_key:
+        return []
     url = f"http://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist={urllib.parse.quote(artist)}&api_key={api_key}&format=json&limit={limit}"
-    data = _fetch_with_retry(url, label=f"Last.fm artist fetch for '{artist}'")
+    data = await _fetch_with_retry(url, label=f"Last.fm artist fetch for '{artist}'")
     if data:
         tracks = data.get("toptracks", {}).get("track", [])
         return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
     return []
 
-def fetch_lastfm_track_search_sync(query: str, limit: int = 100):
-    """FALLBACK: Directly searches Last.fm for literal track names if AI confidence is shot."""
-    api_key = os.getenv("LASTFM_API_KEY", "b25b959554ed76058ac220b7b2e0a026")
+async def fetch_lastfm_track_search_sync(query: str, limit: int = 100):
+    """FALLBACK: Directly searches Last.fm for literal track names."""
+    api_key = os.getenv("LASTFM_API_KEY")
+    if not api_key:
+        return []
     url = f"http://ws.audioscrobbler.com/2.0/?method=track.search&track={urllib.parse.quote(query)}&api_key={api_key}&format=json&limit={limit}"
-    data = _fetch_with_retry(url, label=f"Last.fm direct track search for '{query}'")
+    data = await _fetch_with_retry(url, label=f"Last.fm direct track search for '{query}'")
     if data:
         tracks = data.get("results", {}).get("trackmatches", {}).get("track", [])
         return [{"title": t.get("name"), "artist": t.get("artist")} for t in tracks]
     return []
 
-def fetch_itunes_data_sync(title: str, artist: str):
+async def fetch_itunes_data_sync(title: str, artist: str):
     """Silently hits the free iTunes API to grab the .m4a preview & cover art."""
     query = urllib.parse.quote(f"{title} {artist}")
     url = f"https://itunes.apple.com/search?term={query}&entity=song&limit=1"
-    # iTunes is low-stakes; 1 retry is enough, no need for full backoff
-    data = _fetch_with_retry(url, label=f"iTunes preview for '{title}' by '{artist}'", timeout=3, max_retries=2)
+    data = await _fetch_with_retry(url, label=f"iTunes preview for '{title}' by '{artist}'", timeout=3, max_retries=2)
     if data and data.get("resultCount", 0) > 0:
         track = data["results"][0]
         return {"preview_url": track.get("previewUrl"), "cover_art": track.get("artworkUrl100")}
     return {"preview_url": None, "cover_art": None}
 
 async def fetch_lastfm_tracks(genre: str, limit: int = 200):
-    return await asyncio.to_thread(fetch_lastfm_tracks_sync, genre, limit)
+    return await fetch_lastfm_tracks_sync(genre, limit)
 
 async def fetch_lastfm_artist_tracks(artist: str, limit: int = 200):
-    return await asyncio.to_thread(fetch_lastfm_artist_tracks_sync, artist, limit)
+    return await fetch_lastfm_artist_tracks_sync(artist, limit)
 
 async def fetch_lastfm_track_search(query: str, limit: int = 100):
-    return await asyncio.to_thread(fetch_lastfm_track_search_sync, query, limit)
+    return await fetch_lastfm_track_search_sync(query, limit)
 
 async def fetch_itunes_preview(title: str, artist: str):
-    return await asyncio.to_thread(fetch_itunes_data_sync, title, artist)
+    return await fetch_itunes_data_sync(title, artist)
 
 # ---------------------------------------------------------
 # The Mathematical AI (Knob Scoring Engine)
@@ -912,6 +984,123 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
 async def root():
     return {"message": "VibeFinderAI API is operational."}
 
+# ---------------------------------------------------------
+# Health Check Endpoint
+# ---------------------------------------------------------
+@app.get("/health")
+async def health_check():
+    """
+    Lightweight liveness probe for deployment platforms (Railway, Render, etc.).
+    Returns DB connectivity status alongside uptime signal.
+    """
+    try:
+        # Lightweight DB ping — just count a tiny table
+        await db.user.count()
+        db_status = "connected"
+    except Exception as e:
+        logger.warning(f"Health check DB ping failed: {e}")
+        db_status = "degraded"
+    return {"status": "ok", "db": db_status, "service": "VibeFinderAI"}
+
+# ---------------------------------------------------------
+# User Taste Profile — closes the feedback loop
+# ---------------------------------------------------------
+@app.get("/api/user/taste")
+async def get_user_taste(token: str = Depends(oauth2_scheme)):
+    """
+    Returns the authenticated user's taste profile derived from their
+    accumulated feedback history (thumbs up/down signals).
+
+    Used to surface personalized insights and can be fed back into
+    future vibe requests as soft priors for the recommendation engine.
+
+    Response includes:
+    - top_vibes: vibes the user has rated positively most often
+    - top_artists: artists the user has liked most
+    - disliked_artists: artists the user has consistently downvoted
+    - total_ratings: total feedback rows for this user
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        # Pull all feedback for this user
+        feedbacks = await db.trackfeedback.find_many(
+            where={"userId": user_id},
+            order={"createdAt": "desc"},
+        )
+
+        if not feedbacks:
+            return {
+                "total_ratings": 0,
+                "top_vibes": [],
+                "top_artists": [],
+                "disliked_artists": [],
+                "message": "No feedback data yet — rate some tracks to build your taste profile!"
+            }
+
+        # Pull VibeRequests to get vibe context for each feedback
+        vibe_request_ids = list({f.vibeRequestId for f in feedbacks if f.vibeRequestId})
+        vibe_requests = {}
+        if vibe_request_ids:
+            rows = await db.viberequest.find_many(
+                where={"id": {"in": vibe_request_ids}}
+            )
+            vibe_requests = {r.id: r for r in rows}
+
+        # Tally vibe scores (liked = +1, disliked = -1, neutral = 0)
+        vibe_score: dict[str, float]   = {}
+        artist_score: dict[str, float] = {}
+
+        for fb in feedbacks:
+            signal = fb.signal  # 1, 0, -1
+            artist = (fb.trackArtist or "").strip().lower()
+
+            # Artist tally
+            if artist:
+                artist_score[artist] = artist_score.get(artist, 0.0) + signal
+
+            # Vibe tally — look up the VibeRequest for vibe context
+            if fb.vibeRequestId and fb.vibeRequestId in vibe_requests:
+                vr = vibe_requests[fb.vibeRequestId]
+                vibe = vr.dominantVibe or ""
+                if vibe:
+                    vibe_score[vibe] = vibe_score.get(vibe, 0.0) + signal
+
+        # Sort and trim
+        top_vibes = sorted(
+            [(v, round(s, 1)) for v, s in vibe_score.items() if s > 0],
+            key=lambda x: -x[1]
+        )[:5]
+
+        top_artists = sorted(
+            [(a, round(s, 1)) for a, s in artist_score.items() if s > 0],
+            key=lambda x: -x[1]
+        )[:10]
+
+        disliked_artists = sorted(
+            [(a, round(s, 1)) for a, s in artist_score.items() if s < 0],
+            key=lambda x: x[1]
+        )[:5]
+
+        return {
+            "total_ratings": len(feedbacks),
+            "top_vibes":      [{"vibe": v, "score": s} for v, s in top_vibes],
+            "top_artists":    [{"artist": a, "score": s} for a, s in top_artists],
+            "disliked_artists": [{"artist": a, "score": s} for a, s in disliked_artists],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/api/user/taste error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to build taste profile")
+
 @app.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register_user(user: UserCreate):
     existing_user = await db.user.find_first(where={"OR": [{"email": user.email}, {"username": user.username}]})
@@ -943,6 +1132,17 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 @app.post("/api/vibe/analyze", response_model=VibeResponse)
 async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
     """Refined analysis route with zero-results fallback logic and telemetry."""
+    
+    # Validate token early — prevents null user_id poisoning the DB log
+    try:
+        _pre_payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        _pre_user_id = _pre_payload.get("sub")
+        if not _pre_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     logger.info(f"--- NEW REQUEST: Analyzing Vibe ---")
     logger.info(f"Prompt: '{request.text}' | Limit: {request.track_limit}")
@@ -1170,9 +1370,8 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         # whose identity most closely matches the user's prompt.
         if semantic_search.semantic_ready() and raw_pool:
             logger.info(f"[Semantic] Reranking {len(raw_pool)} fallback tracks by prompt similarity...")
-            raw_pool = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: semantic_search.rank_tracks_by_prompt(request.text, raw_pool)
+            raw_pool = await asyncio.to_thread(
+                semantic_search.rank_tracks_by_prompt, request.text, raw_pool
             )
             used_semantic = True
             logger.info(f"[Semantic] Reranking complete.")
@@ -1252,6 +1451,46 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                             raw_pool.append(_hb_track)
                             _hb_seen.add(_hb_key)
                     logger.info(f"Heartbreak pool after top-up: {len(raw_pool)} tracks.")
+
+                # ── GENERALIZED THIN POOL GUARD (v6.1) ─────────────────────────────────────
+                # Vibes with historically thin Last.fm pools get artist-driven supplements.
+                # Identified from 10k QA batch: punjabi_soft (0 avg), haryanvi (6 avg),
+                # bollywood_sad (7 avg). The fix: inject real artist discographies when
+                # the tag-based pool is critically thin.
+                _THIN_VIBE_ARTISTS: dict[str, list[str]] = {
+                    "punjabi_soft": [
+                        "B Praak", "AP Dhillon", "Satinder Sartaaj", "Prabh Gill",
+                        "Jassi Gill", "Ninja", "Mankirt Aulakh", "Jassie Gill"
+                    ],
+                    "haryanvi": [
+                        "Sapna Choudhary", "Masoom Sharma", "Raju Punjabi", "Pardeep Boora",
+                        "Ajay Hooda", "Amit Dhull", "Vikram Pannu", "Bhoomi Trivedi"
+                    ],
+                    "bollywood_sad": [
+                        "Arijit Singh", "Atif Aslam", "KK", "Mohit Chauhan",
+                        "Shreya Ghoshal", "Jubin Nautiyal", "Armaan Malik"
+                    ],
+                }
+                _dominant_vibe_check = vibe_data.get("dominant_vibe", "")
+                if _dominant_vibe_check in _THIN_VIBE_ARTISTS and len(raw_pool) < 40:
+                    _supplement_artists = _THIN_VIBE_ARTISTS[_dominant_vibe_check]
+                    logger.warning(
+                        f"Thin pool for vibe '{_dominant_vibe_check}' ({len(raw_pool)} tracks). "
+                        f"Injecting artist discographies: {_supplement_artists[:4]}"
+                    )
+                    _supplement_fetches = await asyncio.gather(*[
+                        fetch_lastfm_artist_tracks(a, limit=40)
+                        for a in _supplement_artists
+                    ], return_exceptions=True)
+                    _sup_seen = {f"{t['title'].lower()}|{t['artist'].lower()}" for t in raw_pool}
+                    for _result in _supplement_fetches:
+                        if isinstance(_result, list):
+                            for _st in _result:
+                                _sk = f"{_st['title'].lower()}|{_st['artist'].lower()}"
+                                if _sk not in _sup_seen:
+                                    raw_pool.append(_st)
+                                    _sup_seen.add(_sk)
+                    logger.info(f"Thin pool after artist supplement: {len(raw_pool)} tracks.")
                 
     # 🚨 ZERO RESULTS SAFETY NET 🚨
     if not raw_pool:

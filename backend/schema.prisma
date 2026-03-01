@@ -276,7 +276,10 @@ model VibeRequest {
 
 model TrackFeedback {
   id            String   @id @default(uuid())
-  vibeRequestId String
+  // vibeRequestId is NULLABLE — it's null when the upstream VibeRequest DB log
+  // failed (fire-and-forget pattern in main.py). The vibeRequest relation is
+  // therefore optional. Never crash a feedback write over a missing request log.
+  vibeRequestId String?
   userId        String
 
   trackTitle    String
@@ -293,7 +296,8 @@ model TrackFeedback {
 
   createdAt     DateTime @default(now())
 
-  vibeRequest   VibeRequest @relation(fields: [vibeRequestId], references: [id], onDelete: Cascade)
+  // Relation is optional because vibeRequestId can be null
+  vibeRequest   VibeRequest? @relation(fields: [vibeRequestId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([vibeRequestId])
