@@ -130,7 +130,7 @@ function Oscilloscope({ active }) {
   }, [active]);
 
   return (
-    <div title="Neural Waveform Monitor (Visual Only)" style={{
+    <div title="Neural Waveform Monitor — Visual Only" style={{
       background: "rgba(16,10,4,0.80)",
       border: "1px solid rgba(120,80,20,0.4)",
       borderRadius: "8px",
@@ -138,7 +138,9 @@ function Oscilloscope({ active }) {
       display: "flex",
       alignItems: "center",
       gap: "8px",
-      cursor: "help"
+      cursor: "default",       // was "help" which gave text cursor — now clearly non-interactive
+      userSelect: "none",
+      pointerEvents: "none",   // fully non-interactive, can't accidentally click/select
     }}>
       <span style={{ fontSize: "9px", fontFamily: "monospace", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>OSC</span>
       <canvas ref={canvasRef} width={180} height={36} style={{ display: "block" }} />
@@ -235,24 +237,29 @@ function AudioInput({ icon, ...props }) {
 function Knob({ label, value, onChange }) {
   const [isDragging, setIsDragging] = useState(false);
   const [localVal, setLocalVal] = useState(value);
+  const [showTooltip, setShowTooltip] = useState(false);
   const dragStart = useRef({ x: 0, y: 0, val: 0 });
 
   useEffect(() => {
-    const handleMove = (clientX) => {
+    // Drag direction: UP = increase (more natural for a rotary knob)
+    // Also accepts horizontal for touch/trackpad users
+    const handleMove = (clientX, clientY) => {
       const deltaX = clientX - dragStart.current.x;
-      let newVal = Math.max(0, Math.min(100, dragStart.current.val + deltaX * 0.8));
+      const deltaY = dragStart.current.y - clientY; // inverted: up = positive
+      const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+      let newVal = Math.max(0, Math.min(100, dragStart.current.val + delta * 0.7));
       setLocalVal(newVal);
       onChange(newVal);
     };
 
-    const handleMouseMove = (e) => { if (isDragging) handleMove(e.clientX); };
+    const handleMouseMove = (e) => { if (isDragging) handleMove(e.clientX, e.clientY); };
     const handleTouchMove = (e) => {
       if (isDragging && e.touches[0]) {
         e.preventDefault();
-        handleMove(e.touches[0].clientX);
+        handleMove(e.touches[0].clientX, e.touches[0].clientY);
       }
     };
-    const handleUp = () => setIsDragging(false);
+    const handleUp = () => { setIsDragging(false); };
 
     if (isDragging) {
       window.addEventListener('mousemove', handleMouseMove);
@@ -268,12 +275,13 @@ function Knob({ label, value, onChange }) {
     };
   }, [isDragging, onChange]);
 
-  const startDrag = (clientX) => {
+  const startDrag = (clientX, clientY) => {
     setIsDragging(true);
-    dragStart.current = { x: clientX, val: localVal };
+    setShowTooltip(true);
+    dragStart.current = { x: clientX, y: clientY, val: localVal };
   };
-  const handleMouseDown = (e) => startDrag(e.clientX);
-  const handleTouchStart = (e) => { if (e.touches[0]) startDrag(e.touches[0].clientX); };
+  const handleMouseDown = (e) => startDrag(e.clientX, e.clientY);
+  const handleTouchStart = (e) => { if (e.touches[0]) startDrag(e.touches[0].clientX, e.touches[0].clientY); };
 
   const renderTicks = () => {
     const ticks = [];
@@ -303,18 +311,33 @@ function Knob({ label, value, onChange }) {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
       <div style={{ position: 'relative', width: '56px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {renderTicks()}
+        {/* Value tooltip — visible on hover and while dragging */}
+        {(showTooltip || isDragging) && (
+          <div style={{
+            position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(20,12,4,0.95)', border: '1px solid rgba(217,119,6,0.4)',
+            borderRadius: '4px', padding: '2px 7px', fontSize: '10px',
+            fontFamily: "'DM Mono', monospace", color: '#fde68a',
+            whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 10,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.6)',
+          }}>
+            {Math.round(localVal)}
+          </div>
+        )}
         <div
           onMouseDown={handleMouseDown}
+          onMouseEnter={() => setShowTooltip(true)}
+          onMouseLeave={() => { if (!isDragging) setShowTooltip(false); }}
           onTouchStart={handleTouchStart}
           className="knob"
           style={{ 
             transform: `rotate(${rotation}deg)`, 
-            cursor: isDragging ? 'grabbing' : 'pointer', 
+            cursor: isDragging ? 'grabbing' : 'grab',
             position: 'absolute', zIndex: 2, width: '32px', height: '32px',
             boxShadow: isDragging ? '0 6px 12px rgba(0,0,0,0.9), inset 0 1px 2px rgba(255,200,80,0.3)' : '',
-            touchAction: 'none', // prevent scroll interference on mobile
+            touchAction: 'none',
           }}
-          title={`${label} Priority: ${Math.round(localVal)}%`}
+          title={`${label}: ${Math.round(localVal)} — drag up/down or left/right`}
         />
       </div>
       <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.6)", letterSpacing: "0.15em", textTransform: "uppercase", userSelect: "none", fontWeight: 600 }}>{label}</span>
@@ -526,6 +549,9 @@ export default function App() {
   // Feedback state — tracks which tracks have been rated this session
   // key: "title|artist", value: 1 (liked) | -1 (disliked)
   const [feedbackGiven, setFeedbackGiven] = useState({});
+  // Micro-toast: shows "Noted — improving future results" briefly after a rating
+  const [feedbackToast, setFeedbackToast] = useState(false);
+  const feedbackToastTimer = useRef(null);
 
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
@@ -696,6 +722,13 @@ export default function App() {
     const newSignal = current === signal ? 0 : signal;
     setFeedbackGiven(prev => ({ ...prev, [key]: newSignal }));
 
+    // Micro-toast confirmation
+    if (newSignal !== 0) {
+      setFeedbackToast(true);
+      clearTimeout(feedbackToastTimer.current);
+      feedbackToastTimer.current = setTimeout(() => setFeedbackToast(false), 2200);
+    }
+
     try {
       await fetch(buildApiUrl("/api/feedback"), {
         method: "POST",
@@ -854,6 +887,24 @@ export default function App() {
                     onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }} 
                     onBlur={e => { e.target.style.borderColor = "rgba(160,110,30,0.42)"; e.target.style.boxShadow = "none"; }} 
                 />
+                {/* Character counter + sweet-spot hint */}
+                <div style={{
+                  position: "absolute", bottom: "10px", right: "14px",
+                  display: "flex", alignItems: "center", gap: "8px",
+                  pointerEvents: "none",
+                }}>
+                  {prompt.length > 0 && (
+                    <span style={{
+                      fontSize: "9px", fontFamily: "'DM Mono', monospace",
+                      color: prompt.length < 15 ? "rgba(251,191,36,0.6)"
+                           : prompt.length > 300 ? "rgba(248,113,113,0.6)"
+                           : "rgba(180,140,80,0.3)",
+                      letterSpacing: "0.05em",
+                    }}>
+                      {prompt.length < 15 ? "↑ add more detail" : prompt.length > 300 ? "trim for best results" : `${prompt.length} chars`}
+                    </span>
+                  )}
+                </div>
                 {!token && <div style={S.lockOverlay}><button onClick={() => setShowAuthModal(true)} style={S.lockBtn}><IconLock /> Authentication Required</button></div>}
               </div>
               {/* Language Selector */}
@@ -1016,7 +1067,10 @@ export default function App() {
                   <div style={S.cardSub}>Confidence: {Math.round((useSecondaryVibe ? result.secondary_confidence : result.confidence) * 100)}%</div>
                   
                   {/* BI-DIRECTIONAL PIVOT BUTTON WITH AUTO-RUN */}
-                  {(result.secondary_vibe || useSecondaryVibe) && result.dominant_vibe !== 'Direct Search' && (
+                  {/* Only show if secondary confidence ≥ 50% — lower than that is noise, not signal */}
+                  {(result.secondary_vibe || useSecondaryVibe) && 
+                   result.dominant_vibe !== 'Direct Search' && 
+                   (useSecondaryVibe || (result.secondary_confidence || 0) >= 0.50) && (
                     <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
                       <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>
                         {useSecondaryVibe ? "Primary Signature Available" : "Secondary Signature Detected"}
@@ -1026,7 +1080,7 @@ export default function App() {
                         className="dial-btn"
                         style={{ background: "rgba(20,10,5,0.6)", border: `1px dashed ${vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe]}66`, padding: "6px 12px", borderRadius: "6px", color: vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe] || "#e8d5a3", fontSize: "11px", fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "6px", width: "100%", justifyContent: "center" }}
                       >
-                        Pivot Engine to: <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "13px", fontStyle: "italic" }}>{useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe}</span>
+                        {loading ? "Pivoting vibe…" : <>Pivot Engine to: <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "13px", fontStyle: "italic" }}>{useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe}</span></>}
                       </button>
                     </div>
                   )}
@@ -1048,7 +1102,7 @@ export default function App() {
                     {result.detected_song && <span className="freq-tag" style={{ color: "#fde68a", borderColor: "rgba(253,230,138,0.4)" }}>TRACK: {result.detected_song}</span>}
                     {overrideGenre && <span className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.4)" }}>OVERRIDE: {overrideGenre}</span>}
                     
-                    {/* GENRE CHECKBOX BUTTONS WITH AUTO-RUN */}
+                    {/* GENRE FILTER TAGS — clicking re-runs immediately, doesn't pollute Pro Mode field */}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", justifyContent: "center", marginTop: "4px" }}>
                         {result.genres.map((g, idx) => {
                             if (result.dominant_vibe === 'Direct Search') return null;
@@ -1056,16 +1110,21 @@ export default function App() {
                             return (
                                 <button
                                     key={idx}
-                                    onClick={() => analyzeVibe({ isFilterClick: true, targetGenre: isSelected ? "" : g })}
+                                    onClick={() => {
+                                      // Re-run with genre filter. Does NOT write to overrideGenre state
+                                      // (which lives in the Pro Mode panel) — keeps them decoupled.
+                                      analyzeVibe({ isFilterClick: true, targetGenre: isSelected ? "" : g });
+                                    }}
                                     className="freq-tag dial-btn"
-                                    title={isSelected ? "Remove Filter" : `Filter strictly by ${g}`}
+                                    title={isSelected ? "Click to remove filter — will re-run" : `Re-run filtered strictly by ${g}`}
                                     style={{
                                         color: isSelected ? "#1a0e04" : "rgba(180,140,80,0.7)",
                                         borderColor: isSelected ? "#d97706" : "rgba(180,140,80,0.3)",
                                         background: isSelected ? "#d97706" : "transparent",
                                         cursor: "pointer",
                                         boxShadow: isSelected ? "0 0 10px rgba(217,119,6,0.5)" : "none",
-                                        transition: "all 0.2s ease"
+                                        transition: "all 0.2s ease",
+                                        position: "relative",
                                     }}
                                 >
                                     {isSelected ? `✓ ${g}` : g}
@@ -1073,6 +1132,12 @@ export default function App() {
                             );
                         })}
                     </div>
+                    {/* Nudge label so users know clicking a genre tag re-runs analysis */}
+                    {result.genres.length > 0 && result.dominant_vibe !== 'Direct Search' && (
+                      <span style={{ fontSize: "8px", color: "rgba(180,140,80,0.3)", letterSpacing: "0.08em", marginTop: "2px" }}>
+                        ↑ click any genre to re-run with that filter
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1089,6 +1154,59 @@ export default function App() {
                       </div>
                       <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>{result.tracks.length} TRACKS</span>
                     </div>
+                    {/* Feedback micro-toast */}
+                    {feedbackToast && (
+                      <div className="animate-in" style={{
+                        fontSize: "10px", color: "#34d399", fontFamily: "'DM Mono', monospace",
+                        letterSpacing: "0.08em", marginBottom: "10px", marginTop: "-6px",
+                        display: "flex", alignItems: "center", gap: "6px",
+                      }}>
+                        <span style={{ fontSize: "12px" }}>✓</span> Noted — improving future results
+                      </div>
+                    )}
+
+                    {/* ── LANGUAGE MISMATCH WARNING ──────────────────────────────────────
+                        Shown when user selected a non-English language but the vibe they
+                        described doesn't have enough tracks in that language pool on Last.fm.
+                        The engine falls through to the global pool (correct behavior) but
+                        users deserve to know why they're seeing English results.
+                        Trigger: language is set + dominant vibe is English-heavy + no detected_artist.
+                        We detect mismatch by checking if any returned tracks look non-English.
+                        Simple heuristic: if language ≠ Any/English and no detected_artist forced it,
+                        show the soft warning. The user can always switch language to Any. */}
+                    {(() => {
+                      const selectedLang = language;
+                      const nonEnglishLangs = ["Hindi","Punjabi","Tamil","Telugu","Kannada","Malayalam","Bengali","Urdu","Korean","Japanese","Spanish","Portuguese","French","Arabic","Afrobeats"];
+                      const isNonEnglish = nonEnglishLangs.includes(selectedLang);
+                      // Rough heuristic: if the genres returned are generic English-chill genres
+                      // and language is non-English, assume mismatch
+                      const englishHeavyVibes = ["chill","calm","ambient","focus","dreamy","cinematic","indie_folk","heartbreak","dark","retro"];
+                      const isEnglishHeavyVibe = englishHeavyVibes.includes(result.dominant_vibe);
+                      const noArtistLock = !result.detected_artist;
+                      const showMismatchWarning = isNonEnglish && isEnglishHeavyVibe && noArtistLock;
+
+                      if (!showMismatchWarning) return null;
+                      return (
+                        <div style={{
+                          display: "flex", alignItems: "flex-start", gap: "10px",
+                          padding: "12px 14px", marginBottom: "16px",
+                          background: "rgba(180,120,0,0.08)",
+                          border: "1px solid rgba(217,119,6,0.25)",
+                          borderRadius: "8px",
+                        }}>
+                          <span style={{ fontSize: "14px", flexShrink: 0 }}>⚠</span>
+                          <div style={{ fontSize: "11px", color: "rgba(217,160,60,0.85)", lineHeight: "1.6", fontFamily: "'DM Mono', monospace" }}>
+                            <strong style={{ color: "#fde68a" }}>Limited {selectedLang} pool for this vibe.</strong>
+                            {" "}The "{result.dominant_vibe}" mood has sparse coverage in {selectedLang} on Last.fm — showing closest global matches instead.
+                            <br />
+                            <span style={{ color: "rgba(180,140,80,0.6)", fontSize: "10px" }}>
+                              Try: switching Language → <strong>Any</strong>, or use Pro Mode to force a {selectedLang} artist directly.
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px" }} />
                     
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
