@@ -59,6 +59,12 @@ logger.handlers = [file_handler, stream_handler]
 # ---------------------------------------------------------
 db = Prisma()
 
+# ── In-memory feature indexes (populated on startup) ─────────────────────────
+# Keyed by "title_lower|artist_lower" → audio feature dict
+TRACK_FEATURE_INDEX: dict[str, dict] = {}
+# Keyed by niche string → list of artist dicts from ArtistDirectory
+ARTIST_NICHE_INDEX: dict[str, list[dict]] = {}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -68,6 +74,51 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Supabase (Prisma) connection...")
     await db.connect()
     logger.info("Database connected successfully. Engine online.")
+    
+    # ── Load TrackFeatureCache into memory for fast O(1) scoring lookups ──────
+    # The DB has 690+ tracks with real audio features (tempo, energy, valence,
+    # moodHappy, moodSad, moodRelaxed, moodAggressive, moodParty).
+    # We load them all into a dict keyed by "title_lower|artist_lower" so
+    # filter_and_score_tracks can enrich any matching track without a DB call.
+    try:
+        _cache_rows = await db.trackfeaturecache.find_many()
+        for row in _cache_rows:
+            _key = f"{(row.title or '').strip().lower()}|{(row.artist or '').strip().lower()}"
+            TRACK_FEATURE_INDEX[_key] = {
+                "tempo":           float(row.tempo) if row.tempo else None,
+                "energy":          float(row.energy) if row.energy else None,
+                "valence":         float(row.valence) if row.valence else None,
+                "moodHappy":       float(row.moodHappy) if row.moodHappy else None,
+                "moodSad":         float(row.moodSad) if row.moodSad else None,
+                "moodRelaxed":     float(row.moodRelaxed) if row.moodRelaxed else None,
+                "moodAggressive":  float(row.moodAggressive) if row.moodAggressive else None,
+                "moodParty":       float(row.moodParty) if row.moodParty else None,
+            }
+        logger.info(f"TrackFeatureCache loaded: {len(TRACK_FEATURE_INDEX)} tracks indexed.")
+    except Exception as e:
+        logger.warning(f"TrackFeatureCache load failed (scoring will use heuristics only): {e}")
+
+    # ── Load ArtistDirectory niche→name index for DB-assisted pool building ───
+    # Maps niche string → list of artist names, used to supplement Last.fm pools
+    # without a cold API call when the vibe maps to a well-indexed niche.
+    try:
+        _artist_rows = await db.artistdirectory.find_many(
+            where={"tadbTop10": {"not": None}},
+        )
+        for row in _artist_rows:
+            _niche = (row.niche or "").strip().lower()
+            if _niche:
+                ARTIST_NICHE_INDEX.setdefault(_niche, []).append({
+                    "name": row.name,
+                    "genres": row.genres or "",
+                    "mbTags": row.mbTags or "",
+                    "tadbTop10": row.tadbTop10,
+                })
+        logger.info(f"ArtistDirectory niche index loaded: {len(ARTIST_NICHE_INDEX)} niches, "
+                    f"{sum(len(v) for v in ARTIST_NICHE_INDEX.values())} total artists.")
+    except Exception as e:
+        logger.warning(f"ArtistDirectory index load failed (DB pool supplement disabled): {e}")
+
     yield
     logger.info("Engine shutting down. Disconnecting database...")
     await db.disconnect()
@@ -892,87 +943,206 @@ def get_base_title(title: str) -> str:
 
 def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict, is_fallback: bool = False):
     """
-    Refined scoring engine. Prioritizes exact matches, strips Remixes, 
-    and perfectly enforces the user's Track Limit.
+    Scoring engine v2.0 — now uses real audio features from TrackFeatureCache.
+
+    Scoring layers (highest → lowest priority):
+      1. Exact song match (+100)
+      2. Artist match — scaled by ARTIST knob (+0 to +80)
+      3. Vibe/genre keyword match (+30/+20)
+      4. BPM match:
+         - If track is in TrackFeatureCache: compares real tempo to BPM knob target
+         - Fallback: title-string heuristics ("remix", "acoustic", etc.)
+      5. Energy/mood match from real audio features:
+         - BPM knob high (>60): rewards high energy tracks
+         - BPM knob low (<40): rewards low energy, high relaxed mood
+         - Dominant vibe 'heartbreak'/'dark': rewards high moodSad, low moodParty
+         - Dominant vibe 'party'/'euphoric': rewards high moodParty, high energy
+      6. NICHENESS knob: shifts between chart-toppers (low) and deep cuts (high)
+         - Low (<40): rewards tracks near top of Last.fm chart (low index)
+         - High (>60): penalizes chart-toppers, rewards deep-pool tracks
+      7. Anti-spam blocklist penalty
+      8. Global popularity decay
     """
     prompt_lower = request.text.lower()
+    dominant_vibe = vibe_data.get("dominant_vibe", "")
     
     detected_song = (vibe_data.get("detected_song") or "").lower()
     detected_artist = (vibe_data.get("detected_artist") or "").lower()
     target_genre_override = (vibe_data.get("target_genre_override") or vibe_data.get("dominant_vibe", "")).lower()
-    
-    bpm_range = vibe_data.get("bpm_range", "90-120")
-    is_fast = any(x in bpm_range for x in ["120", "140", "160"])
-    
+
+    # BPM knob → target tempo range
+    # knob 0-20 = very slow (50-75 BPM), 20-40 = slow (75-95), 40-60 = mid (neutral),
+    # 60-80 = fast (110-140), 80-100 = very fast (140+)
+    bpm_knob = request.bpm_focus  # 0-100
+    if bpm_knob <= 20:
+        target_bpm_low, target_bpm_high = 50, 80
+    elif bpm_knob <= 40:
+        target_bpm_low, target_bpm_high = 70, 100
+    elif bpm_knob <= 60:
+        target_bpm_low, target_bpm_high = 85, 130  # neutral — wide range
+    elif bpm_knob <= 80:
+        target_bpm_low, target_bpm_high = 110, 150
+    else:
+        target_bpm_low, target_bpm_high = 135, 220
+
+    # Artist knob: 0 = artist match doesn't matter, 100 = maximally prioritize artist matches
+    # Scaled so knob=50 gives the old +40, knob=100 gives +80, knob=0 gives +0
+    artist_weight = (request.artist_focus / 50.0) * 40  # 0 → 80
+
+    # Nicheness knob: controls which part of the pool to prefer
+    # <40: prefer top of chart (low index), >60: prefer deep cuts (high index)
+    nicheness = request.nicheness  # 0-100
+    pool_size = max(len(tracks), 1)
+
     fast_markers = ["remix", "mix", "edit", "club", "fast", "speed", "drum"]
     slow_markers = ["acoustic", "slowed", "reverb", "chill", "lofi", "ambient", "slow"]
-    
+
+    # Vibe → target audio profile (used when TrackFeatureCache has real data)
+    _VIBE_AUDIO_PROFILE: dict[str, dict] = {
+        "heartbreak":    {"valence_max": 0.45, "moodSad_min": 0.45, "energy_max": 0.65},
+        "dark":          {"valence_max": 0.40, "energy_max": 0.70, "moodAggressive_min": 0.15},
+        "calm":          {"energy_max": 0.45, "moodRelaxed_min": 0.40},
+        "ambient":       {"energy_max": 0.35, "moodRelaxed_min": 0.50},
+        "focus":         {"energy_max": 0.60, "moodRelaxed_min": 0.30},
+        "chill":         {"energy_max": 0.65, "moodRelaxed_min": 0.25},
+        "party":         {"moodParty_min": 0.45, "energy_min": 0.55},
+        "euphoric":      {"moodParty_min": 0.40, "energy_min": 0.50, "valence_min": 0.45},
+        "hype":          {"energy_min": 0.65, "moodAggressive_min": 0.20},
+        "intense":       {"energy_min": 0.70, "moodAggressive_min": 0.35},
+        "soulful":       {"valence_min": 0.30, "moodHappy_min": 0.25},
+        "happy":         {"valence_min": 0.50, "moodHappy_min": 0.45},
+        "romantic":      {"valence_min": 0.35, "moodSad_max": 0.40},
+        "dreamy":        {"energy_max": 0.55, "moodRelaxed_min": 0.25},
+    }
+    vibe_profile = _VIBE_AUDIO_PROFILE.get(dominant_vibe, {})
+
     scored_tracks = []
     for i, t in enumerate(tracks):
         title = t.get("title", "").lower()
         artist = t.get("artist", "").lower()
         score = 0.0
-        
-        # In fallback mode, the tracks are already exact matches, give them a baseline boost
+
+        # Fallback mode baseline
         if is_fallback:
             score += 50
-        
+
         # 1. EXACT SONG MATCH
         if detected_song and (detected_song in title or title in detected_song):
-            score += 100 
-            
-        # 2. ARTIST MATCH 
+            score += 100
+
+        # 2. ARTIST MATCH — now fully scaled by ARTIST knob
         if (detected_artist and detected_artist == artist) or artist in prompt_lower:
-            score += 40 * (request.artist_focus / 50.0)
-            
-        # 3. VIBE / GENRE MATCH
-        if target_genre_override in title or target_genre_override in artist:
-            score += 30 
-            
+            score += artist_weight
+
+        # 3. VIBE / GENRE KEYWORD MATCH
+        if target_genre_override and (target_genre_override in title or target_genre_override in artist):
+            score += 30
         for kw in vibe_data.get("matched_keywords", []):
             if kw.lower() in title or kw.lower() in artist:
-                score += 20 
-                
-        # 4. BPM MATCH — direction-aware (replaces old flat multiplier)
-        fast_hit = any(m in title for m in fast_markers)
-        slow_hit = any(m in title for m in slow_markers)
+                score += 20
 
-        if request.bpm_focus > 60:                          # user wants fast
-            bpm_strength = (request.bpm_focus - 50) / 50.0  # 0.2 → 1.0
-            if fast_hit:
-                score += 30 * bpm_strength
-            elif slow_hit:
-                score -= 20 * bpm_strength
-        elif request.bpm_focus < 40:                         # user wants slow/chill
-            bpm_strength = (50 - request.bpm_focus) / 50.0
-            if slow_hit:
-                score += 30 * bpm_strength
-            elif fast_hit:
-                score -= 20 * bpm_strength
-        # bpm_focus 40–60: fully neutral, no bonus or penalty
+        # 4+5. AUDIO FEATURE SCORING — real data from TrackFeatureCache if available
+        feat_key = f"{title}|{artist}"
+        feat = TRACK_FEATURE_INDEX.get(feat_key)
 
-            
+        if feat:
+            # ── REAL BPM SCORING ─────────────────────────────────────────────
+            real_bpm = feat.get("tempo")
+            if real_bpm is not None:
+                if target_bpm_low <= real_bpm <= target_bpm_high:
+                    # Perfect match — bonus scales with how far from neutral the knob is
+                    bpm_knob_strength = abs(bpm_knob - 50) / 50.0  # 0 at center, 1 at extremes
+                    score += 35 * bpm_knob_strength
+                else:
+                    # How far outside the window? Penalize proportionally
+                    overshoot = min(abs(real_bpm - target_bpm_low), abs(real_bpm - target_bpm_high))
+                    penalty = min(overshoot / 30.0, 1.0) * 20 * (abs(bpm_knob - 50) / 50.0)
+                    score -= penalty
+
+            # ── REAL ENERGY SCORING ──────────────────────────────────────────
+            energy = feat.get("energy")
+            if energy is not None:
+                if bpm_knob > 60:
+                    # High BPM knob = user wants energetic tracks
+                    energy_strength = (bpm_knob - 50) / 50.0
+                    score += energy * 25 * energy_strength
+                elif bpm_knob < 40:
+                    # Low BPM knob = user wants chill/low-energy
+                    energy_strength = (50 - bpm_knob) / 50.0
+                    score += (1.0 - energy) * 25 * energy_strength
+
+            # ── VIBE MOOD PROFILE SCORING ─────────────────────────────────────
+            mood_score = 0.0
+            profile_hits = 0
+            for feat_key_name, threshold in vibe_profile.items():
+                feat_name = feat_key_name.split("_")[0] + feat_key_name[feat_key_name.index("_"):]  # "moodSad_min" → "moodSad"
+                # Parse: "energy_min", "valence_max", "moodSad_min" etc.
+                parts = feat_key_name.rsplit("_", 1)
+                feat_name_clean = parts[0]  # "energy", "valence", "moodSad"
+                direction = parts[1]        # "min" or "max"
+                val = feat.get(feat_name_clean)
+                if val is None:
+                    continue
+                if direction == "min" and val >= threshold:
+                    mood_score += (val - threshold) * 30
+                    profile_hits += 1
+                elif direction == "max" and val <= threshold:
+                    mood_score += (threshold - val) * 30
+                    profile_hits += 1
+                elif direction == "min" and val < threshold:
+                    mood_score -= (threshold - val) * 15  # soft penalty for mismatch
+                elif direction == "max" and val > threshold:
+                    mood_score -= (val - threshold) * 15
+            if profile_hits > 0:
+                score += mood_score / max(len(vibe_profile), 1)
+
+        else:
+            # ── HEURISTIC FALLBACK (no real data) — old behaviour preserved ──
+            fast_hit = any(m in title for m in fast_markers)
+            slow_hit = any(m in title for m in slow_markers)
+            if bpm_knob > 60:
+                bpm_strength = (bpm_knob - 50) / 50.0
+                if fast_hit:
+                    score += 30 * bpm_strength
+                elif slow_hit:
+                    score -= 20 * bpm_strength
+            elif bpm_knob < 40:
+                bpm_strength = (50 - bpm_knob) / 50.0
+                if slow_hit:
+                    score += 30 * bpm_strength
+                elif fast_hit:
+                    score -= 20 * bpm_strength
+
         # REMIX EXCLUSION
         if "remix" in title or "edit" in title or "instrumental" in title:
             score -= 15
-            
-        # 5. PURE NICHENESS KNOB (0 to 100)
-        popularity_bias = (i / len(tracks)) * 30 if len(tracks) > 0 else 0
-        nicheness_multiplier = (request.nicheness - 50) / 50.0
-        score += (popularity_bias * nicheness_multiplier)
-        
-        # v1.2 Fix #2 — English / Global Popularity Filter
-        # Last.fm returns results ordered by listener count, so lower index = higher global reach.
-        # We apply a mild "global popularity" bonus that decays over the first 100 results.
-        # This counter-balances regional/non-English charts flooding the top without explicit request.
-        global_popularity_bonus = max(0.0, (1.0 - (i / max(len(tracks), 100))) * 10.0)
-        score += global_popularity_bonus
-        
-        # v1.2 Fix: Chronic spam penalty — tracks that appear in every request
-        # get a significant downrank so the pool naturally diversifies.
+
+        # 6. NICHENESS KNOB — controls chart depth
+        # nicheness < 40: prefer chart-toppers (low pool index = many listeners)
+        # nicheness > 60: prefer deep cuts (high pool index = fewer listeners)
+        # nicheness 40-60: neutral, mild global popularity bonus
+        position_pct = i / pool_size  # 0.0 = top of chart, 1.0 = deepest cut
+        if nicheness < 40:
+            # Mainstream mode: boost tracks near top of chart
+            mainstream_strength = (40 - nicheness) / 40.0
+            score += (1.0 - position_pct) * 25 * mainstream_strength
+        elif nicheness > 60:
+            # Niche mode: boost tracks deeper in the pool
+            niche_strength = (nicheness - 60) / 40.0
+            score += position_pct * 25 * niche_strength
+        else:
+            # Neutral: mild global popularity bonus (old behavior)
+            score += max(0.0, (1.0 - (i / max(pool_size, 100))) * 10.0)
+
+        # 7. ANTI-SPAM BLOCKLIST
         track_ident_bl = f"{title}|{artist}"
         if track_ident_bl in TRACK_BLOCKLIST:
             score -= 40
+
+        score += random.uniform(0, 1.5)
+        t["score"] = round(score, 4)
+        scored_tracks.append((score, t))
+
             
         score += random.uniform(0, 1.5)
         t["score"] = round(score, 4)   # ← stamp score onto the dict before stashing
@@ -1464,8 +1634,63 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                     logger.info(f"Injecting discography blend for detected artist: {detected_artist}")
                     artist_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=50)
 
+                # ── DB ARTIST NICHE SUPPLEMENT ───────────────────────────────
+                # When ARTIST knob is high (>65), the user wants artist-centric
+                # diversity. Pull artists from ArtistDirectory whose niche matches
+                # the current vibe's genre tags, and blend their discographies in.
+                # This is additive — Last.fm is still the primary source.
+                db_artist_pool: list[dict] = []
+                if request.artist_focus > 65 and ARTIST_NICHE_INDEX:
+                    # Map vibe → candidate niche strings in ArtistDirectory
+                    _VIBE_TO_DB_NICHE: dict[str, list[str]] = {
+                        "chill":         ["lastfm top rnb", "lastfm top alternative"],
+                        "focus":         ["lastfm top electronic", "lastfm top ambient"],
+                        "ambient":       ["lastfm top ambient", "lastfm top neo-classical"],
+                        "heartbreak":    ["lastfm top soul", "lastfm top rnb", "lastfm top alternative"],
+                        "hype":          ["lastfm top hip-hop", "lastfm top trap", "lastfm top rap"],
+                        "party":         ["lastfm top house", "lastfm top techno", "lastfm top dancehall"],
+                        "euphoric":      ["lastfm top house", "lastfm top techno"],
+                        "dark":          ["lastfm top industrial", "lastfm top shoegaze"],
+                        "intense":       ["lastfm top metalcore", "lastfm top deathcore", "lastfm top metal"],
+                        "rock":          ["lastfm top classic rock", "lastfm top indie rock", "lastfm top alternative"],
+                        "retro":         ["lastfm top classic rock", "lastfm top soul", "lastfm top jazz"],
+                        "indie_folk":    ["lastfm top folk", "lastfm top americana"],
+                        "dreamy":        ["lastfm top dream pop", "lastfm top shoegaze"],
+                        "punjabi":       ["lastfm top punjabi", "lastfm top bhangra"],
+                        "punjabi_soft":  ["lastfm top punjabi"],
+                        "bollywood_sad": ["lastfm top bollywood"],
+                        "desi":          ["lastfm top bollywood", "lastfm top punjabi"],
+                        "soulful":       ["lastfm top soul", "lastfm top rnb"],
+                        "romantic":      ["lastfm top soul", "lastfm top rnb"],
+                        "cinematic":     ["lastfm top film score", "lastfm top neo-classical"],
+                        "happy":         ["lastfm top pop", "lastfm top soul"],
+                    }
+                    target_niches = _VIBE_TO_DB_NICHE.get(_dominant_vibe, [])
+                    if target_niches:
+                        import random as _rand
+                        db_candidates: list[dict] = []
+                        for niche_key in target_niches:
+                            db_candidates.extend(ARTIST_NICHE_INDEX.get(niche_key, []))
+                        # Pick up to 3 random artists from DB pool to keep diversity
+                        sample_size = min(3, len(db_candidates))
+                        if sample_size:
+                            sampled = _rand.sample(db_candidates, sample_size)
+                            logger.info(
+                                f"[DB Supplement] artist_focus={request.artist_focus} → "
+                                f"sampling {sample_size} DB artists for vibe '{_dominant_vibe}': "
+                                f"{[a['name'] for a in sampled]}"
+                            )
+                            _db_fetch_results = await asyncio.gather(
+                                *[fetch_lastfm_artist_tracks(a["name"], limit=25) for a in sampled],
+                                return_exceptions=True,
+                            )
+                            for _r in _db_fetch_results:
+                                if isinstance(_r, list):
+                                    db_artist_pool.extend(_r)
+                            logger.info(f"[DB Supplement] Added {len(db_artist_pool)} tracks from DB artists.")
+
                 # ── MERGE + DEDUPLICATE ──────────────────────────────────────
-                merged_pool = genre_pool + _seed_pool + artist_pool
+                merged_pool = genre_pool + _seed_pool + artist_pool + db_artist_pool
                 seen: set[str] = set()
                 raw_pool: list[dict] = []
                 for t in merged_pool:
@@ -1475,7 +1700,8 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                         raw_pool.append(t)
                 logger.info(
                     f"Multi-tag pool: {len(raw_pool)} tracks "
-                    f"({len(genre_pool)} tags + {len(_seed_pool)} seed + {len(artist_pool)} artist)"
+                    f"({len(genre_pool)} tags + {len(_seed_pool)} seed + "
+                    f"{len(artist_pool)} artist + {len(db_artist_pool)} db)"
                 )
                 # ── HEARTBREAK POOL GUARD ──────────────────────────────────────────────────
                 # Heartbreak is the thinnest genre pool on Last.fm — "sad" tags return fewer
