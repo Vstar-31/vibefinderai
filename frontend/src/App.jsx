@@ -506,6 +506,46 @@ function GlobalStyles() {
         color: rgba(217,160,60,0.8);
         text-transform: uppercase;
       }
+
+      /* ── MOBILE RESPONSIVE ─────────────────────────────────── */
+      @media (max-width: 600px) {
+        /* Header */
+        .app-header { padding-bottom: 16px !important; margin-bottom: 20px !important; }
+        .app-header-osc { display: none !important; }
+        .app-logo-sub { display: none !important; }
+
+        /* Input panel */
+        .app-panel { padding: 16px !important; }
+        .app-knob-row { flex-direction: column !important; gap: 0 !important; }
+        .app-knob-strip { justify-content: space-around !important; width: 100% !important; }
+        .app-knob-label { display: none !important; }
+        .app-vumeter { display: none !important; }
+        .app-bottom-row { flex-direction: column !important; gap: 10px !important; align-items: stretch !important; }
+        .app-track-controls { justify-content: space-between !important; width: 100% !important; }
+        .app-run-btn { width: 100% !important; justify-content: center !important; }
+        .app-signal-row { display: none !important; }
+        .app-lang-row { flex-wrap: wrap !important; }
+
+        /* Result cards */
+        .app-result-grid { grid-template-columns: 1fr !important; }
+        .app-result-stat-grid { grid-template-columns: 1fr 1fr !important; }
+
+        /* Track rows */
+        .app-track-row { flex-wrap: wrap !important; gap: 8px !important; padding: 12px 14px !important; }
+        .app-track-meta { flex: 1 1 100% !important; order: -1 !important; }
+        .app-track-art { width: 36px !important; height: 36px !important; flex-shrink: 0 !important; }
+        .app-track-actions { width: 100% !important; justify-content: flex-end !important; gap: 5px !important; flex-wrap: wrap !important; }
+        .app-track-actions button,
+        .app-track-actions a { padding: 6px 10px !important; font-size: 9px !important; }
+
+        /* Pro mode overrides */
+        .app-overrides { flex-direction: column !important; }
+        .app-overrides input { width: 100% !important; box-sizing: border-box !important; }
+      }
+
+      @media (max-width: 380px) {
+        .app-track-actions .app-track-preview { display: none !important; }
+      }
     `}</style>
   );
 }
@@ -881,7 +921,7 @@ export default function App() {
         <div style={S.inner}>
 
           {/* ── HEADER ─── */}
-          <header style={S.header}>
+          <header className="app-header" style={S.header}>
             <div style={S.logoWrap}>
           <button
             onClick={() => setShowLanding(true)}
@@ -899,10 +939,10 @@ export default function App() {
             &#8592; Home
           </button>
               <div style={S.logoDisc}><div style={S.logoDiscInner} /></div>
-              <div><div style={S.logoText}>VibeFinder</div><div style={S.logoSub}>Acoustic Intelligence Engine</div></div>
+              <div><div style={S.logoText}>VibeFinder</div><div className="app-logo-sub" style={S.logoSub}>Acoustic Intelligence Engine</div></div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-              <Oscilloscope active={loading || !!playingTrack} />
+              <div className="app-header-osc"><Oscilloscope active={loading || !!playingTrack} /></div>
               <button onClick={token ? handleLogout : () => setShowAuthModal(true)} className="dial-btn" style={S.authBtn(!!token)}>{token ? <IconUnlock /> : <IconLock />}{token ? "Sign Out" : "Sign In"}</button>
             </div>
           </header>
@@ -913,22 +953,22 @@ export default function App() {
           )}
 
           {/* ── INPUT PANEL ─── */}
-          <div className="panel-card screws" style={{ padding: "28px", marginBottom: "24px" }}>
+          <div className="panel-card screws app-panel" style={{ padding: "28px", marginBottom: "24px" }}>
             <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(120,80,20,0.03) 7px, rgba(120,80,20,0.03) 8px)", pointerEvents: "none", borderRadius: "16px" }} />
             <div style={{ position: "relative" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
+              <div className="app-knob-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
-                  <div style={{ display: "flex", gap: "16px" }}>
+                  <div className="app-knob-strip" style={{ display: "flex", gap: "16px" }}>
                     <Knob label="Artist" value={knobs.artist} onChange={v => setKnobs(prev => ({...prev, artist: v}))} />
                     <Knob label="Nicheness" value={knobs.nicheness} onChange={v => setKnobs(prev => ({...prev, nicheness: v}))} />
                     <Knob label="BPM" value={knobs.bpm} onChange={v => setKnobs(prev => ({...prev, bpm: v}))} />
                   </div>
-                  <div style={{ marginLeft: "8px" }}>
+                  <div className="app-knob-label" style={{ marginLeft: "8px" }}>
                     <div style={{ fontSize: "15px", fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: "#e8d5a3", letterSpacing: "0.04em" }}>Describe the Vibe</div>
                     <div style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase" }}>// Acoustic descriptor input</div>
                   </div>
                 </div>
-                <VuMeter value={vuLevel} vibeColor={activeColor} />
+                <div className="app-vumeter"><VuMeter value={vuLevel} vibeColor={activeColor} /></div>
               </div>
 
               <div style={S.textareaWrap}>
@@ -962,7 +1002,7 @@ export default function App() {
                 {!token && <div style={S.lockOverlay}><button onClick={() => setShowAuthModal(true)} style={S.lockBtn}><IconLock /> Authentication Required</button></div>}
               </div>
               {/* Language Selector */}
-              <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <div className="app-lang-row" style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "9px", color: "rgba(200,160,90,0.6)", textTransform: "uppercase", letterSpacing: "0.15em" }}>Language</span>
                 <select
                   value={language}
@@ -997,7 +1037,7 @@ export default function App() {
                 </button>
 
                 {showOverrides && token && (
-                  <div className="animate-in" style={{ display: "flex", gap: "16px", flexWrap: "wrap", padding: "16px", background: "rgba(10,5,2,0.6)", border: "1px dashed rgba(180,140,80,0.25)", borderRadius: "8px" }}>
+                  <div className="animate-in app-overrides" style={{ display: "flex", gap: "16px", flexWrap: "wrap", padding: "16px", background: "rgba(10,5,2,0.6)", border: "1px dashed rgba(180,140,80,0.25)", borderRadius: "8px" }}>
                     <div style={{ flex: 1, minWidth: "160px" }}>
                        <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Artist Bypass</label>
                        <input type="text" value={overrideArtist} onChange={e => setOverrideArtist(e.target.value)} placeholder="e.g. Deftones" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
@@ -1017,8 +1057,8 @@ export default function App() {
                 )}
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "20px", flexWrap: "wrap", gap: "12px" }}>
-                <div style={S.signalRow}>
+              <div className="app-bottom-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "20px", flexWrap: "wrap", gap: "12px" }}>
+                <div className="app-signal-row" style={S.signalRow}>
                   <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
                     <div style={S.signalDot(!!token)} className={token ? "pulsing" : ""} />
                     <span style={S.signalLabel}>{token ? "Signal Active" : "No Signal"}</span>
@@ -1027,7 +1067,7 @@ export default function App() {
                 </div>
                 
                 {/* TRACK COUNT & RUN BUTTON CONTROLS */}
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div className="app-track-controls" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                   
                   {/* ENGINE KILL SWITCH */}
                   {result && (
@@ -1068,7 +1108,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button onClick={() => analyzeVibe()} disabled={!token || loading || !prompt.trim()} className="dial-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
+                  <button onClick={() => analyzeVibe()} disabled={!token || loading || !prompt.trim()} className="dial-btn app-run-btn" style={S.runBtn(!token || loading || !prompt.trim())}>
                     {loading && token ? <><div style={{ width: "14px", height: "14px", border: "2px solid rgba(251,191,36,0.3)", borderTopColor: "#fbbf24", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Analyzing…</> : <><IconPlay /> Run Analysis</>}
                   </button>
                 </div>
@@ -1103,7 +1143,7 @@ export default function App() {
                 <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}66, transparent)` }} />
               </div>
 
-              <div style={S.grid}>
+              <div className="app-result-grid" style={S.grid}>
                 <div className="panel-card" style={S.resultCard}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}><IconWave /><span style={S.cardLabel}>Dominant Vibe</span></div>
                   <div style={{ ...S.cardValue, color: activeColor }}>
@@ -1310,27 +1350,27 @@ export default function App() {
                       {result.tracks.map((track, i) => {
                         const isPlaying = playingTrack === track.preview_url;
                         return (
-                          <div key={i} style={{
+                          <div key={i} className="app-track-row" style={{
                             display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "14px",
                             padding: "14px 18px", background: "rgba(8,5,2,0.6)",
                             border: `1px solid ${isPlaying ? activeColor : 'rgba(120,80,20,0.25)'}`, 
                             borderRadius: "10px", transition: "all 0.2s"
                           }}>
                             {/* Track Info & Cover Art */}
-                            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                            <div className="app-track-meta" style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                               {track.cover_art ? (
-                                <img src={track.cover_art} alt="Cover" style={{ width: 44, height: 44, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }} />
+                                <img src={track.cover_art} alt="Cover" className="app-track-art" style={{ width: 44, height: 44, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.5)', flexShrink: 0 }} />
                               ) : (
-                                <div style={{ width: 44, height: 44, borderRadius: 6, background: 'rgba(120,80,20,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconDisc /></div>
+                                <div className="app-track-art" style={{ width: 44, height: 44, borderRadius: 6, background: 'rgba(120,80,20,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IconDisc /></div>
                               )}
-                              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                <span style={{ fontSize: "15px", fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif" }}>{track.title}</span>
-                                <span style={{ fontSize: "11px", color: "rgba(180,140,80,0.7)", letterSpacing: "0.05em" }}>{track.artist}</span>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
+                                <span style={{ fontSize: "15px", fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.title}</span>
+                                <span style={{ fontSize: "11px", color: "rgba(180,140,80,0.7)", letterSpacing: "0.05em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.artist}</span>
                               </div>
                             </div>
                             
                             {/* Track Actions */}
-                            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                            <div className="app-track-actions" style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
 
                               {/* Feedback buttons — shown after result loads */}
                               {(() => {
@@ -1377,7 +1417,7 @@ export default function App() {
                               <button 
                                 onClick={() => togglePlay(track.preview_url)}
                                 disabled={!track.preview_url}
-                                className="dial-btn"
+                                className="dial-btn app-track-preview"
                                 style={{ 
                                   ...S.authBtn(false), 
                                   padding: "8px 14px", 
