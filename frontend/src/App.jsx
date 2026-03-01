@@ -510,6 +510,54 @@ function GlobalStyles() {
   );
 }
 
+/* ─── COPY PLAYLIST BUTTON ───────────────────────────────────── */
+function CopyPlaylistButton({ tracks, activeColor }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const text = tracks.map((t, i) => `${i + 1}. ${t.title} — ${t.artist}`).join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      // Fallback for browsers that block clipboard
+      const el = document.createElement("textarea");
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="dial-btn"
+      title="Copy track list to clipboard"
+      style={{
+        display: "flex", alignItems: "center", gap: "5px",
+        padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
+        fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+        textTransform: "uppercase", cursor: "pointer",
+        background: copied ? "rgba(52,211,153,0.12)" : "rgba(120,80,20,0.15)",
+        border: `1px solid ${copied ? "rgba(52,211,153,0.4)" : "rgba(160,110,30,0.35)"}`,
+        color: copied ? "#34d399" : "rgba(180,140,80,0.7)",
+        transition: "all 0.2s",
+      }}
+    >
+      {copied ? (
+        <><span>✓</span> Copied!</>
+      ) : (
+        <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy</>
+      )}
+    </button>
+  );
+}
+
+
 /* ═══════════════════════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════════════════════ */
@@ -530,6 +578,8 @@ export default function App() {
   const [authForm, setAuthForm]       = useState({ email: "", username: "", password: "" });
   const [vuLevel, setVuLevel]         = useState(0);
   const [isSkeletonLoading, setIsSkeletonLoading] = useState(false);
+  // Tracks what triggered the current load — "pivot", "genre", "main" — for targeted UI states
+  const [loadReason, setLoadReason] = useState(null);
   
   const [knobs, setKnobs]             = useState({ artist: 50, nicheness: 50, bpm: 50 });
   const [trackLimit, setTrackLimit]   = useState(5);
@@ -640,6 +690,10 @@ export default function App() {
     if (!prompt.trim()) return;
     try {
       setLoading(true); setError(""); setIsSkeletonLoading(true);
+      // Tag what kind of load this is for targeted UI messaging
+      if (config.targetSecondary !== undefined) setLoadReason("pivot");
+      else if (config.targetGenre !== undefined) setLoadReason("genre");
+      else setLoadReason("main");
       
       let finalSecondary = useSecondaryVibe;
       let finalGenre = overrideGenre;
@@ -696,7 +750,7 @@ export default function App() {
       setIsSkeletonLoading(false);
       setTimeout(() => { document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }); }, 150);
     } catch (err) { setError(err.message); setIsSkeletonLoading(false); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setLoadReason(null); }
   };
 
   // FULL ENGINE KILL SWITCH
@@ -1077,10 +1131,18 @@ export default function App() {
                       </span>
                       <button 
                         onClick={() => analyzeVibe({ isFilterClick: true, targetSecondary: !useSecondaryVibe })}
+                        disabled={loading}
                         className="dial-btn"
-                        style={{ background: "rgba(20,10,5,0.6)", border: `1px dashed ${vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe]}66`, padding: "6px 12px", borderRadius: "6px", color: vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe] || "#e8d5a3", fontSize: "11px", fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "6px", width: "100%", justifyContent: "center" }}
+                        style={{ background: "rgba(20,10,5,0.6)", border: `1px dashed ${vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe]}66`, padding: "6px 12px", borderRadius: "6px", color: vibeColors[useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe] || "#e8d5a3", fontSize: "11px", fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "6px", width: "100%", justifyContent: "center", opacity: loading ? 0.7 : 1 }}
                       >
-                        {loading ? "Pivoting vibe…" : <>Pivot Engine to: <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "13px", fontStyle: "italic" }}>{useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe}</span></>}
+                        {loading && loadReason === "pivot" ? (
+                          <>
+                            <div style={{ width: "10px", height: "10px", border: "1.5px solid rgba(251,191,36,0.3)", borderTopColor: "#fbbf24", borderRadius: "50%", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+                            Pivoting to <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "13px", fontStyle: "italic", marginLeft: "4px" }}>{useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe}</span>…
+                          </>
+                        ) : (
+                          <>Pivot Engine to: <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "13px", fontStyle: "italic" }}>{useSecondaryVibe ? result.dominant_vibe : result.secondary_vibe}</span></>
+                        )}
                       </button>
                     </div>
                   )}
@@ -1107,35 +1169,44 @@ export default function App() {
                         {result.genres.map((g, idx) => {
                             if (result.dominant_vibe === 'Direct Search') return null;
                             const isSelected = overrideGenre.toLowerCase() === g.toLowerCase();
+                            const isApplying = loading && loadReason === "genre" && isSelected;
                             return (
                                 <button
                                     key={idx}
                                     onClick={() => {
-                                      // Re-run with genre filter. Does NOT write to overrideGenre state
-                                      // (which lives in the Pro Mode panel) — keeps them decoupled.
                                       analyzeVibe({ isFilterClick: true, targetGenre: isSelected ? "" : g });
                                     }}
+                                    disabled={loading}
                                     className="freq-tag dial-btn"
                                     title={isSelected ? "Click to remove filter — will re-run" : `Re-run filtered strictly by ${g}`}
                                     style={{
                                         color: isSelected ? "#1a0e04" : "rgba(180,140,80,0.7)",
                                         borderColor: isSelected ? "#d97706" : "rgba(180,140,80,0.3)",
                                         background: isSelected ? "#d97706" : "transparent",
-                                        cursor: "pointer",
+                                        cursor: loading ? "default" : "pointer",
                                         boxShadow: isSelected ? "0 0 10px rgba(217,119,6,0.5)" : "none",
                                         transition: "all 0.2s ease",
-                                        position: "relative",
+                                        display: "flex", alignItems: "center", gap: "5px",
+                                        opacity: loading && !isApplying ? 0.5 : 1,
                                     }}
                                 >
+                                    {isApplying && (
+                                      <div style={{ width: "8px", height: "8px", border: "1.5px solid rgba(26,14,4,0.4)", borderTopColor: "#1a0e04", borderRadius: "50%", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+                                    )}
                                     {isSelected ? `✓ ${g}` : g}
                                 </button>
                             );
                         })}
                     </div>
                     {/* Nudge label so users know clicking a genre tag re-runs analysis */}
-                    {result.genres.length > 0 && result.dominant_vibe !== 'Direct Search' && (
+                    {result.genres.length > 0 && result.dominant_vibe !== 'Direct Search' && !loading && (
                       <span style={{ fontSize: "8px", color: "rgba(180,140,80,0.3)", letterSpacing: "0.08em", marginTop: "2px" }}>
                         ↑ click any genre to re-run with that filter
+                      </span>
+                    )}
+                    {loading && loadReason === "genre" && (
+                      <span style={{ fontSize: "8px", color: "rgba(217,160,60,0.6)", letterSpacing: "0.08em", marginTop: "2px" }}>
+                        Re-fetching with genre filter…
                       </span>
                     )}
                   </div>
@@ -1152,7 +1223,33 @@ export default function App() {
                         <IconDisc />
                         <span style={S.cardLabel}>Generated Playlist</span>
                       </div>
-                      <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>{result.tracks.length} TRACKS</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>{result.tracks.length} TRACKS</span>
+                        {/* Copy playlist to clipboard */}
+                        <CopyPlaylistButton tracks={result.tracks} activeColor={activeColor} />
+                        {/* Open first track in Spotify search — reasonable "export" without OAuth */}
+                        <a
+                          href={`https://open.spotify.com/search/${encodeURIComponent(
+                            result.tracks.slice(0, 1).map(t => `${t.title} ${t.artist}`).join(" ")
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Search this playlist on Spotify"
+                          className="dial-btn"
+                          style={{
+                            display: "flex", alignItems: "center", gap: "5px",
+                            padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
+                            fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+                            textDecoration: "none", textTransform: "uppercase",
+                            background: "rgba(29,185,84,0.12)",
+                            border: "1px solid rgba(29,185,84,0.35)",
+                            color: "#1db954",
+                          }}
+                        >
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+                          Spotify
+                        </a>
+                      </div>
                     </div>
                     {/* Feedback micro-toast */}
                     {feedbackToast && (

@@ -367,6 +367,13 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
         "Kannada":    ["kannada lofi"],
         "Malayalam":  ["malayalam lofi"],
         "Any":        ["chill", "lofi", "chillhop"],
+        # ── Lofi-specific mood variant ───────────────────────────────────────
+        # When user explicitly says "lofi beats", "lofi hip hop" etc., secondary
+        # vibe tends to be focus. We pivot tags to the precise lofi hip hop pool
+        # rather than generic chill, which returns R&B/neo-soul instead.
+        "Any__focus":    ["lofi hip hop", "chillhop", "jazz hop", "study beats"],
+        "Any__dreamy":   ["lofi hip hop", "chillhop", "lofi"],
+        "English__focus": ["lofi hip hop", "chillhop", "nujabes", "j dilla"],
     },
     "focus": {
         "Hindi":      ["hindi instrumental", "ar rahman instrumental", "indian classical"],
