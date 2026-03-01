@@ -339,7 +339,7 @@ async def cache_track_features(
 
 async def enrich_from_artist_songs(db: Prisma, client: httpx.AsyncClient) -> None:
     """
-    Enrich tracks extracted from ArtistDirectory.songs fields.
+    Enrich tracks extracted from ArtistDirectory.songs fields AND the tadbTop10 data.
     """
     artists = await db.artistdirectory.find_many()
     
@@ -350,10 +350,28 @@ async def enrich_from_artist_songs(db: Prisma, client: httpx.AsyncClient) -> Non
 
     tasks = []
     for artist in artists:
-        if not artist.songs:
-            continue
-        songs = [s.strip() for s in artist.songs.split(",") if s.strip()]
-        for song in songs:
+        songs = []
+        
+        # 1. Grab hardcoded songs if they exist
+        if artist.songs:
+            songs.extend([s.strip() for s in artist.songs.split(",") if s.strip()])
+            
+        # 2. Grab the Top 10 tracks scraped by TheAudioDB (this is where the real volume is!)
+        if hasattr(artist, 'tadbTop10') and artist.tadbTop10 and artist.tadbTop10 not in ("[]", '[{"status": "empty"}]'):
+            try:
+                top_tracks = json.loads(artist.tadbTop10)
+                for t in top_tracks:
+                    if isinstance(t, dict) and t.get("title"):
+                        songs.append(t["title"].strip())
+            except Exception as e:
+                log.debug(f"Failed to parse tadbTop10 for {artist.name}: {e}")
+
+        # Deduplicate tracks so we don't process the same one twice for an artist
+        unique_songs = list(set(songs))
+        
+        for song in unique_songs:
+            if not song: 
+                continue
             if f"{song.lower()}|{artist.name.lower()}" not in existing_set:
                 tasks.append((song, artist.name))
 
