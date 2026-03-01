@@ -820,8 +820,8 @@ export default function App() {
             </div>
           </header>
 
-          {/* ── ERROR ─── */}
-          {error && !showAuthModal && (
+          {/* ── ERROR ─── Only show when no valid result is present (prevents stale banner) */}
+          {error && !showAuthModal && !result && (
             <div style={S.errorBox} className="animate-in"><div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", flexShrink: 0, animation: "pulse-glow 1.2s infinite" }} />{error}</div>
           )}
 

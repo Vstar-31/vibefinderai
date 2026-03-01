@@ -592,6 +592,18 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
         "Punjabi":    ["bhangra", "punjabi pop", "desi club", "diljit dosanjh"],
         "Hindi":      ["bhangra", "punjabi pop"],
         "Any":        ["bhangra", "punjabi"],
+        # ── Mood-variant overrides ───────────────────────────────────────────
+        # When secondary vibe is chill/dark/dreamy/calm (e.g. "late night punjabi",
+        # "chill punjabi", "soft punjabi night"), we pivot to soft/late-night tags
+        # instead of party bhangra. Keyed as "Any__<secondary_vibe>".
+        "Any__chill":       ["punjabi sad songs", "ap dhillon", "punjabi lofi", "punjabi chill"],
+        "Any__dark":        ["punjabi sad songs", "punjabi ballad", "punjabi dark", "dard"],
+        "Any__calm":        ["punjabi sad songs", "punjabi romantic", "punjabi ballad"],
+        "Any__dreamy":      ["ap dhillon", "punjabi lofi", "punjabi soft", "punjabi romantic"],
+        "Any__heartbreak":  ["punjabi sad songs", "b praak", "punjabi ballad", "dard"],
+        "Any__romantic":    ["punjabi romantic", "ap dhillon", "punjabi love songs"],
+        "Any__soulful":     ["punjabi sufi", "satinder sartaaj", "punjabi classical"],
+        "Any__ambient":     ["punjabi lofi", "punjabi acoustic", "sufi punjabi"],
     },
     "punjabi_soft": {
         # FIX: Old tags ("b praak", "ap dhillon") are ARTIST names, not Last.fm tags.
@@ -635,9 +647,31 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
 }
 
 
-def get_vibe_tags(dominant_vibe: str, language: str, fallback_tag: str) -> list[str]:
+def get_vibe_tags(dominant_vibe: str, language: str, fallback_tag: str, secondary_vibe: str | None = None) -> list[str]:
+    """
+    Return the ordered list of Last.fm tags for a vibe×language combo.
+    
+    When secondary_vibe is present (e.g. dominant=punjabi, secondary=chill),
+    we first check for a mood-variant key like "Any__chill" in the vibe map.
+    This prevents "late night punjabi" from pulling party bhangra tags when
+    the secondary signal is clearly chill/dark/soft.
+    """
     vibe_map = VIBE_TAG_MATRIX.get(dominant_vibe, {})
-    tags = vibe_map.get(language) or vibe_map.get("Any") or [fallback_tag]
+    
+    tags = None
+    
+    # 1. Try exact language + secondary mood variant (e.g. "Punjabi__chill")
+    if secondary_vibe:
+        mood_key_lang = f"{language}__{secondary_vibe}"
+        mood_key_any  = f"Any__{secondary_vibe}"
+        tags = vibe_map.get(mood_key_lang) or vibe_map.get(mood_key_any)
+        if tags:
+            logger.info(f"[TagMatrix] Mood variant hit: {dominant_vibe}×{language} + secondary={secondary_vibe} → {tags}")
+    
+    # 2. Fall back to normal language lookup
+    if not tags:
+        tags = vibe_map.get(language) or vibe_map.get("Any") or [fallback_tag]
+    
     seen: set[str] = set()
     result: list[str] = []
     for t in tags:
@@ -1388,7 +1422,8 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             genre_pool = await fetch_lastfm_track_search(request.text, limit=150)
         else:
                 # ── MULTI-TAG PARALLEL FETCH v6.0 ───────────────────────────
-                _vibe_tags = get_vibe_tags(active_vibe_for_tags, _lang, target_genre)
+                _secondary_vibe_hint = vibe_data.get("secondary_vibe") if not request.use_secondary_vibe else None
+                _vibe_tags = get_vibe_tags(active_vibe_for_tags, _lang, target_genre, secondary_vibe=_secondary_vibe_hint)
                 logger.info(f"Multi-tag fetch: lang={_lang} vibe={active_vibe_for_tags} tags={_vibe_tags}")
 
                 _per_tag_limit = max(60, 200 // len(_vibe_tags))
