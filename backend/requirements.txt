@@ -15,3 +15,6 @@ bcrypt==3.2.2
 passlib[bcrypt]>=1.7.4
 #Form Data Parsing (Required for OAuth2 Login)
 python-multipart>=0.0.9
+
+aiohttp
+slowapi
