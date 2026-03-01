@@ -198,13 +198,38 @@ async def ab_get_mood_features(
 
         hl = data.get("highlevel", {})
 
-        def mood_prob(key: str) -> Optional[float]:
-            block = hl.get(key, {})
-            all_vals = block.get("all", {})
-            for k, v in all_vals.items():
-                if "not_" not in k and "_not" not in k:
-                    return _safe_float(v)
-            return None
+        def class_prob(category: str, target_class: str) -> Optional[float]:
+            """Extract probability for a specific class from an AB classifier."""
+            try:
+                val = hl.get(category, {}).get("all", {}).get(target_class)
+                return _safe_float(val)
+            except Exception:
+                return None
+
+        # 1. Extract explicit moods
+        mood_happy      = class_prob("mood_happy", "happy")
+        mood_sad        = class_prob("mood_sad", "sad")
+        mood_relaxed    = class_prob("mood_relaxed", "relaxed")
+        mood_aggressive = class_prob("mood_aggressive", "aggressive")
+        mood_party      = class_prob("mood_party", "party")
+        mood_acoustic   = class_prob("mood_acoustic", "acoustic")
+        mood_electronic = class_prob("mood_electronic", "electronic")
+
+        # 2. PROXY MAPPING: Fill in Spotify-equivalent features using AB's models!
+        danceability     = class_prob("danceability", "danceable")
+        instrumentalness = class_prob("voice_instrumental", "instrumental")
+        
+        # Acousticness is literally just mood_acoustic
+        acousticness = mood_acoustic
+        
+        # Valence is musical positiveness, so mood_happy is a near-perfect proxy
+        valence = mood_happy
+        
+        # Energy proxy: If it's NOT relaxed, it's energetic.
+        # 1.0 - relaxed is a highly reliable proxy for energy in AcousticBrainz
+        energy = None
+        if mood_relaxed is not None:
+            energy = round(1.0 - mood_relaxed, 4)
 
         bpm = None
         try:
@@ -216,22 +241,26 @@ async def ab_get_mood_features(
             )
             if r2.status_code == 200:
                 ll = r2.json()
-                bpm = _safe_float(
-                    ll.get("rhythm", {}).get("bpm")
-                )
+                bpm = _safe_float(ll.get("rhythm", {}).get("bpm"))
         except Exception:
             pass
 
         return {
-            "tempo":          bpm,
-            "moodHappy":      mood_prob("mood_happy"),
-            "moodSad":        mood_prob("mood_sad"),
-            "moodRelaxed":    mood_prob("mood_relaxed"),
-            "moodAggressive": mood_prob("mood_aggressive"),
-            "moodParty":      mood_prob("mood_party"),
-            "moodAcoustic":   mood_prob("mood_acoustic"),
-            "moodElectronic": mood_prob("mood_electronic"),
-            "featureSource":  "acousticbrainz",
+            "tempo":            bpm,
+            "energy":           energy,            # 🔥 Mapped!
+            "valence":          valence,           # 🔥 Mapped!
+            "danceability":     danceability,      # 🔥 Mapped!
+            "acousticness":     acousticness,      # 🔥 Mapped!
+            "instrumentalness": instrumentalness,  # 🔥 Mapped!
+            # We omit loudness/speechiness as AB doesn't map these easily without deep spectral parsing.
+            "moodHappy":        mood_happy,
+            "moodSad":          mood_sad,
+            "moodRelaxed":      mood_relaxed,
+            "moodAggressive":   mood_aggressive,
+            "moodParty":        mood_party,
+            "moodAcoustic":     mood_acoustic,
+            "moodElectronic":   mood_electronic,
+            "featureSource":    "acousticbrainz",
         }
     except Exception as e:
         log.debug(f"[AB] mood features failed for mbid {mbid}: {e}")
