@@ -1,7 +1,7 @@
 """
 enrich_tracks.py
 ────────────────
-VibeFinderAI — Offline Track Feature Cache Builder
+VibeFinderAI — Offline Track Feature Cache Builder (CRAZY FAST EDITION 🚀)
 
 PURPOSE
 -------
@@ -53,7 +53,7 @@ import logging
 import os
 import re
 import time
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import httpx
 from dotenv import load_dotenv
@@ -69,12 +69,67 @@ MB_BASE           = "https://musicbrainz.org/ws/2"
 MB_USER_AGENT     = "VibeFinderAI/8.0 (https://github.com/yourusername/vibefinder; your@email.com)"
 
 RECCOBEATS_KEY    = os.getenv("RECCOBEATS_KEY", "")
-RB_RATE_LIMIT     = 0.6   # conservative — adjust based on actual tier
-AB_RATE_LIMIT     = 1.1   # AcousticBrainz: 10 req / 10s
-MB_RATE_LIMIT     = 1.1   # MusicBrainz: 1 req/s
+
+# Turbo limits. Override in .env if you need to go faster/slower
+RB_RATE_LIMIT     = float(os.getenv("RB_RATE_LIMIT", "0.1"))   # 10 req/s
+AB_RATE_LIMIT     = float(os.getenv("AB_RATE_LIMIT", "0.3"))   # ~3.3 req/s
+MB_RATE_LIMIT     = float(os.getenv("MB_RATE_LIMIT", "1.0"))   # 1 req/s (Strict - MetaBrainz will ban you if lower)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("VibeFinderAI.EnrichTracks")
+
+# Silence httpx so it doesn't spam our console
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# ─── RATE LIMITERS ───────────────────────────────────────────────────────────
+
+class RateLimiter:
+    """Guarantees strictly enforced delays between API calls across all concurrent workers."""
+    def __init__(self, rate: float):
+        self.rate = rate
+        self.last_check = 0.0
+        self.lock = asyncio.Lock()
+
+    async def acquire(self):
+        async with self.lock:
+            now = time.monotonic()
+            elapsed = now - self.last_check
+            if elapsed < self.rate:
+                await asyncio.sleep(self.rate - elapsed)
+                self.last_check = time.monotonic()
+            else:
+                self.last_check = now
+
+RB_LIMITER = RateLimiter(RB_RATE_LIMIT)
+AB_LIMITER = RateLimiter(AB_RATE_LIMIT)
+MB_LIMITER = RateLimiter(MB_RATE_LIMIT)
+
+# ─── IN-MEMORY CACHE ─────────────────────────────────────────────────────────
+
+# Prevents 100 concurrent workers from hitting MusicBrainz for the exact same track simultaneously
+MBID_MEMORY_CACHE: Dict[str, Any] = {}
+
+async def memoized_mbid_lookup(client: httpx.AsyncClient, title: str, artist: str) -> Optional[str]:
+    """Smart cache: Returns existing ID or hitches a ride on an already-running API request task."""
+    if not title or not artist:
+        return None
+        
+    key = f"{title.lower().strip()}|{artist.lower().strip()}"
+    
+    if key in MBID_MEMORY_CACHE:
+        val = MBID_MEMORY_CACHE[key]
+        if isinstance(val, asyncio.Task):
+            # Bro, another worker is already fetching this! Let's just wait for their answer.
+            return await val
+        return val
+
+    # Create a task and store it so other workers can await it instead of spamming the API
+    task = asyncio.create_task(mb_recording_to_mbid(client, title, artist))
+    MBID_MEMORY_CACHE[key] = task
+    
+    mbid = await task
+    MBID_MEMORY_CACHE[key] = mbid # Replace task with actual string result
+    return mbid
 
 
 # ─── RECCOBEATS ──────────────────────────────────────────────────────────────
@@ -86,16 +141,13 @@ async def rb_get_features(
     """
     Fetch audio features from ReccoBeats for a Spotify track ID.
     Returns normalised feature dict or None.
-
-    ReccoBeats mirrors Spotify's audio features endpoint structure,
-    making it a near drop-in replacement.
     """
+    await RB_LIMITER.acquire()
     try:
         headers = {}
         if RECCOBEATS_KEY:
             headers["Authorization"] = f"Bearer {RECCOBEATS_KEY}"
 
-        # ReccoBeats track features endpoint
         r = await client.get(
             f"{RECCOBEATS_BASE}/track/{spotify_id}/audio-features",
             headers=headers,
@@ -131,41 +183,32 @@ async def ab_get_mood_features(
     """
     Fetch mood + audio features from AcousticBrainz for a MusicBrainz Recording ID.
     Returns normalised feature dict or None.
-
-    AcousticBrainz stores two 'levels' of analysis:
-      - low-level: BPM, loudness, spectral features
-      - high-level: mood probabilities (happy, sad, aggressive etc.)
-    We fetch high-level (more useful for vibe routing).
-
-    Note: AcousticBrainz is FROZEN — no data for tracks added after ~2022.
-    For recent tracks, fall back to ReccoBeats or estimated values.
     """
     try:
+        await AB_LIMITER.acquire()
         r = await client.get(
             f"{ACOUSTICBRAINZ_BASE}/{mbid}/high-level",
             headers={"User-Agent": MB_USER_AGENT},
             timeout=10,
         )
         if r.status_code == 404:
-            return None  # Track not in AB — normal for post-2022 tracks
+            return None  
         r.raise_for_status()
         data = r.json()
 
         hl = data.get("highlevel", {})
 
         def mood_prob(key: str) -> Optional[float]:
-            """Extract probability for the 'true' class from an AB classifier."""
             block = hl.get(key, {})
             all_vals = block.get("all", {})
-            # AB uses class names like "happy", "not_happy" — get positive class
             for k, v in all_vals.items():
                 if "not_" not in k and "_not" not in k:
                     return _safe_float(v)
             return None
 
-        # Also try to get BPM from low-level if we need to supplement ReccoBeats
         bpm = None
         try:
+            await AB_LIMITER.acquire()
             r2 = await client.get(
                 f"{ACOUSTICBRAINZ_BASE}/{mbid}/low-level",
                 headers={"User-Agent": MB_USER_AGENT},
@@ -202,8 +245,8 @@ async def mb_recording_to_mbid(
 ) -> Optional[str]:
     """
     Look up a MusicBrainz Recording ID (MBID) by title + artist.
-    Used to bridge Spotify tracks → AcousticBrainz when no MBID is stored.
     """
+    await MB_LIMITER.acquire()
     try:
         query = f'recording:"{title}" AND artist:"{artist}"'
         r = await client.get(
@@ -263,49 +306,78 @@ async def cache_track_features(
         log.error(f"Cache write failed for '{title}' by '{artist}': {e}")
 
 
-# ─── ENRICHMENT SOURCES ──────────────────────────────────────────────────────
+# ─── ENRICHMENT SOURCES (CONCURRENT EDITION) ─────────────────────────────────
 
 async def enrich_from_artist_songs(db: Prisma, client: httpx.AsyncClient) -> None:
     """
     Enrich tracks extracted from ArtistDirectory.songs fields.
-    The songs field stores comma-sep track names — we search MB for MBIDs
-    then try ReccoBeats + AcousticBrainz.
-    This is the quickest way to pre-warm the cache with ~10k known tracks.
     """
     artists = await db.artistdirectory.find_many()
-    log.info(f"Processing songs from {len(artists)} artists...")
+    
+    log.info(f"Loaded {len(artists)} artists. Fetching existing cache keys...")
+    existing_records = await db.trackfeaturecache.find_many()
+    existing_set = {f"{r.title.lower()}|{r.artist.lower()}" for r in existing_records if r.title and r.artist}
+    log.info(f"Loaded {len(existing_set)} existing tracks from DB cache.")
 
-    total_tracks = 0
-    for i, artist in enumerate(artists, 1):
+    tasks = []
+    for artist in artists:
         if not artist.songs:
             continue
-
         songs = [s.strip() for s in artist.songs.split(",") if s.strip()]
-        log.info(f"[{i}/{len(artists)}] {artist.name} — {len(songs)} songs")
+        for song in songs:
+            if f"{song.lower()}|{artist.name.lower()}" not in existing_set:
+                tasks.append((song, artist.name))
 
-        for song_title in songs:
-            # Try ReccoBeats first (needs Spotify ID — skip if not resolvable)
-            # For now, do MB lookup to get MBID for AcousticBrainz
-            mbid = await mb_recording_to_mbid(client, song_title, artist.name)
-            await asyncio.sleep(MB_RATE_LIMIT)
+    total_songs = len(tasks)
+    if total_songs == 0:
+        log.info("All artist songs are already cached! We're good bro. 🚀")
+        return
 
-            features = {}
+    log.info(f"Processing {total_songs} uncached songs concurrently (SUPER FAST)...")
 
-            if mbid:
-                ab_features = await ab_get_mood_features(client, mbid)
-                await asyncio.sleep(AB_RATE_LIMIT)
-                if ab_features:
-                    features.update({k: v for k, v in ab_features.items() if v is not None})
+    sem = asyncio.Semaphore(100) # 🔥 Cranked up to 100
+    completed = 0
+    total_cached = 0
+    t_start = time.time()
 
-            if features:
-                await cache_track_features(
-                    db, spotify_id=None, mbid=mbid,
-                    title=song_title, artist=artist.name,
-                    features=features,
-                )
-                total_tracks += 1
+    async def process_song(song_title, artist_name):
+        nonlocal completed, total_cached
+        async with sem:
+            try:
+                mbid = await memoized_mbid_lookup(client, song_title, artist_name)
+                features = {}
+                
+                if mbid:
+                    ab_features = await ab_get_mood_features(client, mbid)
+                    if ab_features:
+                        features.update({k: v for k, v in ab_features.items() if v is not None})
 
-    log.info(f"✅ Cached features for {total_tracks} tracks from artist songs")
+                if features:
+                    await cache_track_features(
+                        db, spotify_id=None, mbid=mbid,
+                        title=song_title, artist=artist_name,
+                        features=features,
+                    )
+                    total_cached += 1
+            except Exception as e:
+                log.error(f"Failed processing '{song_title}' by '{artist_name}': {e}")
+            finally:
+                completed += 1
+                if completed % 50 == 0:
+                    elapsed = time.time() - t_start
+                    remaining = (total_songs - completed) * (elapsed / completed)
+                    log.info(
+                        f"  📊 Progress: {completed}/{total_songs} "
+                        f"({elapsed/60:.1f}m elapsed, ~{remaining/60:.1f}m left)"
+                    )
+
+    # Fire off concurrently in chunks so we don't overwhelm the loop
+    chunk_size = 5000
+    for i in range(0, len(tasks), chunk_size):
+        chunk = tasks[i:i+chunk_size]
+        await asyncio.gather(*[process_song(t, a) for t, a in chunk])
+
+    log.info(f"✅ Cached features for {total_cached} new tracks from artist songs")
 
 
 async def enrich_from_spotify_ids(
@@ -314,107 +386,157 @@ async def enrich_from_spotify_ids(
     id_file: str,
 ) -> None:
     """
-    Enrich a list of Spotify IDs from a file (one per line).
-    Format: spotify_id[,title,artist]  (title+artist optional for AB lookup)
+    Enrich a list of Spotify IDs from a file.
     """
     with open(id_file) as f:
         lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
-    log.info(f"Processing {len(lines)} Spotify IDs from {id_file}")
+    log.info(f"Loaded {len(lines)} IDs. Fetching existing cache keys...")
+    existing_records = await db.trackfeaturecache.find_many(where={"spotifyId": {"not": None}})
+    existing_set = {r.spotifyId for r in existing_records if r.spotifyId}
 
-    for i, line in enumerate(lines, 1):
+    tasks = []
+    for line in lines:
         parts = [p.strip() for p in line.split(",", 2)]
-        spotify_id = parts[0]
-        title  = parts[1] if len(parts) > 1 else ""
-        artist = parts[2] if len(parts) > 2 else ""
+        if parts[0] not in existing_set:
+            tasks.append(parts)
 
-        log.info(f"[{i}/{len(lines)}] {spotify_id}")
+    total_tasks = len(tasks)
+    if total_tasks == 0:
+        log.info("All Spotify IDs are already cached! 🚀")
+        return
 
-        # Check if already cached
-        existing = await db.trackfeaturecache.find_unique(
-            where={"spotifyId": spotify_id}
-        )
-        if existing and existing.energy is not None:
-            log.debug(f"  Already cached — skipping")
-            continue
+    log.info(f"Processing {total_tasks} uncached Spotify IDs concurrently (SUPER FAST)...")
 
-        features = {}
+    sem = asyncio.Semaphore(100) # 🔥 Cranked up to 100
+    completed = 0
+    t_start = time.time()
 
-        # Try ReccoBeats
-        rb = await rb_get_features(client, spotify_id)
-        await asyncio.sleep(RB_RATE_LIMIT)
-        if rb:
-            features.update({k: v for k, v in rb.items() if v is not None})
-            log.info(f"  ✅ RB: tempo={rb.get('tempo')}, energy={rb.get('energy'):.2f}")
+    async def process_line(parts):
+        nonlocal completed
+        async with sem:
+            try:
+                spotify_id = parts[0]
+                title  = parts[1] if len(parts) > 1 else ""
+                artist = parts[2] if len(parts) > 2 else ""
 
-        # If we have title+artist, try AcousticBrainz for mood scores
-        if title and artist:
-            mbid = await mb_recording_to_mbid(client, title, artist)
-            await asyncio.sleep(MB_RATE_LIMIT)
+                features = {}
 
-            if mbid:
-                ab = await ab_get_mood_features(client, mbid)
-                await asyncio.sleep(AB_RATE_LIMIT)
-                if ab:
-                    # Merge — prefer ReccoBeats for audio features, AB for mood
-                    for k, v in ab.items():
-                        if v is not None and k not in features:
-                            features[k] = v
-                    log.info(f"  ✅ AB: happy={ab.get('moodHappy')}, sad={ab.get('moodSad')}")
+                # 🔥 Blast both APIs concurrently
+                rb_task = asyncio.create_task(rb_get_features(client, spotify_id))
+                mb_task = None
+                if title and artist:
+                    mb_task = asyncio.create_task(memoized_mbid_lookup(client, title, artist))
 
-        if features:
-            await cache_track_features(
-                db, spotify_id=spotify_id, mbid=None,
-                title=title, artist=artist, features=features,
-            )
+                # Wait for RB to finish
+                rb = await rb_task
+                if rb:
+                    features.update({k: v for k, v in rb.items() if v is not None})
+
+                # Wait for MB to finish (if we ran it)
+                if mb_task:
+                    mbid = await mb_task
+                    if mbid:
+                        ab = await ab_get_mood_features(client, mbid)
+                        if ab:
+                            for k, v in ab.items():
+                                if v is not None and k not in features:
+                                    features[k] = v
+
+                if features:
+                    await cache_track_features(
+                        db, spotify_id=spotify_id, mbid=None,
+                        title=title, artist=artist, features=features,
+                    )
+            except Exception as e:
+                log.error(f"Failed processing Spotify ID '{parts[0]}': {e}")
+            finally:
+                completed += 1
+                if completed % 50 == 0:
+                    elapsed = time.time() - t_start
+                    remaining = (total_tasks - completed) * (elapsed / completed)
+                    log.info(f"  📊 Progress: {completed}/{total_tasks} ({elapsed/60:.1f}m elapsed, ~{remaining/60:.1f}m left)")
+
+    chunk_size = 5000
+    for i in range(0, len(tasks), chunk_size):
+        chunk = tasks[i:i+chunk_size]
+        await asyncio.gather(*[process_line(p) for p in chunk])
+        
+    log.info("✅ Finished processing Spotify IDs.")
 
 
 async def enrich_from_playlist_tracks(db: Prisma, client: httpx.AsyncClient) -> None:
     """
     Enrich all tracks saved in the Track table (user playlists).
-    These already have spotifyId when available.
     """
+    log.info("Fetching existing cache keys...")
+    existing_records = await db.trackfeaturecache.find_many(where={"spotifyId": {"not": None}})
+    existing_set = {r.spotifyId for r in existing_records if r.spotifyId}
+
     tracks = await db.track.find_many(where={"spotifyId": {"not": None}})
-    log.info(f"Processing {len(tracks)} playlist tracks with Spotify IDs")
+    uncached_tracks = [t for t in tracks if t.spotifyId not in existing_set]
+    total_tracks = len(uncached_tracks)
+    
+    if total_tracks == 0:
+        log.info("All playlist tracks are already cached! 🚀")
+        return
 
-    for i, track in enumerate(tracks, 1):
-        if not track.spotifyId:
-            continue
+    log.info(f"Processing {total_tracks} uncached playlist tracks concurrently (SUPER FAST)...")
 
-        existing = await db.trackfeaturecache.find_unique(
-            where={"spotifyId": track.spotifyId}
-        )
-        if existing:
-            continue
+    sem = asyncio.Semaphore(100) # 🔥 Cranked up to 100
+    completed = 0
+    t_start = time.time()
 
-        log.info(f"[{i}/{len(tracks)}] {track.title} — {track.artist}")
+    async def process_track(track):
+        nonlocal completed
+        async with sem:
+            try:
+                features = {}
+                
+                # 🔥 Blast ReccoBeats and MusicBrainz at the exact same time
+                rb_task = asyncio.create_task(rb_get_features(client, track.spotifyId))
+                
+                mbid = track.mbid
+                mb_task = None
+                if not mbid:
+                    mb_task = asyncio.create_task(memoized_mbid_lookup(client, track.title, track.artist))
+                
+                # Await ReccoBeats
+                rb = await rb_task
+                if rb:
+                    features.update({k: v for k, v in rb.items() if v is not None})
+                
+                # Await MusicBrainz if we needed it
+                if mb_task:
+                    mbid = await mb_task
+                
+                if mbid:
+                    ab = await ab_get_mood_features(client, mbid)
+                    if ab:
+                        for k, v in ab.items():
+                            if v is not None and k not in features:
+                                features[k] = v
+                                
+                if features:
+                    await cache_track_features(
+                        db, spotify_id=track.spotifyId, mbid=mbid,
+                        title=track.title, artist=track.artist, features=features,
+                    )
+            except Exception as e:
+                log.error(f"Failed processing track '{track.title}': {e}")
+            finally:
+                completed += 1
+                if completed % 50 == 0:
+                    elapsed = time.time() - t_start
+                    remaining = (total_tracks - completed) * (elapsed / completed)
+                    log.info(f"  📊 Progress: {completed}/{total_tracks} ({elapsed/60:.1f}m elapsed, ~{remaining/60:.1f}m left)")
 
-        features = {}
-
-        rb = await rb_get_features(client, track.spotifyId)
-        await asyncio.sleep(RB_RATE_LIMIT)
-        if rb:
-            features.update({k: v for k, v in rb.items() if v is not None})
-
-        # Use stored MBID if present
-        mbid = track.mbid
-        if not mbid:
-            mbid = await mb_recording_to_mbid(client, track.title, track.artist)
-            await asyncio.sleep(MB_RATE_LIMIT)
-
-        if mbid:
-            ab = await ab_get_mood_features(client, mbid)
-            await asyncio.sleep(AB_RATE_LIMIT)
-            if ab:
-                for k, v in ab.items():
-                    if v is not None and k not in features:
-                        features[k] = v
-
-        if features:
-            await cache_track_features(
-                db, spotify_id=track.spotifyId, mbid=mbid,
-                title=track.title, artist=track.artist, features=features,
-            )
+    chunk_size = 5000
+    for i in range(0, len(uncached_tracks), chunk_size):
+        chunk = uncached_tracks[i:i+chunk_size]
+        await asyncio.gather(*[process_track(t) for t in chunk])
+        
+    log.info("✅ Finished processing playlist tracks.")
 
 
 # ─── UTILITY ─────────────────────────────────────────────────────────────────
@@ -457,7 +579,9 @@ async def main():
     await db.connect()
 
     try:
-        async with httpx.AsyncClient() as client:
+        # 🔥 Pumped up connection limits so we don't hit max sockets
+        limits = httpx.Limits(max_keepalive_connections=100, max_connections=200)
+        async with httpx.AsyncClient(timeout=30.0, limits=limits) as client:
             if args.spotify_id:
                 log.info(f"Single track enrichment: {args.spotify_id}")
                 features = {}
