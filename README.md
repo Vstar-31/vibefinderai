@@ -99,6 +99,75 @@ This is designed for power users who want to combine the vibe-based AI matching 
 
 ***
 
+## Technology Stack
+
+VibeFinderAI is built as a modern full-stack web application:
+
+**Frontend:**
+- React with Vite (JavaScript ES6 JSX)
+- CSS animations and audio visualization (oscilloscope effects)
+- Responsive hybrid UI with hardware knob components
+- Deployed on Netlify CDN
+
+**Backend:**
+- FastAPI (Python) with JWT authentication
+- Prisma ORM for database management
+- LangChain orchestration for AI prompts
+- vibe_engine.py NLP engine for semantic analysis
+
+**Database:**
+- Supabase PostgreSQL with Prisma schema
+- User authentication and social graph
+- Playlist history and feedback tracking
+
+**External APIs:**
+- Last.fm for music metadata and ISRC mapping
+- Spotify Web API for track discovery and deep links
+- LangChain for prompt orchestration
+
+**Deployment:**
+- Backend: Render (OnRender)
+- Frontend: Netlify
+- CI/CD pipeline for automated testing and deployment
+
+***
+
+## Project Structure
+
+See [filesystem.md](filesystem.md) for complete directory structure. Key directories:
+
+- `/frontend` — React app, components, styling
+- `/backend` — FastAPI server, AI engine, enrichment pipeline
+- `/backend/schema.prisma` — Database schema
+- Documentation files describe architecture and deployment
+
+***
+
+## Development Phases
+
+The project is organized into 6 development phases. See [phases.md](phases.md) for detailed breakdown:
+
+1. **Phase 1**: Foundation, Monorepo, Database & JWT Auth
+2. **Phase 2**: Core Music APIs & ISRC Mapping
+3. **Phase 3**: AI Recommendation Engine (LangChain + vibe_engine)
+4. **Phase 4**: Social Graph & Community Features
+5. **Phase 5**: Audio Visualization & Hybrid UI
+6. **Phase 6**: Production Deployment & CI/CD
+
+***
+
+## Documentation Reference
+
+- [architecture.md](architecture.md) — System architecture with Mermaid diagrams
+- [filesystem.md](filesystem.md) — Complete folder structure
+- [features.md](features.md) — Feature-by-phase breakdown
+- [phases.md](phases.md) — Development roadmap (Phases 1-6)
+- [analysis.md](analysis.md) — QA & stress test results
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) — Production deployment instructions
+- [monetisation.md](monetisation.md) — API licensing & cost reference
+
+***
+
 ## Additional UI Elements
 
 - **SIGNAL ACTIVE** indicator with an animated waveform bar — shows the engine is live and processing [vibefinderai.netlify](https://vibefinderai.netlify.app/)
@@ -115,16 +184,6 @@ This is designed for power users who want to combine the vibe-based AI matching 
 3. **Artist-inspired discovery** — Mention a reference artist and let the AI find sonically similar but lesser-known tracks (use the Nicheness knob).
 4. **Multilingual music discovery** — Specifically powerful for discovering Indian regional music (Hindi, Tamil, Punjabi, etc.) through emotional descriptions.
 5. **Genre exploration** — Use the Engine State genre tags as clickable filters to drill into specific subgenres surfaced by the AI.
-
-***
-
-## Technology Stack (Inferred from Product Design)
-
-Based on the interface and feature set, VibeFinderAI is built with:
-- **AI/LLM layer** (e.g., Google Gemini) for natural language vibe analysis and semantic keyword extraction
-- **Spotify API** for track metadata, album art, audio previews, and direct playback links
-- **Frontend**: Modern JavaScript framework, deployed on **Netlify**
-- **Acoustic intelligence engine** that maps text descriptions to musical attributes (BPM, genre, mood, artist affinity)
 
 ***
 
