@@ -1,0 +1,236 @@
+# VibeFinderAI Analytics Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          VIBEFINDER AI ANALYTICS SYSTEM                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+════════════════════════════════════════════════════════════════════════════════
+  FRONTEND (React)
+════════════════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────┐     ┌──────────────────────────┐
+  │   App.jsx                │     │  AnalyticsDashboard.jsx  │
+  │   - Run Analysis         │     │  - Real-time metrics     │
+  │   - User Interactions    │     │  - Bar charts            │
+  │                          │     │  - Live indicators       │
+  │  Track Events:           │     │  - Error tracking        │
+  │  • Preview clicks        │     │  - Configurable refresh  │
+  │  • Spotify opens         │     │                          │
+  │  • Pro Mode usage        │     │  API Calls:              │
+  │  • Playlist saves        │     │  └─→ /api/analytics/*    │
+  │  • Feedback (👍/👎)      │     │      (11 endpoints)      │
+  └──────────────────────────┘     └──────────────────────────┘
+          │                                   │
+          │                                   │
+          └───────────────┬───────────────────┘
+                         │
+                    HTTP POST/GET
+                         │
+════════════════════════════════════════════════════════════════════════════════
+  FASTAPI BACKEND
+════════════════════════════════════════════════════════════════════════════════
+
+  analytics_routes.py (FastAPI Router)
+  ┌──────────────────────────────────────────────────────────┐
+  │ GET  /api/analytics/dashboard  ──┐                        │
+  │ GET  /api/analytics/summary      │                        │
+  │ GET  /api/analytics/searches     ├─→ collector.get_*()   │
+  │ GET  /api/analytics/vibes        │                        │
+  │ GET  /api/analytics/languages    │                        │
+  │ GET  /api/analytics/performance  │                        │
+  │ GET  /api/analytics/engagement   │                        │
+  │ GET  /api/analytics/data-quality │                        │
+  │                                  │                        │
+  │ POST /api/analytics/search       ├─→ collector.log_*()   │
+  │ POST /api/analytics/feedback     │                        │
+  │ POST /api/analytics/engagement   │                        │
+  └──────────────────────────────────────────────────────────┘
+             │                  │
+             │                  │
+             └──────┬───────────┘
+                   │
+              main.py registers router:
+              app.include_router(analytics_router)
+
+════════════════════════════════════════════════════════════════════════════════
+  ANALYTICS COLLECTOR (In-Memory)
+════════════════════════════════════════════════════════════════════════════════
+
+  analytics.py
+  ┌─────────────────────────────────────────────────────────┐
+  │  AnalyticsCollector (Global Instance: collector)         │
+  │                                                          │
+  │  Data Structures:                                        │
+  │  ├─ total_searches: int                                 │
+  │  ├─ vibe_counter: Counter[str, int]                     │
+  │  ├─ language_counter: Counter[str, int]                 │
+  │  ├─ search_response_times: List[float]                  │
+  │  ├─ confidence_scores: List[float]                      │
+  │  ├─ feedback_ratings: Counter[str, int]                 │
+  │  ├─ search_history: List[Dict] (last 1000)              │
+  │  ├─ active_searches_1h: List[Dict] (rolling window)      │
+  │  └─ api_errors: Counter[str, int]                       │
+  │                                                          │
+  │  Methods:                                                │
+  │  ├─ log_search(desc, vibe, confidence, latency, ...)    │
+  │  ├─ log_feedback(track_id, is_positive)                 │
+  │  ├─ log_engagement(event_type)                          │
+  │  ├─ log_api_error(api_name, error_type)                 │
+  │  ├─ log_cache_event(is_hit)                             │
+  │  ├─ set_enrichment_status(pct, missing_isrc)            │
+  │  ├─ get_summary() → Dict[str, Any]                      │
+  │  └─ get_dashboard_data() → Dict[str, Any]               │
+  └─────────────────────────────────────────────────────────┘
+
+════════════════════════════════════════════════════════════════════════════════
+  DATA FLOW: User Search → Metrics Collection
+════════════════════════════════════════════════════════════════════════════════
+
+  User Types Vibe on Frontend
+           │
+           ▼
+  App.jsx sends: POST /api/get_vibes
+           │
+           ▼
+  main.py get_vibes() endpoint
+           │
+           ├─ Measure: start_time = time.time()
+           │
+           ├─ Call: vibe_engine.analyze(description)
+           │
+           ├─ Measure: elapsed = (time.time() - start) * 1000
+           │
+           ├─ LOG TO ANALYTICS:
+           │  collector.log_search(
+           │    vibe_description=description,
+           │    primary_vibe=primary_vibe,
+           │    secondary_vibe=secondary_vibe,
+           │    confidence=confidence_score,
+           │    response_time_ms=elapsed,
+           │    nicheness=request.nicheness,
+           │    language=request.language,
+           │    track_count=len(results)
+           │  )
+           │
+           └─→ Response returned to frontend
+
+  User Clicks Preview/Spotify/Pro Mode/Save
+           │
+           ├─ Frontend calls: POST /api/analytics/engagement
+           │                  { event_type: "preview_click" }
+           │
+           ▼
+  Backend receives event
+           │
+           ├─ Route handler processes POST
+           │
+           ├─ Calls: collector.log_engagement(event_type)
+           │
+           └─ Returns: { "status": "logged" }
+
+  User Rates Track (👍 or 👎)
+           │
+           ├─ Frontend calls: POST /api/analytics/feedback
+           │                  { track_id: "...", is_positive: true }
+           │
+           ▼
+  Backend receiver event
+           │
+           ├─ (Saved to DB as feedback record)
+           │
+           ├─ Calls: collector.log_feedback(track_id, is_positive)
+           │
+           └─ Returns: { "status": "logged" }
+
+════════════════════════════════════════════════════════════════════════════════
+  DATA RETRIEVAL: Dashboard Refresh
+════════════════════════════════════════════════════════════════════════════════
+
+  User Opens Dashboard
+           │
+           ▼
+  AnalyticsDashboard.jsx component loads
+           │
+           ├─ useEffect triggers on mount
+           │
+           ├─ Calls: fetch(/api/analytics/dashboard)
+           │
+           ▼
+  analytics_routes.get_dashboard()
+           │
+           ├─ Calls: get_dashboard_data()
+           │
+           ├─ Calls: collector.get_dashboard_data()
+           │
+           ├─ Returns:
+           │  {
+           │    "live_metric": {
+           │      "active_users_1h": 5,
+           │      "searches_this_hour": 12
+           │    },
+           │    "summary": {... all metrics ...},
+           │    "recent_searches": [{...}, {...}]
+           │  }
+           │
+           ▼
+  Frontend receives JSON
+           │
+           ├─ Renders cards (KPIs)
+           ├─ Renders charts (top vibes, etc)
+           ├─ Renders tables (errors, recent searches)
+           │
+           ▼
+  User sees real-time analytics
+
+  (Repeats every 5s by default, configurable)
+
+════════════════════════════════════════════════════════════════════════════════
+  INTEGRATION CHECKLIST
+════════════════════════════════════════════════════════════════════════════════
+
+  Backend (main.py):
+  ☐ Import: from analytics import collector
+  ☐ Import: from analytics_routes import router as analytics_router
+  ☐ Register: app.include_router(analytics_router)
+  ☐ In get_vibes(): Add time measurement + collector.log_search()
+  ☐ In feedback endpoint: Add collector.log_feedback()
+  ☐ Optional: Add collector.log_api_error() in exception handlers
+  ☐ Optional: Add collector.log_cache_event() in cache logic
+
+  Frontend (App.jsx, LandingPage.jsx):
+  ☐ Add helper function: async function trackEngagement(event)
+  ☐ Calls: POST /api/analytics/engagement
+  ☐ On preview click: trackEngagement("preview_click")
+  ☐ On Spotify click: trackEngagement("spotify_click")
+  ☐ On feedback: POST /api/analytics/feedback
+  ☐ On Pro Mode:  trackEngagement("pro_mode")
+  ☐ On playlist save: trackEngagement("playlist_save")
+
+  Frontend (Add Dashboard):
+  ☐ Create new route: /admin/analytics
+  ☐ Render: <AnalyticsDashboard />
+  ☐ Optionally add auth check
+
+  Verification:
+  ☐ Test: curl http://localhost:8000/api/analytics/summary | jq
+  ☐ Test: Open dashboard at http://localhost:5173/admin/analytics
+  ☐ Test: Run searches and verify metrics update
+  ☐ Test: Refresh interval selector works
+  ☐ Test: Charts and cards display correctly
+
+════════════════════════════════════════════════════════════════════════════════
+  FILE LOCATIONS
+════════════════════════════════════════════════════════════════════════════════
+
+  backend/analytics.py                    ← Core collector
+  backend/analytics_routes.py             ← FastAPI endpoints
+  backend/health_check.py                 ← CLI diagnostics tool
+  frontend/src/AnalyticsDashboard.jsx     ← React dashboard component
+  
+  ANALYTICS.md                            ← Full documentation
+  ANALYTICS_INTEGRATION.md                ← Integration guide
+  ANALYTICS_OVERVIEW.md                   ← This overview
+
+════════════════════════════════════════════════════════════════════════════════
+```

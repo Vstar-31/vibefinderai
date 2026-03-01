@@ -760,6 +760,7 @@ class VibeRequest(BaseModel):
     use_secondary_vibe: bool = False
     override_genre: str | None = None
     override_artist: str | None = None
+    dismiss_detected_artist: bool = False  # User dismissed the artist lock tag — skip entity injection
 
 class TrackInfo(BaseModel):
     title: str
@@ -1450,6 +1451,17 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             
     vibe_data["detected_artist"] = detected_artist
     vibe_data["detected_song"] = detected_song
+
+    # User dismissed the artist lock tag in the UI — wipe it so it
+    # doesn't influence genre resolution, pool fetch, or scoring.
+    # override_artist is still respected (that's a Pro Mode explicit choice).
+    if request.dismiss_detected_artist and not request.override_artist:
+        if detected_artist:
+            logger.info(f"User dismissed detected artist lock '{detected_artist}' — clearing from engine state.")
+        detected_artist = None
+        detected_song = None
+        vibe_data["detected_artist"] = None
+        vibe_data["detected_song"] = None
 
     # v1.2 FIX: If entity scanner locked an artist/song but the NLP scored
     # a legitimate vibe, don't let a 0%-confidence "neutral" overwrite it.

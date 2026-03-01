@@ -636,6 +636,9 @@ export default function App() {
   const audioRef = useRef(null);
   const vuRef = useRef(null);
 
+  // Detected artist unlock state — user can dismiss the lock tag
+  const [artistUnlocked, setArtistUnlocked] = useState(false);
+
   // Feedback state — tracks which tracks have been rated this session
   // key: "title|artist", value: 1 (liked) | -1 (disliked)
   const [feedbackGiven, setFeedbackGiven] = useState({});
@@ -775,6 +778,7 @@ export default function App() {
           override_genre: finalGenre.trim() || null,
           override_artist: finalArtist.trim() || null,
           language: language !== "Any" ? language : null,
+          dismiss_detected_artist: artistUnlocked,
         }),
       });
       
@@ -787,6 +791,7 @@ export default function App() {
       
       const data = await res.json();
       setResult(data);
+      setArtistUnlocked(false);
       setIsSkeletonLoading(false);
       setTimeout(() => { document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }); }, 150);
     } catch (err) { setError(err.message); setIsSkeletonLoading(false); }
@@ -803,6 +808,7 @@ export default function App() {
       setUseSecondaryVibe(false);
       setError("");
       setFeedbackGiven({});
+      setArtistUnlocked(false);
   };
 
   // FEEDBACK SUBMISSION
@@ -1200,7 +1206,16 @@ export default function App() {
                   <span style={{ fontSize: "9px", color: "rgba(180,140,80,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "-4px" }}>[ Click Genres to Hard-Filter ]</span>
                   
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px", width: "100%", alignItems: "center" }}>
-                    {result.detected_artist && <span className="freq-tag" style={{ color: activeColor, borderColor: `${activeColor}44`, background: `${activeColor}11` }}>LOCKED: {result.detected_artist}</span>}
+                    {result.detected_artist && !artistUnlocked && (
+                      <span className="freq-tag" style={{ color: activeColor, borderColor: `${activeColor}44`, background: `${activeColor}11`, display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                        🔒 {result.detected_artist}
+                        <button
+                          onClick={() => setArtistUnlocked(true)}
+                          title="Dismiss artist lock"
+                          style={{ background: "none", border: "none", cursor: "pointer", color: activeColor, opacity: 0.7, fontSize: "13px", lineHeight: 1, padding: "0 2px", display: "flex", alignItems: "center" }}
+                        >✕</button>
+                      </span>
+                    )}
                     {result.detected_song && <span className="freq-tag" style={{ color: "#fde68a", borderColor: "rgba(253,230,138,0.4)" }}>TRACK: {result.detected_song}</span>}
                     {overrideGenre && <span className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.4)" }}>OVERRIDE: {overrideGenre}</span>}
                     
