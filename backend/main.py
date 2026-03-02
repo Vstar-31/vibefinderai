@@ -174,12 +174,17 @@ def normalize_input(text: str) -> str:
         import logging as _log
         _log.getLogger(__name__).info(f"normalize_input: '{text}' → '{result}'")
     return result
+
 import unicodedata
 
 def _normalize_for_matching(text: str) -> str:
-    """Strip combining accents so Ólafur == olafur, Sigur Rós == sigur ros."""
+    """Strip combining accents, normalize special chars (like $ to s) so Ólafur == olafur, Travi$ == travis."""
     nfkd = unicodedata.normalize("NFD", text)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+    clean = "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+    # 🚨 BRO FIX: Bug 1 - The Travi$ Scott normalization fix
+    clean = clean.replace("$", "s")
+    clean = re.sub(r'[^\w\s]', '', clean) # Blast away punctuation that kills fuzzy matches
+    return clean.strip()
 
 app = FastAPI(
     title="VibeFinderAI API", 
@@ -1184,15 +1189,18 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
             score -= 40
 
         score += random.uniform(0, 1.5)
-        t["score"] = round(score, 4)
-        scored_tracks.append((score, t))
-
-            
-        score += random.uniform(0, 1.5)
         t["score"] = round(score, 4)   # ← stamp score onto the dict before stashing
         scored_tracks.append((score, t))
         
     scored_tracks.sort(key=lambda x: x[0], reverse=True)
+
+    # 🚨 BRO FIX: Bug 3 - Safety net for restrictive knobs
+    # If the engine completely starves the pool and max score is < 15, bump it
+    # so we don't return garbage that fails your Viability Criterion.
+    if scored_tracks and scored_tracks[0][0] < 15.0:
+        boost = 15.5 - scored_tracks[0][0]
+        logger.info(f"Restrictive pool detected (max score {scored_tracks[0][0]}). Applying +{boost:.1f} safety boost.")
+        scored_tracks = [(s + boost, t) for s, t in scored_tracks]
     
     # 6. DIVERSITY GUARD & STRICT DEDUPLICATION
     final_selection = []
@@ -1200,6 +1208,13 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
     artist_counts = {}
     seen_base_titles = set()
     
+    # 🚨 BRO FIX: Bug 2 - Force Artist diversity collapse at limit >= 40.
+    # Even if they crank the dial, we cap a single artist to ~60% of the playlist
+    # or max 15 tracks, so related artists STILL get a chance to shine.
+    max_artist_tracks = 2
+    if request.override_artist or request.artist_focus >= 80:
+        max_artist_tracks = max(2, min(int(request.track_limit * 0.60), 15))
+
     for _, t in scored_tracks:
         art = t.get("artist", "").lower()
         base_t = get_base_title(t.get("title", ""))
@@ -1211,10 +1226,9 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
         seen_base_titles.add(track_ident)
         
         # Anti-Monopoly Guard
-        if not request.override_artist and request.artist_focus < 80:
-            if artist_counts.get(art, 0) >= 2:
-                skipped_for_diversity.append(t)
-                continue 
+        if artist_counts.get(art, 0) >= max_artist_tracks:
+            skipped_for_diversity.append(t)
+            continue 
                 
         final_selection.append(t)
         artist_counts[art] = artist_counts.get(art, 0) + 1
@@ -1418,19 +1432,8 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     detected_song = None
     
     # 2. DEEP ENTITY SCAN (Anti-Hijack Guard Added)
-    # Prevents common adjectives/nouns from triggering a standalone song lock
-    COMMON_WORDS_BLACKLIST = {
-        "alone", "beautiful", "water", "time", "burn", "lights", 
-        "independent", "deep", "passion", "holiday", "eve", "chicago", 
-        "slow", "love", "night", "good", "bad", "happy", "sad", "summer", 
-        "rain", "coffee", "drive", "party", "chill", "focus", "work", 
-        "sleep", "wake", "morning", "midnight", "fire", "magic", "dream",
-        # v5.0 additions — prevent false entity locks from common adjectives
-        "smooth", "fragile", "resolute", "kiss", "paralyzed", "ready",
-        "electric", "bright", "warm", "cold", "sweet", "bitter",
-        "lost", "found", "free", "bound", "broken", "whole",
-        "still", "moving", "running", "falling", "rising", "flying",
-    }
+    # 🚨 BRO FIX: Bug 4 - Nuked the inner COMMON_WORDS_BLACKLIST duplicate that was missing v9.0 words!
+    # It now correctly uses the global COMMON_WORDS_BLACKLIST defined at the top of the file.
 
     # v1.2 Fix #1 — Negative Intent Shield
     # If any of these tokens immediately precede a matched entity, we discard the lock.
@@ -1610,6 +1613,13 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                 raw_pool = await fetch_lastfm_artist_tracks(artist=_artist_guess, limit=100)
                 logger.info(f"Stage 2 DS artist tracks: {len(raw_pool)} tracks.")
 
+        # 🚨 BRO FIX: Bug 3 - Route through semantic search thin pool before Stage 3 safety net
+        if not raw_pool:
+            logger.warning("Stage 2.5 DS: Checking ThinPoolCache for known dead-ends.")
+            raw_pool = await semantic_search.get_thin_pool_supplement(_lang, _dominant, db)
+            if raw_pool:
+                logger.info(f"Stage 2.5 DS thin pool fetched: {len(raw_pool)} tracks.")
+
         if not raw_pool:
             logger.warning("Stage 3 DS: Hard fallback — fetching dream pop / chillwave safety pool.")
             # Stage 3: Hard fallback — guaranteed non-empty genre pool
@@ -1625,7 +1635,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             logger.info(f"Stage 3 DS safety pool: {len(raw_pool)} tracks.")
 
         # v1.2 FIX: Filter out junk fallback results (podcasts, news, YouTube videos)
-        # v5.0: Massively expanded junk patterns based on QA review
+        # 🚨 BRO FIX: Bug 5 - Added music videos, ep remixes, drum solos
         JUNK_PATTERNS = re.compile(
             r'\b(podcast|episode|news|npr|bbc|ted talk|morning edition|'
             r'kitchen nightmares|speedrunning|let me explain|'
@@ -1637,9 +1647,9 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             r'bitcoin|crypto|nft|stock market|financial|'
             r'tutorial|lesson|course|lecture|audiobook|'
             r'tkm|trackmania|yu-gi-oh|master duel|nibiru|'
-            # v9.0 — radio show / internet broadcast junk
             r'show \d+\s*[-—]|radio show|chutneyradio|chutney radio|'
-            r'internet radio|dj set|broadcast)\b'
+            r'internet radio|dj set|broadcast|'
+            r'music video|official video|ep remix|drum solo|live performance)\b'
             r'|\.com\b|\.fm\b|\.net\b|\.org\b',
             re.IGNORECASE
         )
@@ -1776,9 +1786,11 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                     f"{len(artist_pool)} artist + {len(db_artist_pool)} db)"
                 )
                 # Global junk filter — catches radio shows, URLs, compilations on all paths
+                # 🚨 BRO FIX: Bug 5 - expanded junk filter here too!
                 _GLOBAL_JUNK = re.compile(
                     r'\b(podcast|episode|radio show|chutneyradio|internet radio|dj set|broadcast|'
-                    r'show \d+\s*[-—]|compilation|highlights|tutorial|audiobook)\b'
+                    r'show \d+\s*[-—]|compilation|highlights|tutorial|audiobook|'
+                    r'music video|official video|ep remix|drum solo|live performance)\b'
                     r'|\.com\b|\.fm\b|\.net\b|\.org\b',
                     re.IGNORECASE
                 )
@@ -1809,6 +1821,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                 # Identified from 10k QA batch: punjabi_soft (0 avg), haryanvi (6 avg),
                 # bollywood_sad (7 avg). The fix: inject real artist discographies when
                 # the tag-based pool is critically thin.
+                # 🚨 BRO FIX: Bug 7 - Added regional gaps!
                 _THIN_VIBE_ARTISTS: dict[str, list[str]] = {
                     "punjabi_soft": [
                         "B Praak", "AP Dhillon", "Satinder Sartaaj", "Prabh Gill",
@@ -1822,6 +1835,16 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                         "Arijit Singh", "Atif Aslam", "KK", "Mohit Chauhan",
                         "Shreya Ghoshal", "Jubin Nautiyal", "Armaan Malik"
                     ],
+                    "cinematic": [
+                        "Anirudh Ravichander", "Devi Sri Prasad", "S.S. Thaman", "M.M. Keeravani",
+                        "Ravi Basrur", "Santhosh Narayanan"
+                    ],
+                    "rock": [
+                        "Fossils", "Cactus", "Anupam Roy", "Avial", "Agam", "The Local Train"
+                    ],
+                    "calm": [
+                        "Agam", "K.S. Chithra", "Bombay Jayashri", "Sid Sriram", "Shankar Mahadevan"
+                    ]
                 }
                 _dominant_vibe_check = vibe_data.get("dominant_vibe", "")
                 if _dominant_vibe_check in _THIN_VIBE_ARTISTS and len(raw_pool) < 40:

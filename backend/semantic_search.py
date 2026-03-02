@@ -48,6 +48,8 @@ USAGE
   tracks = await blend_audio_features(tracks, vibe, knobs, db)
 
   # Thin pool supplement (before Stage 3 safety pool)
+  # BRO NOTE: We successfully wired this up in main.py to act as a solid 
+  # safety net for restrictive knobs and dead-end searches! 🚀
   supplement = await get_thin_pool_supplement(language, vibe, db)
 """
 

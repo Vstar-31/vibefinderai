@@ -1074,6 +1074,28 @@ SYNONYMS: dict[str, list[str]] = {
     "🕌": ["desi", "calm"],
     "💃": ["party", "desi"],
     "🕺": ["party", "desi"],
+
+    # ── v9.0 "The Underperforming 5" Target Fixes ───────────────────────────
+    "minor key": ["dark", "heartbreak"],
+    "major key": ["happy", "euphoric"],
+    "orchestral swell": ["cinematic"],
+    "movie trailer": ["cinematic"],
+    "epic score": ["cinematic"],
+    "vocal runs": ["soulful"],
+    "smooth r&b": ["soulful", "chill"],
+    "quiet storm": ["soulful", "romantic"],
+    "baby making music": ["soulful", "romantic"],
+    "stank face": ["intense", "hype"], 
+    "wall of death": ["intense", "rock"],
+    "drop tuned": ["intense", "rock"],
+    "blast beats": ["intense"],
+    "macabre": ["dark"],
+    "brooding": ["dark", "cinematic"],
+    "dirge": ["dark", "heartbreak"],
+    "infectious beat": ["happy", "party"],
+    "sunny disposition": ["happy"],
+    "whistling": ["happy", "indie_folk"],
+    "clapping": ["happy", "indie_folk"],
 }
 
 # ─── NEGATION WORDS ───────────────────────────────────────────────────────────
@@ -1652,7 +1674,7 @@ VIBE_MAP: dict[str, dict] = {
         "keywords": [
             "peaceful", "soothing", "relaxing", "tranquil", "serene", "quiet",
             "soft", "gentle", "light", "zen", "breath", "still", "pure", "safe",
-            "cozy", "comfy", "warm", "wholesome", "healing", "restoring",
+            "cozy", "comfy", "warm", "wh wholesome", "healing", "restoring",
             "unhurried", "languid", "effortless", "undisturbed", "grounded",
             "centered", "present", "mindful", "slow", "tender", "hushed",
             "cathedral", "sacred", "infinite", "vast", "open",
@@ -1705,6 +1727,9 @@ VIBE_MAP: dict[str, dict] = {
             "cathartic", "primal", "visceral", "gut punch",
             "seething", "boiling", "livid", "irate", "furious",
             "uncontrollable", "spiraling", "snapping", "cracking",
+            # v9.0 Adds for Metal/EDM separation
+            "drop tuned", "double kick", "breakdown", "screeching", 
+            "assaulting", "high octane", "overdrive", "blast beats", "chugging"
         ],
         "phrases": [
             "screaming into the void", "going feral", "completely lost it",
@@ -1858,6 +1883,9 @@ VIBE_MAP: dict[str, dict] = {
             "ceremony", "invocation", "ancestral", "community", "together",
             "gathering", "weeping", "release", "groaning", "moaning",
             "crooning", "belting", "falsettos", "harmonies", "choir",
+            # v9.0 Adds for Vocal/R&B separation from Generic Jazz
+            "vocal runs", "melisma", "smooth vocals", "motown", 
+            "rhythm and blues", "deep bass", "sensual", "quiet storm", "groove"
         ],
         "phrases": [
             "hits the soul", "speaks to me", "gives me chills", "in my feelings",
@@ -1980,13 +2008,16 @@ VIBE_MAP: dict[str, dict] = {
             "epic", "grand", "orchestral", "heroic", "legendary", "majestic",
             "story", "adventure", "powerful", "vast", "main character energy",
             "sweeping", "triumphant", "tragic", "climactic", "operatic",
-            "score", "soundtrack", "montage", "rising action",  # "scene" removed — too greedy
+            "score", "soundtrack", "montage", "rising action",  
             "denouement", "tension", "resolution", "emotional arc",
             "rising strings", "brass fanfare", "choir swells",
             "dramatic pause", "silence before the storm",
             "big moment", "big life moment", "life moment", "momentous",
             "goosebumps", "chills", "spine tingling", "breathtaking",
             "larger than life", "cinematic", "film score", "movie score",
+            # v9.0 Adds for Epic Orchestral weighting
+            "orchestral swell", "brass", "strings", "epic choir", "soaring melody", 
+            "tearjerker", "emotional climax", "triumph", "blockbuster"
         ],
         "phrases": [
             "main character energy", "main character moment",
@@ -2026,6 +2057,9 @@ VIBE_MAP: dict[str, dict] = {
             "cold", "grey", "ash", "ruins", "decay", "dissolution",
             "introspection", "isolation", "alienation", "dissociation",
             "anomie", "nihilism", "absurdism", "hopeless", "heavy",
+            # v9.0 Adds for minor key / macabre dread separation
+            "minor key", "dissonant", "macabre", "brooding", "morbid", 
+            "shadowy", "gloomy", "depressing", "dirge", "bleak", "gothic"
         ],
         "phrases": [
             "villain era", "in my villain era", "dark era", "goblin mode",
@@ -2453,6 +2487,9 @@ VIBE_MAP: dict[str, dict] = {
             "skip", "jump for joy", "can't stop smiling", "beaming",
             "light", "lighthearted", "sweet", "wholesome",
             "laugh", "giggle", "belly laugh", "chuckle",
+            # v9.0 Adds for pure joyful pop vs EDM separation
+            "major key", "up-tempo", "clapping", "bouncy bass", "infectious", 
+            "sunny disposition", "optimistic", "carefree", "whistling"
         ],
         "phrases": [
             "feel good music", "happy music", "pure happiness", "good vibes only",
