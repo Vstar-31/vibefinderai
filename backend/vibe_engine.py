@@ -1166,6 +1166,8 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
         "Spanish":    ["reggaeton", "latin dance", "salsa"],
         "Afrobeats":  ["afrobeats party", "amapiano"],
         "Any":        ["party", "dance", "club"],
+        "Marathi":    ["marathi folk", "dhol taasha", "lavani"],
+        "Assamese":   ["bihu", "assamese folk"],
     },
     "hype": {
         "Hindi":      ["desi hip hop", "hindi rap", "divine"],
@@ -1178,6 +1180,8 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
         "Malayalam":  ["malayalam", "mollywood", "malayalam film"],
         "Kannada":    ["kannada mass", "kannada", "kgf"],
         "Any":        ["hip-hop", "trap", "rap"],
+        "Marathi":    ["marathi", "marathi folk", "marathi rap"],
+        "Assamese":   ["bihu", "assamese", "northeast india folk"],
     },
     "calm": {
         "Hindi":      ["sufi", "ghazal", "hindi acoustic"],
@@ -1211,10 +1215,18 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
         "Any":        ["euphoric", "edm", "trance"],
     },
     "soulful": {
-        "Hindi":      ["ghazal", "sufi", "qawwali"],
+        # P69/P97/P98 fix: Hindi/Indian SOULFUL must NOT route to western soul
+        # DIVINE, Gully Boy, Carnatic jazz all need desi pools, not Amy Winehouse
+        "Hindi":      ["ghazal", "qawwali", "sufi", "desi hip hop"],
+        "Punjabi":    ["punjabi sufi", "punjabi acoustic", "ghazal"],
+        "Tamil":      ["carnatic", "kollywood soulful", "ar rahman"],
+        "Telugu":     ["tollywood soulful", "carnatic", "ar rahman"],
+        "Bengali":    ["rabindra sangeet", "bengali folk", "baul"],
         "English":    ["soul", "neo soul", "rnb", "jazz"],
         "Japanese":   ["japanese r&b", "j-soul"],
         "Korean":     ["k-rnb", "korean soul"],
+        "Arabic":     ["arabic", "khaleeji", "oud"],
+        "Portuguese": ["bossa nova", "mpb", "fado"],
         "Any":        ["soul", "neo soul", "rnb"],
     },
     "retro": {
@@ -1226,9 +1238,13 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
     "cinematic": {
         "Hindi":      ["bollywood bgm", "ar rahman score", "hindi cinematic"],
         "Tamil":      ["kollywood bgm", "anirudh", "ar rahman score"],
+        "Telugu":     ["tollywood bgm", "s.s. thaman", "tollywood"],     # P67-type
+        "Malayalam":  ["malayalam bgm", "m.jayachandran", "malayalam"],   # P56 fix
+        "Kannada":    ["kannada bgm", "ravi basrur", "kgf"],              # P67 fix
+        "Marathi":    ["marathi", "ajay-atul", "marathi film"],
         "English":    ["cinematic", "film score", "epic orchestral"],
         "Japanese":   ["japanese film score", "joe hisaishi"],
-        "Korean":     ["k-pop", "k-drama ost", "korean film score"],  # k-pop first for Korean
+        "Korean":     ["k-pop", "k-drama ost", "korean film score"],
         "Any":        ["cinematic", "film score", "orchestral"],
     },
     "dark": {
@@ -1509,6 +1525,27 @@ LANGUAGE_TAG_MAP: dict[str, dict[str, str | None]] = {
         "dark":           "malayalam",
         "retro":          "malayalam",
     },
+    "Marathi": {
+        # P57 fix: Marathi → marathi music, not trap
+        "default":        "marathi",
+        "party":          "marathi folk",
+        "hype":           "marathi",
+        "romantic":       "marathi",
+        "calm":           "marathi",
+        "soulful":        "marathi",
+        "heartbreak":     "marathi",
+        "cinematic":      "marathi",
+    },
+    "Assamese": {
+        # P93 fix: Assamese → bihu / northeast Indian music
+        "default":        "bihu",
+        "party":          "bihu",
+        "hype":           "assamese",
+        "romantic":       "assamese",
+        "calm":           "assamese",
+        "folk":           "bihu folk",
+        "soulful":        "assamese",
+    },
     "Any": {},
 }
 
@@ -1563,7 +1600,14 @@ VIBE_MAP: dict[str, dict] = {
             "going ham", "no days off", "grind", "warzone", "battle mode",
             "pr", "personal record", "max out", "one rep max", "swole",
             "jacked", "gains", "deadlift", "squat", "bench press", "barbell",
-            "powerlifting", "bodybuilding", "marathon", "sprinting", "training",
+            "powerlifting", "bodybuilding", "marathon", "sprinting",
+            # P54 fix: morning run / motivational should be HYPE not CALM
+            "morning run", "sunrise run", "jog", "running playlist",
+            "motivational", "pump up", "pre-workout", "workout banger",
+            "victory lap", "glowing up", "glow up",
+            # P73 fix: angry empowerment pop → HYPE not INTENSE
+            "revenge era", "angry pop", "empowerment bops", "slay era",
+            "main villain", "that girl", "revenge", "i'm that girl", "training",
             "pre-workout", "preworkout", "creatine",
             "moshpit", "stadium", "crowd surf", "wall of death", "headbang",
             "floor filler", "drop", "build up", "breakdown", "808",
@@ -1618,6 +1662,9 @@ VIBE_MAP: dict[str, dict] = {
             "hygge", "slow morning", "soft focus", "cottagecore",
         ],
         "phrases": [
+            # P68 fix: peace/lazy sunday → calm not heartbreak
+            "lazy sunday", "peaceful sunday", "sunday morning",
+            "sunlight through curtains", "inner peace", "at peace",
             "touch grass", "slow down", "just breathe", "take it easy",
             "soft life", "golden hour", "slow living", "in no rush",
             "not in a hurry", "nowhere to be",
@@ -1933,7 +1980,7 @@ VIBE_MAP: dict[str, dict] = {
             "epic", "grand", "orchestral", "heroic", "legendary", "majestic",
             "story", "adventure", "powerful", "vast", "main character energy",
             "sweeping", "triumphant", "tragic", "climactic", "operatic",
-            "score", "soundtrack", "montage", "scene", "rising action",
+            "score", "soundtrack", "montage", "rising action",  # "scene" removed — too greedy
             "denouement", "tension", "resolution", "emotional arc",
             "rising strings", "brass fanfare", "choir swells",
             "dramatic pause", "silence before the storm",

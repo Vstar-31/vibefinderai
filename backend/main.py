@@ -252,6 +252,23 @@ COMMON_WORDS_BLACKLIST = {
     "gone", "over", "forever", "again", "always", "never",
     "heart", "soul", "mind", "eyes", "hands", "voice", "tears",
     "perfect", "wonderful", "amazing", "dangerous", "crazy", "wild",
+    # ── v9.0 Phase 2 QA additions (35+ new words from 100-prompt test) ──
+    # Common English words that double as obscure artist/band names:
+    "indian", "scene", "crying", "peace", "live", "talk",
+    "terror", "harvest", "down", "hyper", "wheat", "confession",
+    "song", "sun", "and", "her", "main", "era", "self", "class",
+    "numb", "stars", "mirror", "guitar", "beast", "chai", "focus",
+    # Hindi/Indian common words that get false-locked:
+    "sur", "dhun", "taal", "bol", "dil", "raat", "din", "waqt",
+    "geet", "ishq", "pyaar", "yaad",
+    # Generic descriptive words that appear in casual prompts:
+    "good", "bad", "big", "little", "new", "old", "real", "true",
+    "white", "black", "blue", "red", "green", "gold", "silver",
+    "hot", "cool", "raw", "dark", "light", "high", "low",
+    "city", "town", "road", "street", "window", "door", "room",
+    "wave", "beat", "sound", "noise", "vibe", "energy", "mood",
+    "summer", "winter", "spring", "autumn", "rain", "snow", "wind",
+    "live", "dead", "born", "young", "old", "fast", "slow",
 }
 
 # Tracks that appeared in 10%+ of all QA results regardless of prompt.
@@ -1536,6 +1553,16 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             or _lang_map.get("default")
             or vibe_data.get("genres", ["electronic"])[0]
         )
+        # P56/P63/P67 guard: if CINEMATIC fired on a regional Indian/non-English language
+        # but no cinematic genre is in the LANGUAGE_TAG_MAP for that lang, don't fall to
+        # western orchestral — force the language default pool instead.
+        REGIONAL_LANGS = {"Telugu", "Malayalam", "Kannada", "Tamil", "Marathi", "Bengali", "Assamese", "Urdu", "Punjabi"}
+        if _dominant == "cinematic" and _lang in REGIONAL_LANGS:
+            regional_cinematic = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {}).get("cinematic") or \
+                                  vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {}).get("default")
+            if regional_cinematic:
+                target_genre = regional_cinematic
+                logger.info(f"Cinematic Regional Guard: {_lang} → {target_genre} (blocked western orchestral)")
         logger.info(f"Standard AI Resolution: Lang={_lang} Vibe={_dominant} Genre -> {target_genre}")
         
     vibe_data["target_genre_override"] = target_genre

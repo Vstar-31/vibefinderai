@@ -1149,6 +1149,33 @@ export default function App() {
                 <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}66, transparent)` }} />
               </div>
 
+              {/* ── ARTIST DETECTION WARNING BANNER ── */}
+              {result.detected_artist && !artistUnlocked && (
+                <div style={{
+                  display: "flex", alignItems: "flex-start", gap: "12px",
+                  background: `${activeColor}0d`, border: `1px solid ${activeColor}33`,
+                  borderRadius: "6px", padding: "10px 14px", marginBottom: "16px",
+                  fontSize: "11px", color: "rgba(220,190,140,0.85)", lineHeight: "1.5",
+                }}>
+                  <span style={{ fontSize: "16px", lineHeight: 1, marginTop: "1px", flexShrink: 0 }}>🔒</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ color: activeColor, fontWeight: 600, letterSpacing: "0.05em" }}>
+                      Artist detected: {result.detected_artist}
+                    </span>
+                    {result.detected_song && (
+                      <span style={{ color: "rgba(180,140,80,0.7)", marginLeft: "6px" }}>
+                        ({result.detected_song})
+                      </span>
+                    )}
+                    <br />
+                    <span style={{ opacity: 0.75 }}>
+                      The engine has locked onto this artist from your description. If that wasn't your intention — 
+                      tap <strong style={{ color: activeColor }}>✕</strong> on the tag below to unlock and re-run for a pure vibe search.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="app-result-grid" style={S.grid}>
                 <div className="panel-card" style={S.resultCard}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}><IconWave /><span style={S.cardLabel}>Dominant Vibe</span></div>
