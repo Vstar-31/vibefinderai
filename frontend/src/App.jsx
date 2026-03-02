@@ -1045,11 +1045,11 @@ export default function App() {
                 {showOverrides && token && (
                   <div className="animate-in app-overrides" style={{ display: "flex", gap: "16px", flexWrap: "wrap", padding: "16px", background: "rgba(10,5,2,0.6)", border: "1px dashed rgba(180,140,80,0.25)", borderRadius: "8px" }}>
                     <div style={{ flex: 1, minWidth: "160px" }}>
-                       <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Artist Bypass</label>
+                       <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Artist Filter</label>
                        <input type="text" value={overrideArtist} onChange={e => setOverrideArtist(e.target.value)} placeholder="e.g. Deftones" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
                     </div>
                     <div style={{ flex: 1, minWidth: "160px" }}>
-                       <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Genre Bypass</label>
+                       <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Genre Filter</label>
                        <input type="text" value={overrideGenre} onChange={e => setOverrideGenre(e.target.value)} placeholder="e.g. shoegaze" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
                     </div>
                     
