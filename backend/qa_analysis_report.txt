@@ -1,0 +1,444 @@
+====================================================================================================
+VIBEFINDER AI — QA ANALYSIS REPORT
+Generated: 2026-03-02 21:28:58
+====================================================================================================
+
+📊 SUMMARY STATISTICS
+----------------------------------------------------------------------------------------------------
+Total Prompts Analyzed:        20000
+Total Tracks Returned:         413173
+Average Tracks per Prompt:     20.7
+
+🎯 RELEVANCY BREAKDOWN
+----------------------------------------------------------------------------------------------------
+HIGH Relevancy:                 400 (  2.0%)
+MEDIUM Relevancy:              9018 ( 45.1%)
+LOW Relevancy:                 10412 ( 52.1%)
+
+✅ ACCURACY METRICS
+----------------------------------------------------------------------------------------------------
+Average Accuracy Score:        76.9/100
+Max Accuracy Score:            100.0/100
+Min Accuracy Score:            50.0/100
+
+🎵 TOP GENRES USED
+----------------------------------------------------------------------------------------------------
+  I                                6421 ( 14.9%)
+  Trap                             2208 (  5.1%)
+  Pho                              2208 (  5.1%)
+  Da                               2136 (  5.0%)
+  Sy                               2134 (  5.0%)
+  Neo-Soul                         1886 (  4.4%)
+  Deathcore                        1572 (  3.7%)
+  Nu-Metal                         1572 (  3.7%)
+  Thrash                           1572 (  3.7%)
+  Hardcore                         1572 (  3.7%)
+  Progressive Metal                1572 (  3.7%)
+  Classic Rock                     1467 (  3.4%)
+  Alter                            1467 (  3.4%)
+  Sad Pop                          1442 (  3.4%)
+  Bollywood                        1380 (  3.2%)
+
+😊 VIBE DISTRIBUTION
+----------------------------------------------------------------------------------------------------
+  hype                   2208 ( 11.1%)
+  party                  2136 ( 10.8%)
+  retro                  1734 (  8.7%)
+  chill                  1713 (  8.6%)
+  intense                1572 (  7.9%)
+  rock                   1467 (  7.4%)
+  heartbreak             1442 (  7.3%)
+  desi                   1380 (  7.0%)
+  calm                   1056 (  5.3%)
+  country                 618 (  3.1%)
+  romantic                557 (  2.8%)
+  tropical                415 (  2.1%)
+  dark                    404 (  2.0%)
+  euphoric                400 (  2.0%)
+  dreamy                  397 (  2.0%)
+  cinematic               381 (  1.9%)
+  hyperpop                275 (  1.4%)
+                          256 (  1.3%)
+  focus                   240 (  1.2%)
+  happy                   240 (  1.2%)
+  ambient                 240 (  1.2%)
+  soulful                 237 (  1.2%)
+  indie_folk              160 (  0.8%)
+  artist_driven           160 (  0.8%)
+  industrial               77 (  0.4%)
+  punjabi                  65 (  0.3%)
+
+====================================================================================================
+DETAILED ANALYSIS (First 50 Prompts)
+====================================================================================================
+
+[001] PROMPT #1
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 100/100
+      Score Range: 38.3 - 77.9 (avg: 48.8)
+
+[002] PROMPT #2
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 100/100
+      Score Range: 11.7 - 51.8 (avg: 29.3)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[003] PROMPT #3
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 100/100
+      Score Range: 11.1 - 77.7 (avg: 21.8)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (53% co
+
+[004] PROMPT #4
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 8.6 - 71.6 (avg: 15.9)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (53% co
+
+[005] PROMPT #5
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 89/100
+      Score Range: 11.9 - 29.8 (avg: 15.7)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (53% co
+
+[006] PROMPT #6
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 100/100
+      Score Range: 12.2 - 45.7 (avg: 28.7)
+
+[007] PROMPT #7
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 100/100
+      Score Range: 10.9 - 38.2 (avg: 15.1)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[008] PROMPT #8
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 9.0 - 44.9 (avg: 14.1)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (60% co
+
+[009] PROMPT #9
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 88/100
+      Score Range: 25.1 - 39.0 (avg: 33.9)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (60% co
+
+[010] PROMPT #10
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 96/100
+      Score Range: 11.1 - 29.1 (avg: 13.3)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (60% co
+
+[011] PROMPT #11
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 50/100
+      Score Range: 74.7 - 108.9 (avg: 77.1)
+
+[012] PROMPT #12
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 50/100
+      Score Range: 73.8 - 100.8 (avg: 78.9)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[013] PROMPT #13
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 50/100
+      Score Range: 28.5 - 109.2 (avg: 49.0)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (48% co
+
+[014] PROMPT #14
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 50/100
+      Score Range: 100.6 - 102.8 (avg: 101.7)
+      📝 Low score variance indicates potential clustering issues
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (48% co
+
+[015] PROMPT #15
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 50/100
+      Score Range: 10.5 - 29.0 (avg: 12.1)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (48% co
+
+[016] PROMPT #16
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 9.3 - 44.7 (avg: 14.3)
+
+[017] PROMPT #17
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 100/100
+      Score Range: 17.3 - 50.6 (avg: 37.0)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[018] PROMPT #18
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 100/100
+      Score Range: 12.3 - 39.1 (avg: 21.9)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (53% co
+
+[019] PROMPT #19
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 100/100
+      Score Range: 11.0 - 70.8 (avg: 22.7)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (53% co
+
+[020] PROMPT #20
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 96/100
+      Score Range: 8.7 - 30.1 (avg: 10.6)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (53% co
+
+[021] PROMPT #21
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 100/100
+      Score Range: 29.3 - 66.1 (avg: 42.7)
+
+[022] PROMPT #22
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 100/100
+      Score Range: 11.8 - 50.8 (avg: 26.5)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[023] PROMPT #23
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 100/100
+      Score Range: 11.0 - 66.4 (avg: 18.3)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (53% co
+
+[024] PROMPT #24
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 8.7 - 71.9 (avg: 15.6)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (53% co
+
+[025] PROMPT #25
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 90/100
+      Score Range: 11.8 - 30.1 (avg: 15.6)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (53% co
+
+[026] PROMPT #26
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 100/100
+      Score Range: 29.3 - 96.5 (avg: 48.5)
+
+[027] PROMPT #27
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 100/100
+      Score Range: 10.9 - 55.9 (avg: 21.9)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[028] PROMPT #28
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 8.9 - 95.3 (avg: 16.9)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (53% co
+
+[029] PROMPT #29
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 100/100
+      Score Range: 44.6 - 71.1 (avg: 58.6)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (53% co
+
+[030] PROMPT #30
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 92/100
+      Score Range: 11.2 - 30.9 (avg: 13.5)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (53% co
+
+[031] PROMPT #31
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 100/100
+      Score Range: 11.4 - 120.0 (avg: 38.2)
+
+[032] PROMPT #32
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 10.1 - 80.6 (avg: 16.1)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[033] PROMPT #33
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 100/100
+      Score Range: 62.8 - 119.7 (avg: 83.0)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (53% co
+
+[034] PROMPT #34
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 100/100
+      Score Range: 12.2 - 79.0 (avg: 47.0)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (53% co
+
+[035] PROMPT #35
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 92/100
+      Score Range: 10.8 - 30.2 (avg: 12.3)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (53% co
+
+[036] PROMPT #36
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 16.5 - 83.2 (avg: 23.6)
+
+[037] PROMPT #37
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 81/100
+      Score Range: 44.4 - 58.2 (avg: 48.0)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[038] PROMPT #38
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 100/100
+      Score Range: 20.7 - 81.9 (avg: 37.2)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (53% co
+
+[039] PROMPT #39
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 100/100
+      Score Range: 19.6 - 78.7 (avg: 31.2)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (53% co
+
+[040] PROMPT #40
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 99/100
+      Score Range: 14.9 - 38.1 (avg: 18.3)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (53% co
+
+[041] PROMPT #41
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 100/100
+      Score Range: 37.8 - 78.6 (avg: 56.5)
+
+[042] PROMPT #42
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 100/100
+      Score Range: 16.7 - 61.1 (avg: 33.5)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[043] PROMPT #43
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 100/100
+      Score Range: 19.0 - 79.4 (avg: 28.1)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (53% co
+
+[044] PROMPT #44
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 12.6 - 72.8 (avg: 21.1)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (53% co
+
+[045] PROMPT #45
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 81/100
+      Score Range: 20.2 - 34.2 (avg: 23.2)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (53% co
+
+[046] PROMPT #46
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 92/100
+      Score Range: 13.6 - 29.7 (avg: 17.5)
+
+[047] PROMPT #47
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 20 | Accuracy: 88/100
+      Score Range: 12.3 - 26.1 (avg: 14.1)
+      📝 Pro mode enabled: PIVOT: Seco
+
+[048] PROMPT #48
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 50 | Accuracy: 100/100
+      Score Range: 9.7 - 29.7 (avg: 12.8)
+      📝 Pro mode enabled: DISMISS: Auto-Artist
+VIBE     : chill (60% co
+
+[049] PROMPT #49
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 5 | Accuracy: 76/100
+      Score Range: 30.9 - 39.0 (avg: 35.2)
+      📝 Pro mode enabled: FORCE GENRE: trap
+VIBE     : chill (60% co
+
+[050] PROMPT #50
+      Input: late night drive through rain-slicked streets, Travis Scott on the rad...
+      Vibe: chill | Relevancy: 55/100 | Category: MEDIUM
+      Tracks: 10 | Accuracy: 93/100
+      Score Range: 13.6 - 30.1 (avg: 15.5)
+      📝 Pro mode enabled: FORCE ARTIST: Travis Scott
+VIBE     : chill (60% co

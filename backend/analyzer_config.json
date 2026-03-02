@@ -1,0 +1,35 @@
+{
+  "analysis": {
+    "batch_size": 50,
+    "max_retries": 3,
+    "timeout_per_prompt": 30,
+    "cache_results": true,
+    "cache_file": "analysis_cache.json"
+  },
+  "relevancy": {
+    "weight_track_matching": 0.4,
+    "weight_vibe_alignment": 0.3,
+    "weight_genre_alignment": 0.2,
+    "weight_overall_coherence": 0.1,
+    "high_threshold": 80,
+    "medium_threshold": 50
+  },
+  "accuracy": {
+    "check_score_ordering": true,
+    "check_score_ranges": true,
+    "check_track_count": true,
+    "check_vibe_detection": true,
+    "check_bpm_range": true
+  },
+  "gemini": {
+    "model": "gemini-1.5-flash",
+    "temperature": 0.7,
+    "max_output_tokens": 500
+  },
+  "output": {
+    "format": ["json", "csv", "txt", "html"],
+    "include_detailed_analysis": true,
+    "include_recommendations": true,
+    "sample_size_for_full_details": 10
+  }
+}

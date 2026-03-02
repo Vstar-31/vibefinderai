@@ -1,0 +1,179 @@
+{
+  "metadata": {
+    "timestamp": "2026-03-02T21:37:09.923700",
+    "total_prompts": 20000,
+    "log_file": "qa_batch_v10k_3.log"
+  },
+  "metrics": {
+    "avg_relevancy": 64.56425,
+    "avg_accuracy": 99.321,
+    "high_relevancy": 6227,
+    "medium_relevancy": 9759,
+    "low_relevancy": 4014,
+    "high_accuracy": 19994,
+    "medium_accuracy": 6,
+    "low_accuracy": 0
+  },
+  "sample": [
+    {
+      "prompt_num": 1,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 65,
+      "accuracy": 100.0,
+      "track_count": 5
+    },
+    {
+      "prompt_num": 2,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 60,
+      "accuracy": 100.0,
+      "track_count": 10
+    },
+    {
+      "prompt_num": 3,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 60,
+      "accuracy": 100.0,
+      "track_count": 20
+    },
+    {
+      "prompt_num": 4,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 60,
+      "accuracy": 100.0,
+      "track_count": 50
+    },
+    {
+      "prompt_num": 5,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 35,
+      "accuracy": 100.0,
+      "track_count": 5
+    },
+    {
+      "prompt_num": 6,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 50,
+      "accuracy": 100.0,
+      "track_count": 10
+    },
+    {
+      "prompt_num": 7,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 50,
+      "accuracy": 100.0,
+      "track_count": 20
+    },
+    {
+      "prompt_num": 8,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 50,
+      "accuracy": 100.0,
+      "track_count": 50
+    },
+    {
+      "prompt_num": 9,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 50,
+      "accuracy": 100.0,
+      "track_count": 5
+    },
+    {
+      "prompt_num": 10,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 35,
+      "accuracy": 100.0,
+      "track_count": 10
+    },
+    {
+      "prompt_num": 11,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 100,
+      "accuracy": 100.0,
+      "track_count": 20
+    },
+    {
+      "prompt_num": 12,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 100,
+      "accuracy": 100.0,
+      "track_count": 50
+    },
+    {
+      "prompt_num": 13,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 75,
+      "accuracy": 100.0,
+      "track_count": 5
+    },
+    {
+      "prompt_num": 14,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 95,
+      "accuracy": 100.0,
+      "track_count": 10
+    },
+    {
+      "prompt_num": 15,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 35,
+      "accuracy": 100.0,
+      "track_count": 20
+    },
+    {
+      "prompt_num": 16,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 50,
+      "accuracy": 100.0,
+      "track_count": 50
+    },
+    {
+      "prompt_num": 17,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 60,
+      "accuracy": 100.0,
+      "track_count": 5
+    },
+    {
+      "prompt_num": 18,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 50,
+      "accuracy": 100.0,
+      "track_count": 10
+    },
+    {
+      "prompt_num": 19,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 60,
+      "accuracy": 100.0,
+      "track_count": 20
+    },
+    {
+      "prompt_num": 20,
+      "input": "late night drive through rain-slicked streets, Travis Scott on the radio",
+      "vibe": "chill",
+      "relevancy": 50,
+      "accuracy": 100.0,
+      "track_count": 50
+    }
+  ]
+}

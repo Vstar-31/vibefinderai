@@ -1,0 +1,227 @@
+====================================================================================================
+VIBEFINDER AI - PROBLEM PROMPTS ANALYSIS
+====================================================================================================
+
+SUMMARY:
+  Low Relevancy (<50%): 4014 prompts (20.07%)
+  Very Low Relevancy (<35%): 291 prompts (1.46%)
+  Low Accuracy (<80%): 6 prompts (0.03%)
+
+LOW RELEVANCY BY VIBE:
+
+  ROCK: 503 prompts
+    Sample problematic prompts:
+      Prompt #7369: [Score: 20] Bengali indie rock, Fossils or Cactus type, Kolkata, emotion and rain
+      Prompt #7409: [Score: 20] Bengali indie rock, Fossils or Cactus type, Kolkata, emotion and rain
+      Prompt #7424: [Score: 20] Bengali indie rock, Fossils or Cactus type, Kolkata, emotion and rain
+      Prompt #13367: [Score: 20] hindi indie pop, local train type, nostalgia road trip
+      Prompt #13407: [Score: 20] hindi indie pop, local train type, nostalgia road trip
+
+  INTENSE: 444 prompts
+    Sample problematic prompts:
+      Prompt #1121: [Score: 35] dark phonk midnight workout, tunnel vision, heavy bass, menacing synth...
+      Prompt #1123: [Score: 35] dark phonk midnight workout, tunnel vision, heavy bass, menacing synth...
+      Prompt #1125: [Score: 35] dark phonk midnight workout, tunnel vision, heavy bass, menacing synth...
+      Prompt #1126: [Score: 35] dark phonk midnight workout, tunnel vision, heavy bass, menacing synth...
+      Prompt #1128: [Score: 35] dark phonk midnight workout, tunnel vision, heavy bass, menacing synth...
+
+  HYPE: 370 prompts
+    Sample problematic prompts:
+      Prompt #807: [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+      Prompt #808: [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+      Prompt #828: [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+      Prompt #847: [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+      Prompt #848: [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+
+  RETRO: 361 prompts
+    Sample problematic prompts:
+      Prompt #6083: [Score: 20] 2000s Bollywood nostalgia, Udit Narayan, Shah Rukh film, slow dance sc...
+      Prompt #6087: [Score: 20] 2000s Bollywood nostalgia, Udit Narayan, Shah Rukh film, slow dance sc...
+      Prompt #6088: [Score: 20] 2000s Bollywood nostalgia, Udit Narayan, Shah Rukh film, slow dance sc...
+      Prompt #6103: [Score: 20] 2000s Bollywood nostalgia, Udit Narayan, Shah Rukh film, slow dance sc...
+      Prompt #6108: [Score: 20] 2000s Bollywood nostalgia, Udit Narayan, Shah Rukh film, slow dance sc...
+
+  CHILL: 323 prompts
+    Sample problematic prompts:
+      Prompt #7684: [Score: 20] totally exhausted, need something that isn't English, just give me som...
+      Prompt #7704: [Score: 20] totally exhausted, need something that isn't English, just give me som...
+      Prompt #7724: [Score: 20] totally exhausted, need something that isn't English, just give me som...
+      Prompt #7744: [Score: 20] totally exhausted, need something that isn't English, just give me som...
+      Prompt #15144: [Score: 20] nigerian alte cruise, cruise music, smooth afrobeats
+
+  HEARTBREAK: 303 prompts
+    Sample problematic prompts:
+      Prompt #544: [Score: 20] BTS sad hours, crying at 1am, ARMY feels, kpop ballad emotional wreck
+      Prompt #2488: [Score: 20] board exam stress, 12th class, sad anxious, cram session, raat ke 2 ba...
+      Prompt #2508: [Score: 20] board exam stress, 12th class, sad anxious, cram session, raat ke 2 ba...
+      Prompt #2528: [Score: 20] board exam stress, 12th class, sad anxious, cram session, raat ke 2 ba...
+      Prompt #2548: [Score: 20] board exam stress, 12th class, sad anxious, cram session, raat ke 2 ba...
+
+  PARTY: 294 prompts
+    Sample problematic prompts:
+      Prompt #2163: [Score: 20] Jaipur night, rooftop, chill playlist, friends laughing, no AC
+      Prompt #2166: [Score: 20] Jaipur night, rooftop, chill playlist, friends laughing, no AC
+      Prompt #2168: [Score: 20] Jaipur night, rooftop, chill playlist, friends laughing, no AC
+      Prompt #2170: [Score: 20] Jaipur night, rooftop, chill playlist, friends laughing, no AC
+      Prompt #2173: [Score: 20] Jaipur night, rooftop, chill playlist, friends laughing, no AC
+
+  DESI: 192 prompts
+    Sample problematic prompts:
+      Prompt #82: [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+      Prompt #87: [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+      Prompt #92: [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+      Prompt #102: [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+      Prompt #107: [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+
+  COUNTRY: 151 prompts
+    Sample problematic prompts:
+      Prompt #1692: [Score: 20] Telugu mass blockbuster, Pushpa type, Allu Arjun swag, folk mass beats
+      Prompt #1712: [Score: 20] Telugu mass blockbuster, Pushpa type, Allu Arjun swag, folk mass beats
+      Prompt #1732: [Score: 20] Telugu mass blockbuster, Pushpa type, Allu Arjun swag, folk mass beats
+      Prompt #1752: [Score: 20] Telugu mass blockbuster, Pushpa type, Allu Arjun swag, folk mass beats
+      Prompt #13284: [Score: 20] punjabi folk sad, old memories, village life, tumbi
+
+  CALM: 146 prompts
+    Sample problematic prompts:
+      Prompt #2247: [Score: 20] pehli baarish, monsoon magic, petrichor, slow romantic, window mein
+      Prompt #2287: [Score: 20] pehli baarish, monsoon magic, petrichor, slow romantic, window mein
+      Prompt #10887: [Score: 20] late 90s shah rukh khan entry, arms wide open, pure romance
+      Prompt #10927: [Score: 20] late 90s shah rukh khan entry, arms wide open, pure romance
+      Prompt #11264: [Score: 20] classical sitar for studying, deep focus, indian classical morning
+
+  ROMANTIC: 136 prompts
+    Sample problematic prompts:
+      Prompt #6809: [Score: 20] AP Dhillon Punjabi RnB, smooth international sound, diaspora love song
+      Prompt #6849: [Score: 20] AP Dhillon Punjabi RnB, smooth international sound, diaspora love song
+      Prompt #6864: [Score: 20] AP Dhillon Punjabi RnB, smooth international sound, diaspora love song
+      Prompt #3043: [Score: 35] Spanish romantic evening, Latin vibes, salsa nights, sangria and danci...
+      Prompt #3046: [Score: 35] Spanish romantic evening, Latin vibes, salsa nights, sangria and danci...
+
+  CINEMATIC: 115 prompts
+    Sample problematic prompts:
+      Prompt #5443: [Score: 20] Carnatic fusion, AR Rahman style, orchestral Indian, emotional cinemat...
+      Prompt #5446: [Score: 20] Carnatic fusion, AR Rahman style, orchestral Indian, emotional cinemat...
+      Prompt #5448: [Score: 20] Carnatic fusion, AR Rahman style, orchestral Indian, emotional cinemat...
+      Prompt #5453: [Score: 20] Carnatic fusion, AR Rahman style, orchestral Indian, emotional cinemat...
+      Prompt #5458: [Score: 20] Carnatic fusion, AR Rahman style, orchestral Indian, emotional cinemat...
+
+  TROPICAL: 110 prompts
+    Sample problematic prompts:
+      Prompt #16564: [Score: 20] hawaiian roots reggae, ukulele, beach bonfire
+      Prompt #16584: [Score: 20] hawaiian roots reggae, ukulele, beach bonfire
+      Prompt #16604: [Score: 20] hawaiian roots reggae, ukulele, beach bonfire
+      Prompt #16624: [Score: 20] hawaiian roots reggae, ukulele, beach bonfire
+      Prompt #1923: [Score: 35] Kerala rain, Malayalam film songs, ocean waves, peaceful summer vibes
+
+  DARK: 103 prompts
+    Sample problematic prompts:
+      Prompt #14944: [Score: 20] soviet post punk, molchat doma, cold bleak winter
+      Prompt #882: [Score: 35] 4am can't sleep, indie pop sad, GINI type, windows open, city sounds
+      Prompt #884: [Score: 35] 4am can't sleep, indie pop sad, GINI type, windows open, city sounds
+      Prompt #887: [Score: 35] 4am can't sleep, indie pop sad, GINI type, windows open, city sounds
+      Prompt #889: [Score: 35] 4am can't sleep, indie pop sad, GINI type, windows open, city sounds
+
+  SOULFUL: 95 prompts
+    Sample problematic prompts:
+      Prompt #6963: [Score: 35] Carnatic meets jazz, Indian classical improvisation, sophisticated lat...
+      Prompt #6966: [Score: 35] Carnatic meets jazz, Indian classical improvisation, sophisticated lat...
+      Prompt #6968: [Score: 35] Carnatic meets jazz, Indian classical improvisation, sophisticated lat...
+      Prompt #6969: [Score: 35] Carnatic meets jazz, Indian classical improvisation, sophisticated lat...
+      Prompt #6970: [Score: 35] Carnatic meets jazz, Indian classical improvisation, sophisticated lat...
+
+  DREAMY: 91 prompts
+    Sample problematic prompts:
+      Prompt #4323: [Score: 35] pre exam raat ki chai, anxiety, past paper, stressed student, midnight
+      Prompt #4326: [Score: 35] pre exam raat ki chai, anxiety, past paper, stressed student, midnight
+      Prompt #4327: [Score: 35] pre exam raat ki chai, anxiety, past paper, stressed student, midnight
+      Prompt #4328: [Score: 35] pre exam raat ki chai, anxiety, past paper, stressed student, midnight
+      Prompt #4329: [Score: 35] pre exam raat ki chai, anxiety, past paper, stressed student, midnight
+
+  AMBIENT: 49 prompts
+    Sample problematic prompts:
+      Prompt #5929: [Score: 35] Chill Arabic pop, khaleeji vibes, desert night, oud and beats, ambient
+      Prompt #5938: [Score: 35] Chill Arabic pop, khaleeji vibes, desert night, oud and beats, ambient
+      Prompt #5943: [Score: 35] Chill Arabic pop, khaleeji vibes, desert night, oud and beats, ambient
+      Prompt #5966: [Score: 35] Chill Arabic pop, khaleeji vibes, desert night, oud and beats, ambient
+      Prompt #5967: [Score: 35] Chill Arabic pop, khaleeji vibes, desert night, oud and beats, ambient
+
+  FOCUS: 45 prompts
+    Sample problematic prompts:
+      Prompt #7286: [Score: 35] late night coding bug fixing, energy drink, intense focus, dark IDE
+      Prompt #7287: [Score: 35] late night coding bug fixing, energy drink, intense focus, dark IDE
+      Prompt #7288: [Score: 35] late night coding bug fixing, energy drink, intense focus, dark IDE
+      Prompt #7290: [Score: 35] late night coding bug fixing, energy drink, intense focus, dark IDE
+      Prompt #7326: [Score: 35] late night coding bug fixing, energy drink, intense focus, dark IDE
+
+  EUPHORIC: 44 prompts
+    Sample problematic prompts:
+      Prompt #7847: [Score: 20] my favorite prompt of the test — whichever vibe you felt worked best, ...
+      Prompt #7887: [Score: 20] my favorite prompt of the test — whichever vibe you felt worked best, ...
+      Prompt #7902: [Score: 20] my favorite prompt of the test — whichever vibe you felt worked best, ...
+      Prompt #2898: [Score: 35] coming out of depression era, finally okay, self love summer, indie ha...
+      Prompt #2903: [Score: 35] coming out of depression era, finally okay, self love summer, indie ha...
+
+  HAPPY: 37 prompts
+    Sample problematic prompts:
+      Prompt #3569: [Score: 35] college hostel night, new friends, laughing at 3am, spontaneous, caref...
+      Prompt #3584: [Score: 35] college hostel night, new friends, laughing at 3am, spontaneous, caref...
+      Prompt #9210: [Score: 35] celtic folk pub night, fiddles playing fast, drinking songs, happy
+      Prompt #9219: [Score: 35] celtic folk pub night, fiddles playing fast, drinking songs, happy
+      Prompt #9224: [Score: 35] celtic folk pub night, fiddles playing fast, drinking songs, happy
+
+  HYPERPOP: 34 prompts
+    Sample problematic prompts:
+      Prompt #4018: [Score: 35] Kanye West dark fantasy era, maximalist production, introspective rap
+      Prompt #4023: [Score: 35] Kanye West dark fantasy era, maximalist production, introspective rap
+      Prompt #4046: [Score: 35] Kanye West dark fantasy era, maximalist production, introspective rap
+      Prompt #4048: [Score: 35] Kanye West dark fantasy era, maximalist production, introspective rap
+      Prompt #4061: [Score: 35] Kanye West dark fantasy era, maximalist production, introspective rap
+
+  INDIE_FOLK: 34 prompts
+    Sample problematic prompts:
+      Prompt #11522: [Score: 35] indie folk harmony, autumn leaves falling, nostalgic acoustic
+      Prompt #11524: [Score: 35] indie folk harmony, autumn leaves falling, nostalgic acoustic
+      Prompt #11527: [Score: 35] indie folk harmony, autumn leaves falling, nostalgic acoustic
+      Prompt #11529: [Score: 35] indie folk harmony, autumn leaves falling, nostalgic acoustic
+      Prompt #11530: [Score: 35] indie folk harmony, autumn leaves falling, nostalgic acoustic
+
+  ARTIST_DRIVEN: 21 prompts
+    Sample problematic prompts:
+      Prompt #10130: [Score: 35] sigma male patrick bateman phonk walk, literally me
+      Prompt #10145: [Score: 35] sigma male patrick bateman phonk walk, literally me
+      Prompt #14766: [Score: 35] pirate tavern music, hurdy gurdy, sea shanty
+      Prompt #14767: [Score: 35] pirate tavern music, hurdy gurdy, sea shanty
+      Prompt #14769: [Score: 35] pirate tavern music, hurdy gurdy, sea shanty
+
+  INDUSTRIAL: 13 prompts
+    Sample problematic prompts:
+      Prompt #7609: [Score: 35] playing something from my city's underground music scene, Delhi
+      Prompt #7618: [Score: 35] playing something from my city's underground music scene, Delhi
+      Prompt #7623: [Score: 35] playing something from my city's underground music scene, Delhi
+      Prompt #7646: [Score: 35] playing something from my city's underground music scene, Delhi
+      Prompt #7647: [Score: 35] playing something from my city's underground music scene, Delhi
+
+----------------------------------------------------------------------------------------------------
+VERY LOW RELEVANCY (<35%) - CRITICAL REVIEW:
+  Prompt #82: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #87: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #92: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #102: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #107: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #112: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #122: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #127: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #132: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #142: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #147: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #152: [VIBE: desi] [Score: 20] dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type
+  Prompt #544: [VIBE: heartbreak] [Score: 20] BTS sad hours, crying at 1am, ARMY feels, kpop ballad emotional wreck
+  Prompt #807: [VIBE: hype] [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+  Prompt #808: [VIBE: hype] [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+  Prompt #828: [VIBE: hype] [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+  Prompt #847: [VIBE: hype] [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+  Prompt #848: [VIBE: hype] [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+  Prompt #862: [VIBE: hype] [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+  Prompt #868: [VIBE: hype] [Score: 20] Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment
+
+====================================================================================================

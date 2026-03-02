@@ -1,0 +1,48 @@
+==========================================================================================
+VIBEFINDER AI - PROMPT-RESULT ANALYSIS REPORT
+==========================================================================================
+
+Analysis Date: 2026-03-02 21:37:09
+Log File: qa_batch_v10k_3.log
+Total Prompts: 20000
+
+RELEVANCY METRICS:
+  Average Score: 64.6%
+  High (>=80%): 6227 (31.1%)
+  Medium (50-79%): 9759 (48.8%)
+  Low (<50%): 4014 (20.1%)
+
+ACCURACY METRICS:
+  Average Score: 99.3%
+  High (>=80%): 19994 (100.0%)
+  Medium (50-79%): 6 (0.0%)
+  Low (<50%): 0 (0.0%)
+
+PERFORMANCE BY VIBE:
+  HYPE: count=2230, rel=65.9%, acc=99.5%
+  PARTY: count=2145, rel=65.8%, acc=99.4%
+  RETRO: count=1740, rel=63.9%, acc=99.4%
+  CHILL: count=1719, rel=63.1%, acc=99.8%
+  INTENSE: count=1575, rel=60.5%, acc=99.8%
+  ROCK: count=1470, rel=60.8%, acc=99.6%
+  HEARTBREAK: count=1460, rel=65.5%, acc=99.4%
+  DESI: count=1405, rel=66.8%, acc=99.1%
+  CALM: count=1065, rel=66.6%, acc=99.5%
+  COUNTRY: count=640, rel=62.1%, acc=99.8%
+  ROMANTIC: count=560, rel=65.1%, acc=99.6%
+  DARK: count=420, rel=59.3%, acc=99.8%
+  TROPICAL: count=415, rel=61.9%, acc=99.8%
+  EUPHORIC: count=400, rel=68.2%, acc=99.5%
+  DREAMY: count=400, rel=66.5%, acc=99.8%
+  CINEMATIC: count=400, rel=58.4%, acc=99.5%
+  HYPERPOP: count=275, rel=70.4%, acc=100.0%
+  FOCUS: count=240, rel=63.7%, acc=99.7%
+  HAPPY: count=240, rel=59.3%, acc=100.0%
+  AMBIENT: count=240, rel=63.3%, acc=100.0%
+  SOULFUL: count=240, rel=55.6%, acc=99.4%
+  INDIE_FOLK: count=160, rel=63.0%, acc=100.0%
+  ARTIST_DRIVEN: count=160, rel=83.0%, acc=100.0%
+  INDUSTRIAL: count=80, rel=69.7%, acc=100.0%
+  PUNJABI: count=65, rel=83.9%, acc=100.0%
+
+==========================================================================================
