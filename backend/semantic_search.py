@@ -431,7 +431,23 @@ async def get_thin_pool_supplement(
       Afrobeats|Direct, Portuguese|Direct, Any|Direct
     """
     language = language or "Any"
-    cache_key = f"{language}|{dominant_vibe}"
+
+    # Bug 3 Fix: Route highly restrictive/starved sub-vibes to broader pools
+    # so they don't dead-end in the ThinPoolCache with 0 tracks.
+    # "chill_mainstream" and "niche_ambient_slow" are knob presets that produce
+    # near-empty pools because their BPM/nicheness constraints are too tight.
+    # Routing them to their parent vibe gets a real pool instead of a cache miss.
+    _FALLBACK_ROUTING: dict[str, str] = {
+        "chill_mainstream": "chill",
+        "niche_ambient_slow": "ambient",
+    }
+    mapped_vibe = _FALLBACK_ROUTING.get(dominant_vibe, dominant_vibe)
+    if mapped_vibe != dominant_vibe:
+        logger.info(
+            f"[ThinPool] Restrictive vibe '{dominant_vibe}' → routed to broader pool '{mapped_vibe}'"
+        )
+
+    cache_key = f"{language}|{mapped_vibe}"
 
     try:
         from datetime import datetime, timezone

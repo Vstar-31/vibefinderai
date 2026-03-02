@@ -1823,6 +1823,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                 # the tag-based pool is critically thin.
                 # 🚨 BRO FIX: Bug 7 - Added regional gaps!
                 _THIN_VIBE_ARTISTS: dict[str, list[str]] = {
+                    # ── Desi sub-vibes (tag-based pools are near-empty on Last.fm) ──
                     "punjabi_soft": [
                         "B Praak", "AP Dhillon", "Satinder Sartaaj", "Prabh Gill",
                         "Jassi Gill", "Ninja", "Mankirt Aulakh", "Jassie Gill"
@@ -1844,13 +1845,58 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                     ],
                     "calm": [
                         "Agam", "K.S. Chithra", "Bombay Jayashri", "Sid Sriram", "Shankar Mahadevan"
-                    ]
+                    ],
+                    # ── Bug 7 Fix: Language × vibe compound keys for regional catalog gaps ──
+                    # These are the 5 worst-performing input clusters from the QA analysis
+                    # (64-85% fail rate). The issue is catalog coverage, not algorithm.
+                    # Compound key format: "{Language}|{vibe}" → checked before simple vibe key.
+                    "Telugu|hype": [
+                        "Allu Arjun", "Devi Sri Prasad", "S. Thaman", "Ram Miriyala",
+                        "Anirudh Ravichander", "Vijay Antony", "Benny Dayal"
+                    ],
+                    "Telugu|cinematic": [
+                        "M.M. Keeravani", "Devi Sri Prasad", "S. Thaman",
+                        "Mani Sharma", "Mickey J Meyer", "Anup Rubens"
+                    ],
+                    "Bengali|rock": [
+                        "Fossils", "Cactus", "Rupam Islam", "Chandrabindoo",
+                        "Bhoomi", "Lakkhichhara", "Dohar"
+                    ],
+                    "Bengali|indie": [
+                        "Anupam Roy", "Arnob", "The Local Train",
+                        "Shironamhin", "Warfaze", "Nemesis"
+                    ],
+                    "Bengali|soulful": [
+                        "Anupam Roy", "Arnob", "Srikanta Acharya",
+                        "Lopamudra Mitra", "Usha Uthup"
+                    ],
+                    "Any|Carnatic fusion": [
+                        "Agam", "Thaikkudam Bridge", "Pineapple Express",
+                        "Prasanna", "Entropy", "Varijashree Venugopal"
+                    ],
+                    "Tamil|ambient": [
+                        "AR Rahman", "Santhosh Narayanan", "Ilaiyaraaja",
+                        "Yuvan Shankar Raja", "Harris Jayaraj"
+                    ],
+                    "Any|non-english": [
+                        "Sigur Rós", "Buena Vista Social Club", "Stromae",
+                        "Seu Jorge", "Caetano Veloso", "Khruangbin",
+                        "Dengue Fever", "Tinariwen", "Fatoumata Diawara"
+                    ],
                 }
                 _dominant_vibe_check = vibe_data.get("dominant_vibe", "")
-                if _dominant_vibe_check in _THIN_VIBE_ARTISTS and len(raw_pool) < 40:
-                    _supplement_artists = _THIN_VIBE_ARTISTS[_dominant_vibe_check]
+                # Bug 7 Fix: check language-specific compound key first, then fall back to simple vibe key.
+                # This ensures "Bengali|rock" resolves to Fossils/Cactus, not generic western rock.
+                _compound_key = f"{_lang}|{_dominant_vibe_check}"
+                _thin_key = (
+                    _compound_key if _compound_key in _THIN_VIBE_ARTISTS
+                    else _dominant_vibe_check if _dominant_vibe_check in _THIN_VIBE_ARTISTS
+                    else None
+                )
+                if _thin_key and len(raw_pool) < 40:
+                    _supplement_artists = _THIN_VIBE_ARTISTS[_thin_key]
                     logger.warning(
-                        f"Thin pool for vibe '{_dominant_vibe_check}' ({len(raw_pool)} tracks). "
+                        f"Thin pool for vibe '{_dominant_vibe_check}' (key='{_thin_key}', {len(raw_pool)} tracks). "
                         f"Injecting artist discographies: {_supplement_artists[:4]}"
                     )
                     _supplement_fetches = await asyncio.gather(*[
