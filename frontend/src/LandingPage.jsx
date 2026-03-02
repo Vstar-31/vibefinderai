@@ -348,7 +348,7 @@ export default function LandingPage({ onLaunch }) {
               ⚡ Analyse My Vibe — Launch App →
             </button>
             <p style={{ marginTop: 9, fontFamily: mono, fontSize: 10, color: "rgba(120,80,20,0.55)", textAlign: "center", letterSpacing: "0.06em" }}>
-              Free to use · No sign-up ·{" "}
+              Free to use · Let's Jam ·{" "}
               <button onClick={() => scrollTo("how-it-works")} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(217,160,60,0.6)", fontFamily: mono, fontSize: 10, padding: 0, textDecoration: "underline" }}>How it works ↓</button>
             </p>
           </div>
