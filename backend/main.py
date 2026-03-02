@@ -713,7 +713,20 @@ def get_vibe_tags(dominant_vibe: str, language: str, fallback_tag: str, secondar
     we first check for a mood-variant key like "Any__chill" in the vibe map.
     This prevents "late night punjabi" from pulling party bhangra tags when
     the secondary signal is clearly chill/dark/soft.
+
+    Priority order:
+    1. VIBE_TAG_MATRIX[vibe][language]  — most specific
+    2. LANGUAGE_TAG_MAP[language][vibe] — regional language override (prevents
+       Telugu/Malayalam/Tamil/Kannada falling through to generic "Any" trap/club tags)
+    3. VIBE_TAG_MATRIX[vibe][Any]       — generic fallback
+    4. [fallback_tag]                   — last resort
     """
+    # Regional languages that should NEVER fall back to generic "Any" tags
+    REGIONAL_PRIORITY = {
+        "Telugu", "Tamil", "Malayalam", "Kannada", "Bengali",
+        "Urdu", "Arabic", "Spanish", "Portuguese", "French",
+    }
+
     vibe_map = VIBE_TAG_MATRIX.get(dominant_vibe, {})
     
     tags = None
@@ -726,9 +739,22 @@ def get_vibe_tags(dominant_vibe: str, language: str, fallback_tag: str, secondar
         if tags:
             logger.info(f"[TagMatrix] Mood variant hit: {dominant_vibe}×{language} + secondary={secondary_vibe} → {tags}")
     
-    # 2. Fall back to normal language lookup
+    # 2. Try VIBE_TAG_MATRIX exact language match
     if not tags:
-        tags = vibe_map.get(language) or vibe_map.get("Any") or [fallback_tag]
+        tags = vibe_map.get(language)
+    
+    # 3. For regional languages: try LANGUAGE_TAG_MAP before falling to generic "Any"
+    #    This ensures "hype + Telugu" → "tollywood" not "trap/phonk"
+    if not tags and language in REGIONAL_PRIORITY:
+        lang_map = LANGUAGE_TAG_MAP.get(language, {})
+        regional_tag = lang_map.get(dominant_vibe) or lang_map.get("default")
+        if regional_tag:
+            tags = [regional_tag]
+            logger.info(f"[TagMatrix] Regional override: {dominant_vibe}×{language} → {regional_tag}")
+    
+    # 4. Generic Any fallback
+    if not tags:
+        tags = vibe_map.get("Any") or [fallback_tag]
     
     seen: set[str] = set()
     result: list[str] = []
@@ -1489,6 +1515,9 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         target_genre = request.override_genre
         active_vibe_for_tags = "override" # Force VIBE_TAG_MATRIX to miss and strictly use fallback
         logger.info(f"Pro Mode OVERRIDE applied. Target Genre forced to: {target_genre}")
+        # Also override the genres list that gets sent to the frontend — otherwise
+        # the displayed genre tags still show the NLP-detected vibe's genres (P38 bug)
+        vibe_data["genres"] = [request.override_genre.title()]
     elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
         sec_vibe_name = vibe_data["secondary_vibe"]
         active_vibe_for_tags = sec_vibe_name # We pivoted!
@@ -1580,7 +1609,11 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             r'calming drone|holy drone|fire sticks|waterfowl|'
             r'bitcoin|crypto|nft|stock market|financial|'
             r'tutorial|lesson|course|lecture|audiobook|'
-            r'tkm|trackmania|yu-gi-oh|master duel|nibiru)\b',
+            r'tkm|trackmania|yu-gi-oh|master duel|nibiru|'
+            # v9.0 — radio show / internet broadcast junk
+            r'show \d+\s*[-—]|radio show|chutneyradio|chutney radio|'
+            r'internet radio|dj set|broadcast)\b'
+            r'|\.com\b|\.fm\b|\.net\b|\.org\b',
             re.IGNORECASE
         )
         raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(f"{t.get('title','')} {t.get('artist','')}")] 
@@ -1715,6 +1748,18 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                     f"({len(genre_pool)} tags + {len(_seed_pool)} seed + "
                     f"{len(artist_pool)} artist + {len(db_artist_pool)} db)"
                 )
+                # Global junk filter — catches radio shows, URLs, compilations on all paths
+                _GLOBAL_JUNK = re.compile(
+                    r'\b(podcast|episode|radio show|chutneyradio|internet radio|dj set|broadcast|'
+                    r'show \d+\s*[-—]|compilation|highlights|tutorial|audiobook)\b'
+                    r'|\.com\b|\.fm\b|\.net\b|\.org\b',
+                    re.IGNORECASE
+                )
+                raw_pool = [
+                    t for t in raw_pool
+                    if not _GLOBAL_JUNK.search(f"{t.get('title','')} {t.get('artist','')}")
+                    and len(t.get('title', '')) < 120
+                ]
                 # ── HEARTBREAK POOL GUARD ──────────────────────────────────────────────────
                 # Heartbreak is the thinnest genre pool on Last.fm — "sad" tags return fewer
                 # than 100 tracks regularly. Top up silently before scoring kicks in.
