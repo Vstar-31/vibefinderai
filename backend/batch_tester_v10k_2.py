@@ -1,18 +1,31 @@
 #!/usr/bin/env python3
 """
-batch_tester_v10k.py  — VIBEFINDER AI MEGA STRESS SUITE v10k
-10,000 prompts × 20 tracks × all knobs (artist_focus / bpm_focus / nicheness) + all language tabs
-625 unique seed prompts × 16 knob profiles = 10,000 test cases
+batch_tester_v10k_3.py  — VIBEFINDER AI MEGA STRESS SUITE v3 (GEN Z POWER USER)
+20,000+ prompts × Dynamic Track Limits × ALL Pro Mode Overrides + 16 Knob Profiles
+250 unique seed prompts × 16 knob profiles × 5 Pro Mode variations = 20,000 test cases
++ GEMINI AI AUTO-GRADING (Free Tier) - Deferred to end of script
 
 Run from backend folder:
-    python batch_tester_v10k.py
+    python batch_tester_v10k_3.py
 
-Output: qa_batch_v10k.log
+Outputs: 
+    qa_batch_v10k_3.log (Main engine results)
+    qa_batch_gemini_analysis.log (AI Grades & Summary)
 """
 import asyncio
 import logging
 import re
+import os
+import random
+import json
 from prisma import Prisma
+
+# For Gemini REST API
+try:
+    import aiohttp
+    _AIOHTTP_AVAILABLE = True
+except ImportError:
+    _AIOHTTP_AVAILABLE = False
 
 import vibe_engine
 from main import (
@@ -24,6 +37,55 @@ from main import (
     COMMON_WORDS_BLACKLIST,
     TRACK_BLOCKLIST,
 )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GEMINI AI CONFIG (Free Tier)
+# ══════════════════════════════════════════════════════════════════════════════
+from dotenv import load_dotenv
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Free tier allows 15 Requests Per Minute. 
+# We sample a percentage of tests to grade automatically so it doesn't take 24 hours.
+GEMINI_SAMPLE_RATE = 1.0 # 5% of prompts will be auto-graded by AI. Set to 1.0 for all.
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+
+async def evaluate_with_gemini(prompt_text, dominant_vibe, returned_tracks):
+    """Hits the Gemini API to grade our engine's result like a real Gen Z user."""
+    if not GEMINI_API_KEY or not _AIOHTTP_AVAILABLE or not returned_tracks:
+        return None
+
+    track_list_str = ", ".join([f"{t.get('title')} by {t.get('artist')}" for t in returned_tracks[:5]])
+    
+    sys_prompt = "You are Aryan, a 19-year-old Gen Z music power user from India. You are grading an AI music engine."
+    user_prompt = f"""
+    I asked the music engine for this vibe: "{prompt_text}"
+    The engine classified the vibe as: "{dominant_vibe}"
+    The engine gave me these top tracks: {track_list_str}
+
+    Grade this result strictly. Respond ONLY in this JSON format:
+    {{"verdict": "✅ Hit" or "⚠️ Partial" or "❌ Miss", "reason": "One short, chill sentence explaining why using Gen Z slang."}}
+    """
+
+    payload = {
+        "contents": [{"parts": [{"text": user_prompt}]}],
+        "systemInstruction": {"parts": [{"text": sys_prompt}]},
+        "generationConfig": {"responseMimeType": "application/json"}
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(GEMINI_URL, json=payload, timeout=10) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    text_resp = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                    return json.loads(text_resp)
+                elif resp.status == 429:
+                    return {"verdict": "⚠️ Rate Limited", "reason": "Gemini free tier limit hit bro."}
+    except Exception as e:
+        return {"verdict": "❌ Error", "reason": f"Gemini failed: {str(e)}"}
+    return None
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # KNOB PROFILES — 16 configurations
@@ -49,676 +111,334 @@ KNOB_PROFILES = [
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SEED PROMPTS — 625 unique vibes × every emotional/scene/genre/edge-case axis
-# (text, language, knob_profile_index)
+# SEED PROMPTS — 250 Gen Z Power User Prompts (Expanded Jaipur/India/Global edition)
+# Format: (text, language, default_knob_idx, override_genre, override_artist)
 # ══════════════════════════════════════════════════════════════════════════════
 _SEEDS = [
-    ("bhangra night", "Punjabi", 0),
-    ("sangeet dance practice", "Punjabi", 10),
-    ("hard punjabi trap", "Punjabi", 6),
-    ("drunk uncle dancing to dhol", "Punjabi", 10),
-    ("haryanvi dj song", "Hindi", 0),
-    ("baraat entering the venue", "Punjabi", 6),
-    ("desi club night in toronto", "Hindi", 10),
-    ("ap dhillon concert hype", "Punjabi", 11),
-    ("punjabi wedding bangers", "Punjabi", 0),
-    ("desi swag flex", "Hindi", 10),
-    ("brown boy energy", "Hindi", 0),
-    ("dhol beats for mehndi", "Punjabi", 0),
-    ("navratri garba night", "Any", 0),
-    ("diwali party playlist", "Any", 0),
-    ("holi water fight", "Any", 6),
-    ("sidhu moosewala fast drive", "Punjabi", 11),
-    ("karan aujla gym playlist", "Punjabi", 6),
-    ("desi hip hop hard", "Hindi", 6),
-    ("sangeet group dance", "Punjabi", 10),
-    ("bollywood item songs", "Hindi", 10),
-    ("retro bollywood dance", "Hindi", 7),
-    ("punjabi bass boosted", "Punjabi", 6),
-    ("bhangra fusion edm", "Punjabi", 11),
-    ("haryanvi swag", "Hindi", 10),
-    ("jatt flex vibes", "Punjabi", 11),
-    ("desi energy unhinged", "Hindi", 6),
-    ("bhangra at 3am", "Punjabi", 12),
-    ("punjabi drill dark", "Punjabi", 8),
-    ("ap dhillon soft voice", "Punjabi", 4),
-    ("b praak heartbreak", "Hindi", 4),
-    ("arijit singh romantic", "Hindi", 7),
-    ("atif aslam sad", "Hindi", 4),
-    ("armaan malik love song", "Hindi", 7),
-    ("neha kakkar dance hit", "Hindi", 10),
-    ("badshah party anthem", "Hindi", 10),
-    ("yo yo honey singh classic", "Hindi", 7),
-    ("bollywood sad songs 2020s", "Hindi", 1),
-    ("old bollywood ghazal", "Hindi", 9),
-    ("kishore kumar nostalgic", "Any", 7),
-    ("lata mangeshkar classic", "Any", 14),
-    ("filmi sad 90s", "Hindi", 7),
-    ("sufi qawwali night", "Hindi", 9),
-    ("nusrat fateh ali khan divine", "Any", 9),
-    ("hindi lofi beats", "Hindi", 12),
-    ("bollywood lo-fi chill", "Hindi", 12),
-    ("satinder sartaaj soulful", "Punjabi", 9),
-    ("punjabi soft romantic", "Punjabi", 4),
-    ("jubin nautiyal sad", "Hindi", 1),
-    ("shreya ghoshal emotional", "Any", 14),
-    ("sonu nigam classic", "Any", 7),
-    ("hindi folk acoustic", "Hindi", 9),
-    ("rajasthani folk desert", "Any", 9),
-    ("baul music bengali", "Bengali", 9),
-    ("south indian mass bgm", "Any", 6),
-    ("tamil kuthu", "Tamil", 6),
-    ("telugu mass beat", "Telugu", 6),
-    ("kollywood dance energy", "Tamil", 6),
-    ("ilaiyaraaja sad classic", "Tamil", 9),
-    ("anirudh upbeat tamil", "Tamil", 6),
-    ("thaman bass telugu", "Telugu", 6),
-    ("allu arjun bgm", "Telugu", 6),
-    ("vijay thalapathy entry", "Tamil", 6),
-    ("jagjit singh ghazal", "Hindi", 9),
-    ("mehdi hassan ghazal", "Hindi", 9),
-    ("abida parveen qawwali", "Urdu", 9),
-    ("ghulam ali ghazal urdu", "Urdu", 9),
-    ("heartbreak at 3am", "Any", 4),
-    ("can't stop crying in the car", "Any", 1),
-    ("she left and took everything", "Any", 1),
-    ("deleted our photos", "Any", 1),
-    ("reading old texts from someone gone", "Any", 14),
-    ("sad indie folk breakup", "Any", 14),
-    ("post breakup shower cry", "Any", 1),
-    ("wrote you a letter i'll never send", "Any", 8),
-    ("our song came on the radio", "Any", 14),
-    ("unrequited love", "Any", 14),
-    ("love that was never mine", "Any", 8),
-    ("still love them but it's over", "Any", 1),
-    ("moving on but not really", "Any", 1),
-    ("heartbreak and wine", "Any", 4),
-    ("sad songs for a rainy tuesday", "Any", 12),
-    ("crying while driving at night", "Any", 4),
-    ("soft heartbreak bedroom pop", "Any", 14),
-    ("empty apartment after a breakup", "Any", 8),
-    ("the day you left", "Any", 1),
-    ("one year later still not over it", "Any", 8),
-    ("sad piano emotional", "Any", 9),
-    ("melancholy at sunset", "Any", 14),
-    ("lonely on a friday night", "Any", 12),
-    ("friends who drifted apart", "Any", 8),
-    ("long distance ended badly", "Any", 1),
-    ("the last hug before goodbye", "Any", 14),
-    ("boarding a flight and not coming back", "Any", 9),
-    ("hollowness after a breakup", "Any", 9),
-    ("healing but slowly", "Any", 14),
-    ("nostalgia that hurts", "Any", 9),
-    ("memories that feel like bruises", "Any", 8),
-    ("sad r&b breakup", "Any", 7),
-    ("neo soul goodbye", "Any", 9),
-    ("billie eilish emotional", "Any", 7),
-    ("olivia rodrigo betrayal", "Any", 7),
-    ("phoebe bridgers devastating", "Any", 8),
-    ("bon iver winter sadness", "Any", 9),
-    ("lana del rey longing", "Any", 8),
-    ("frank ocean blonde mood", "Any", 9),
-    ("the national hopeless", "Any", 9),
-    ("damien rice devastating", "Any", 9),
-    ("daughter sad indie", "Any", 8),
-    ("slowed reverb emotional tiktok", "Any", 7),
-    ("sad lofi rain", "Any", 12),
-    ("slow saxophone sad night", "Any", 9),
-    ("piano alone at midnight", "Any", 9),
-    ("missing someone who is still alive", "Any", 9),
-    ("soft crying vibes", "Any", 1),
-    ("took your name out of my phone", "Any", 1),
-    ("your birthday and you're gone", "Any", 9),
-    ("autumn heartbreak", "Any", 14),
-    ("november sadness", "Any", 14),
-    ("december loneliness", "Any", 12),
-    ("the slow fade ghost", "Any", 8),
-    ("they found someone new", "Any", 1),
-    ("saw them with someone else", "Any", 1),
-    ("sad girl autumn playlist", "Any", 14),
-    ("sad boy summer", "Any", 1),
-    ("slowed sad hindi heartbreak", "Hindi", 1),
-    ("sufi heartbreak urdu", "Urdu", 9),
-    ("k-pop sad ballad breakup", "Korean", 4),
-    ("j-pop breakup sad", "Japanese", 4),
-    ("falling in love playlist", "Any", 0),
-    ("first date nervous energy", "Any", 0),
-    ("slow dance in the kitchen", "Any", 14),
-    ("kissing in the rain", "Any", 0),
-    ("romantic evening at home", "Any", 4),
-    ("love songs for two", "Any", 0),
-    ("new relationship butterflies", "Any", 0),
-    ("soft romantic r&b", "Any", 7),
-    ("neo soul love songs", "Any", 9),
-    ("daniel caesar romantic", "Any", 9),
-    ("jhene aiko tender", "Any", 9),
-    ("bedroom pop romantic", "Any", 8),
-    ("valentine's day playlist", "Any", 7),
-    ("wedding first dance", "Any", 0),
-    ("first kiss song", "Any", 14),
-    ("love at first sight feeling", "Any", 0),
-    ("road trip with someone you love", "Any", 0),
-    ("holding hands playlist", "Any", 14),
-    ("sunday morning with you", "Any", 12),
-    ("late night talking getting to know you", "Any", 12),
-    ("crush playlist secret", "Any", 0),
-    ("falling slowly", "Any", 14),
-    ("that electric chemistry", "Any", 0),
-    ("love that feels like home", "Any", 14),
-    ("comfortable love long term", "Any", 14),
-    ("romantic bollywood hindi", "Hindi", 0),
-    ("tum hi aana mood", "Hindi", 4),
-    ("dilwale dulhania type vibe", "Hindi", 7),
-    ("punjabi soft romantic ap dhillon", "Punjabi", 14),
-    ("intimate candle lit dinner", "Any", 4),
-    ("stargazing with someone", "Any", 9),
-    ("confessing feelings", "Any", 0),
-    ("making up after a fight", "Any", 0),
-    ("love that survived hard times", "Any", 14),
-    ("forever yours playlist", "Any", 14),
-    ("unconditional love", "Any", 14),
-    ("comfortable silence with someone", "Any", 9),
-    ("late night pillow talk", "Any", 4),
-    ("summer romance beach", "Any", 0),
-    ("secret love affair", "Any", 8),
-    ("long distance still in love", "Any", 14),
-    ("love letter in music form", "Any", 9),
-    ("bachata romantic spanish", "Spanish", 4),
-    ("bossa nova romantic", "Portuguese", 9),
-    ("k-rnb love song", "Korean", 14),
-    ("japanese city pop romance", "Japanese", 9),
-    ("arabic romantic night", "Arabic", 4),
-    ("pre-workout rage", "Any", 6),
-    ("gym lifting heavy", "Any", 11),
-    ("run faster playlist", "Any", 11),
-    ("beast mode activated", "Any", 6),
-    ("trap banger no skip", "Any", 6),
-    ("drill hard aggressive", "Any", 6),
-    ("phonk drift aggressive", "Any", 6),
-    ("hardstyle festival crush", "Any", 11),
-    ("edm drop incoming", "Any", 11),
-    ("uk drill gritty", "Any", 6),
-    ("dark trap menacing", "Any", 9),
-    ("bass boosted hard", "Any", 6),
-    ("travis scott sicko mode energy", "Any", 11),
-    ("metro boomin dark beats", "Any", 6),
-    ("death grips no love", "Any", 9),
-    ("100 gecs chaotic", "Any", 9),
-    ("moshpit indie rock", "Any", 6),
-    ("confidence walkout song", "Any", 6),
-    ("villain arc playlist", "Any", 9),
-    ("sigma grindset motivation", "Any", 7),
-    ("dark horse underdog rising", "Any", 0),
-    ("entrance theme boss mode", "Any", 11),
-    ("desi hip hop divine india", "Hindi", 6),
-    ("punjabi trap karan aujla", "Punjabi", 11),
-    ("korean hip hop intense", "Korean", 6),
-    ("japanese hip hop underground", "Japanese", 9),
-    ("latin trap agresivo", "Spanish", 6),
-    ("afrotrap naija hard", "Afrobeats", 6),
-    ("french rap hard aggressive", "French", 6),
-    ("arabic mahraganat hype", "Arabic", 6),
-    ("bmth rage rock", "Any", 6),
-    ("slipknot live energy", "Any", 6),
-    ("linkin park intensity", "Any", 6),
-    ("rage against machine protest", "Any", 9),
-    ("metallica master puppets", "Any", 9),
-    ("drum and bass jungle intense", "Any", 6),
-    ("hardstyle euphoric rave", "Any", 11),
-    ("jerseyclub bounce", "Any", 6),
-    ("footwork chicago frantic", "Any", 8),
-    ("lofi hip hop study beats", "Any", 12),
-    ("study session deep focus", "Any", 12),
-    ("jazz cafe background", "Any", 12),
-    ("bossa nova afternoon", "Portuguese", 12),
-    ("nujabes soulful lofi", "Any", 9),
-    ("j dilla instrumental chill", "Any", 9),
-    ("flying lotus ambient chill", "Any", 9),
-    ("thundercat bass chill", "Any", 9),
-    ("kaytranada bounce chill", "Any", 9),
-    ("anderson paak chill vibes", "Any", 9),
-    ("frank ocean channel orange chill", "Any", 9),
-    ("jorja smith lost and found", "Any", 14),
-    ("cleo sol sweet blue", "Any", 9),
-    ("little simz quiet introspective", "Any", 9),
-    ("loyle carner chill rap", "Any", 14),
-    ("new amor birthplace chill", "Any", 9),
-    ("bon iver holocene chill", "Any", 9),
-    ("acoustic sunday morning", "Any", 14),
-    ("coffee shop rainy window", "Any", 12),
-    ("drizzle outside studying", "Any", 12),
-    ("2am coding music", "Any", 12),
-    ("late night reading playlist", "Any", 12),
-    ("sunday afternoon chill", "Any", 12),
-    ("trip hop portishead", "Any", 9),
-    ("massive attack blue lines", "Any", 9),
-    ("burial ghost chill", "Any", 9),
-    ("four tet swaps", "Any", 9),
-    ("bonobo north borders", "Any", 9),
-    ("tycho dive ambient", "Any", 12),
-    ("khruangbin texas sun", "Any", 9),
-    ("toro y moi underneath pine", "Any", 9),
-    ("beach house teen dream", "Any", 9),
-    ("mazzy star fade into you", "Any", 9),
-    ("still woozy bedroom chill", "Any", 14),
-    ("rex orange county sunflower", "Any", 7),
-    ("clairo sling chill", "Any", 14),
-    ("beabadoobee indie chill", "Any", 14),
-    ("lofi hindi evening", "Hindi", 12),
-    ("desi chill night hindi", "Hindi", 12),
-    ("korean indie chill", "Korean", 12),
-    ("japanese city pop chill", "Japanese", 12),
-    ("french chill chanson", "French", 12),
-    ("arabic chill acoustic", "Arabic", 12),
-    ("afrobeats alte chill", "Afrobeats", 12),
-    ("latin chill lofi", "Spanish", 12),
-    ("bengali acoustic baul chill", "Bengali", 9),
-    ("club night opening set", "Any", 10),
-    ("4am dancefloor still going", "Any", 6),
-    ("pre-drinks at home hype", "Any", 10),
-    ("girls night out banger", "Any", 10),
-    ("birthday party playlist", "Any", 10),
-    ("house music deep groove", "Any", 9),
-    ("tech house warehouse", "Any", 9),
-    ("afrobeats dance floor", "Afrobeats", 10),
-    ("amapiano braai", "Afrobeats", 10),
-    ("dancehall caribbean heat", "Any", 10),
-    ("reggaeton latin club", "Spanish", 10),
-    ("baile funk brazil", "Portuguese", 10),
-    ("drum and bass jungle bounce", "Any", 10),
-    ("90s rave nostalgia", "Any", 9),
-    ("00s electro indie dance", "Any", 9),
-    ("dua lipa dance night", "Any", 10),
-    ("charli xcx party", "Any", 9),
-    ("beyonce renaissance party", "Any", 10),
-    ("bad bunny latin banger", "Spanish", 10),
-    ("karol g manana sera bonito", "Spanish", 10),
-    ("burna boy dance last last", "Afrobeats", 10),
-    ("wizkid essence groove", "Afrobeats", 9),
-    ("tems afrobeats smooth", "Afrobeats", 9),
-    ("festival main stage energy", "Any", 11),
-    ("midnight countdown new year", "Any", 10),
-    ("wedding reception floor filler", "Any", 10),
-    ("after party 2am", "Any", 9),
-    ("drunk happy dancing", "Any", 10),
-    ("carefree silly dancing", "Any", 0),
-    ("crowd surf moment concert", "Any", 11),
-    ("festival sunrise set", "Any", 9),
-    ("deep house vinyl selector", "Any", 9),
-    ("korean kpop party", "Korean", 10),
-    ("japanese j-pop dance", "Japanese", 10),
-    ("bhangra edm fusion party", "Punjabi", 10),
-    ("bollywood dance party", "Hindi", 10),
-    ("soca carnival heat", "Any", 10),
-    ("salsa latin night", "Spanish", 10),
-    ("pagode brazil festive", "Portuguese", 10),
-    ("cumbia floor filler", "Spanish", 10),
-    ("falling asleep to music", "Any", 4),
-    ("rain sounds piano", "Any", 4),
-    ("ambient for meditation", "Any", 3),
-    ("yoga flow playlist", "Any", 3),
-    ("morning stretch calm", "Any", 3),
-    ("anxiety relief ambient", "Any", 3),
-    ("nature sounds birds morning", "Any", 3),
-    ("forest walk ambient", "Any", 9),
-    ("drone ambient endless", "Any", 9),
-    ("brian eno ambient", "Any", 9),
-    ("william basinski disintegration", "Any", 9),
-    ("stars of the lid instrumental", "Any", 9),
-    ("grouper dragging dead deer", "Any", 9),
-    ("julianna barwick magic place", "Any", 9),
-    ("lowercase ambient quiet", "Any", 9),
-    ("boards of canada geogaddi", "Any", 9),
-    ("aphex twin selected ambient", "Any", 9),
-    ("nils frahm spaces piano", "Any", 9),
-    ("max richter sleep", "Any", 3),
-    ("olafur arnalds and they escaped", "Any", 9),
-    ("jon hopkins immunity piano", "Any", 9),
-    ("floating points promises", "Any", 9),
-    ("calm morning coffee", "Any", 12),
-    ("slow sunday ambient", "Any", 12),
-    ("rainy night in bed", "Any", 12),
-    ("candle lit room warm", "Any", 4),
-    ("fireplace crackling music", "Any", 4),
-    ("winter cosy ambient", "Any", 12),
-    ("deep focus instrumental", "Any", 12),
-    ("reading room music", "Any", 12),
-    ("spa relaxation music", "Any", 3),
-    ("post-yoga savasana", "Any", 3),
-    ("lying on grass looking up", "Any", 12),
-    ("stargazing ambient", "Any", 9),
-    ("late night drive quiet", "Any", 12),
-    ("empty city streets ambient", "Any", 9),
-    ("introvert recharge music", "Any", 12),
-    ("alone but okay playlist", "Any", 14),
-    ("raga ambient indian classical", "Hindi", 9),
-    ("carnatic instrumental focus", "Tamil", 9),
-    ("sufi ambient drone", "Urdu", 9),
-    ("oud ambient arabic", "Arabic", 9),
-    ("dream pop hazy ethereal", "Any", 9),
-    ("shoegaze wall of sound", "Any", 9),
-    ("ethereal vocals reverb", "Any", 9),
-    ("slowcore drifting", "Any", 9),
-    ("cocteau twins heaven", "Any", 9),
-    ("my bloody valentine loveless", "Any", 9),
-    ("slowdive souvlaki", "Any", 9),
-    ("sigur ros hoppipolla", "Any", 9),
-    ("explosions in the sky post rock", "Any", 9),
-    ("half waif form dreamy", "Any", 9),
-    ("weyes blood front row seat", "Any", 8),
-    ("aldous harding cryptic", "Any", 9),
-    ("angel olsen all mirrors", "Any", 9),
-    ("mitski puberty 2", "Any", 8),
-    ("men i trust lauren", "Any", 14),
-    ("blood orange devonte", "Any", 9),
-    ("james blake overgrown", "Any", 9),
-    ("fleet foxes white winter", "Any", 9),
-    ("sufjan stevens vesuvius", "Any", 9),
-    ("ar rahman dreamy bollywood", "Hindi", 9),
-    ("kollywood dreamy slow", "Tamil", 9),
-    ("korean dream pop indie", "Korean", 9),
-    ("japanese dream pop", "Japanese", 9),
-    ("villain origin story", "Any", 9),
-    ("cinematic dark score", "Any", 9),
-    ("epic orchestral battle", "Any", 11),
-    ("hans zimmer time inception", "Any", 9),
-    ("ennio morricone western", "Any", 9),
-    ("john carpenter halloween synths", "Any", 9),
-    ("perturbator dark miami nights", "Any", 9),
-    ("kavinsky nightcall synthwave", "Any", 9),
-    ("blade runner 2049 ambient", "Any", 9),
-    ("tron legacy daft punk", "Any", 9),
-    ("interstellar hans zimmer", "Any", 9),
-    ("hereditary horror score", "Any", 9),
-    ("midsommar folk horror", "Any", 9),
-    ("nine inch nails fragile", "Any", 9),
-    ("tool lateralus", "Any", 9),
-    ("porcupine tree fear blank planet", "Any", 9),
-    ("katatonia tonight decision", "Any", 9),
-    ("dark ambient winter drone", "Any", 9),
-    ("industrial cold minimal", "Any", 9),
-    ("coil scatology industrial", "Any", 9),
-    ("final boss music game", "Any", 11),
-    ("dungeon rpg soundtrack", "Any", 9),
-    ("bollywood cinematic bgm", "Hindi", 9),
-    ("kollywood bgm dark", "Tamil", 9),
-    ("k-drama ost emotional", "Korean", 9),
-    ("anime ost joe hisaishi", "Japanese", 9),
-    ("arabic cinematic oud", "Arabic", 9),
-    ("african cinematic score", "Afrobeats", 9),
-    ("80s synth nostalgia", "Any", 9),
-    ("synthwave neon city night drive", "Any", 9),
-    ("retrowave outrun aesthetic", "Any", 9),
-    ("new wave cold 80s", "Any", 9),
-    ("italo disco 80s dance", "Any", 9),
-    ("city pop japanese 80s", "Japanese", 9),
-    ("vaporwave aesthetic 90s", "Any", 9),
-    ("90s rnb slow jam classic", "Any", 7),
-    ("90s hip hop boom bap", "Any", 9),
-    ("90s alternative rock nostalgia", "Any", 9),
-    ("britpop 90s blur oasis", "Any", 9),
-    ("00s emo throwback", "Any", 7),
-    ("00s pop nostalgia", "Any", 7),
-    ("early 2010s indie", "Any", 9),
-    ("chillwave 2010 nostalgia", "Any", 9),
-    ("tumblr era music 2013", "Any", 7),
-    ("tame impala lonerism era", "Any", 9),
-    ("mgmt electric feel era", "Any", 9),
-    ("vampire weekend contra era", "Any", 9),
-    ("arcade fire funeral era", "Any", 9),
-    ("the strokes is this it", "Any", 9),
-    ("joy division unknown pleasures", "Any", 9),
-    ("kraftwerk autobahn", "Any", 9),
-    ("david bowie ziggy stardust", "Any", 9),
-    ("velvet underground femme fatale", "Any", 9),
-    ("pink floyd dark side", "Any", 9),
-    ("led zeppelin stairway", "Any", 9),
-    ("joni mitchell blue album", "Any", 9),
-    ("driving with dad's old mixtape", "Any", 7),
-    ("summer of 2007 feeling", "Any", 7),
-    ("old bollywood kishore kumar", "Hindi", 9),
-    ("ilaiyaraaja retro classic", "Tamil", 9),
-    ("trot korean retro", "Korean", 9),
-    ("classic ghazal retro urdu", "Urdu", 9),
-    ("indie folk campfire", "Any", 14),
-    ("acoustic guitar and voice", "Any", 14),
-    ("folk revival modern", "Any", 9),
-    ("mountain folk dark", "Any", 9),
-    ("appalachian folk drone", "Any", 9),
-    ("old weird america", "Any", 9),
-    ("fleet foxes blue ridge mountains", "Any", 9),
-    ("iron and wine naked as we came", "Any", 9),
-    ("nick drake pink moon", "Any", 9),
-    ("john martyn solid air", "Any", 9),
-    ("fairport convention folk", "Any", 9),
-    ("hozier wasteland baby", "Any", 14),
-    ("noah and the whale 5 years time", "Any", 14),
-    ("tom odell another love", "Any", 7),
-    ("ben howard only love", "Any", 14),
-    ("passenger let her go", "Any", 7),
-    ("city and colour little hell", "Any", 14),
-    ("jose gonzalez heartbeats", "Any", 9),
-    ("bonnie prince billy darkness", "Any", 9),
-    ("sun kil moon ghosts highway", "Any", 9),
-    ("neil young harvest", "Any", 9),
-    ("joni mitchell river folk", "Any", 9),
-    ("james taylor sweet baby james", "Any", 9),
-    ("rajasthani folk instruments", "Hindi", 9),
-    ("bengali baul folk mystical", "Bengali", 9),
-    ("kerala folk songs", "Malayalam", 9),
-    ("telangana folk telugu", "Telugu", 9),
-    ("carnatic folk south india", "Tamil", 9),
-    ("bts dynamite k-pop hype", "Korean", 10),
-    ("blackpink how you like that", "Korean", 10),
-    ("newjeans hype boy kpop", "Korean", 10),
-    ("stray kids gods menu", "Korean", 6),
-    ("aespa black mamba dark kpop", "Korean", 9),
-    ("twice feel special kpop", "Korean", 7),
-    ("bts suga agust d", "Korean", 9),
-    ("zico artist korean", "Korean", 9),
-    ("dean instagram k-rnb", "Korean", 9),
-    ("epik high born hater", "Korean", 9),
-    ("yoasobi idol jpop", "Japanese", 10),
-    ("kenshi yonezu flamingo jpop", "Japanese", 7),
-    ("official hige dandism pretender", "Japanese", 7),
-    ("king gnu flash jpop", "Japanese", 9),
-    ("radwimps sparkle anime", "Japanese", 7),
-    ("asian kung-fu generation jrock", "Japanese", 9),
-    ("sakanaction music alt jpop", "Japanese", 9),
-    ("city pop mariya takeuchi", "Japanese", 9),
-    ("perfume techno jpop", "Japanese", 9),
-    ("burna boy african giant", "Afrobeats", 10),
-    ("davido afrobeats party", "Afrobeats", 10),
-    ("rema calm down global", "Afrobeats", 7),
-    ("ckay love nwantiti", "Afrobeats", 7),
-    ("omah lay attention afro", "Afrobeats", 9),
-    ("amapiano south africa", "Afrobeats", 9),
-    ("fela kuti afrobeat classic", "Afrobeats", 9),
-    ("sza ctrl neo soul", "Any", 9),
-    ("giveon heartbreak r&b", "Any", 14),
-    ("brent faiyaz romantic", "Any", 9),
-    ("h.e.r. love songs rnb", "Any", 9),
-    ("omar apollo aiming heart", "Any", 9),
-    ("snoh aalegra rnb", "Any", 9),
-    ("alabaster deplume gold", "Any", 9),
-    ("nala sinephro space jazz", "Any", 9),
-    ("bad bunny latin trap", "Spanish", 9),
-    ("j balvin colores", "Spanish", 7),
-    ("maluma felices los 4", "Spanish", 7),
-    ("rosalia motomami", "Spanish", 9),
-    ("c tangana el madrileño", "Spanish", 9),
-    ("french rap damso", "French", 9),
-    ("orelsan rap francais", "French", 9),
-    ("stromae alors on danse", "French", 7),
-    ("angele chanson pop", "French", 7),
-    ("arabic pop amr diab", "Arabic", 7),
-    ("um kulthum arabic classic", "Arabic", 9),
-    ("fairuz lebanon classic", "Arabic", 9),
-    ("portuguese fado saudade", "Portuguese", 9),
-    ("ana moura fado dark", "Portuguese", 9),
-    ("jorge ben jorge brasil", "Portuguese", 9),
-    ("making peace with a decision", "Any", 14),
-    ("the moment i stopped caring", "Any", 9),
-    ("watching the sun go down from train", "Any", 14),
-    ("getting dressed and feeling myself", "Any", 0),
-    ("packing up childhood bedroom", "Any", 9),
-    ("watching parents get old", "Any", 9),
-    ("forgiving yourself for the past", "Any", 14),
-    ("realizing you've grown as a person", "Any", 14),
-    ("finishing a book that broke you", "Any", 9),
-    ("the last day of a job you loved", "Any", 9),
-    ("graduating not knowing what comes next", "Any", 0),
-    ("watching a city from plane leaving", "Any", 9),
-    ("the silence after a long argument", "Any", 9),
-    ("first morning in a new apartment", "Any", 14),
-    ("driving past your old house", "Any", 9),
-    ("visiting hometown as an adult", "Any", 9),
-    ("first holiday season without someone", "Any", 9),
-    ("music that feels like being seventeen", "Any", 9),
-    ("liminal space between awake and asleep", "Any", 9),
-    ("the hour before a big decision", "Any", 9),
-    ("music for the drive after bad news", "Any", 9),
-    ("an ordinary day that was the last good one", "Any", 9),
-    ("nostalgia for a time that never existed", "Any", 9),
-    ("music that sounds like you're a main character", "Any", 0),
-    ("saturday afternoon with nothing to do", "Any", 12),
-    ("walking home alone after a good night", "Any", 9),
-    ("the quiet after a storm", "Any", 14),
-    ("summer ending feeling", "Any", 9),
-    ("music for 4am thoughts", "Any", 9),
-    ("music for 6am before world wakes up", "Any", 12),
-    ("that feeling right before something big", "Any", 0),
-    ("music for a final chapter", "Any", 9),
-    ("something to cry to so nobody hears", "Any", 1),
-    ("the beginning of a crush noticing everything", "Any", 0),
-    ("leaving toxic relationship terrifyingly free", "Any", 0),
-    ("calling someone you should have called", "Any", 9),
-    ("crowded street market marrakech", "Arabic", 9),
-    ("cramped apartment tokyo city lights", "Japanese", 9),
-    ("japanese convenience store 3am", "Japanese", 9),
-    ("empty shopping mall 1994", "Any", 9),
-    ("airport departure gate at night", "Any", 9),
-    ("long highway through nothing", "Any", 12),
-    ("soviet liminal space music", "Any", 9),
-    ("brutalist architecture music", "Any", 9),
-    ("overgrown train station vibes", "Any", 9),
-    ("museum ambient gallery", "Any", 12),
-    ("spa relaxation ambient", "Any", 3),
-    ("headphones on subway moment", "Any", 12),
-    ("bar playlist smooth evening", "Any", 12),
-    ("rooftop sunset party", "Any", 0),
-    ("beach bonfire night", "Any", 0),
-    ("road trip windows down", "Any", 0),
-    ("mountains and silence", "Any", 9),
-    ("desert highway night drive", "Any", 9),
-    ("monsoon rain window india", "Hindi", 12),
-    ("late night dhabha punjab", "Punjabi", 12),
-    ("seoul midnight neon lights", "Korean", 12),
-    ("tokyo subway ambient", "Japanese", 12),
-    ("paris cafe afternoon", "French", 12),
-    ("rio carnival energy", "Portuguese", 10),
-    ("nairobi night afrobeats", "Afrobeats", 10),
-    ("dubai rooftop luxury", "Arabic", 0),
-    ("london grime streets", "Any", 6),
-    ("new york drill hard", "Any", 6),
-    ("chicago footwork culture", "Any", 9),
-    ("music that sounds like the color blue", "Any", 9),
-    ("music that feels like wool", "Any", 9),
-    ("music that tastes like burnt caramel", "Any", 9),
-    ("sounds from a dream you can't remember", "Any", 9),
-    ("the texture of old photographs", "Any", 9),
-    ("music that sounds like dissolving", "Any", 9),
-    ("vibrations rather than notes", "Any", 9),
-    ("songs that feel like another timeline", "Any", 9),
-    ("music that sounds like the future never came", "Any", 9),
-    ("the aesthetic of abandoned places", "Any", 9),
-    ("music for a world with one less person", "Any", 9),
-    ("music from a parallel universe", "Any", 9),
-    ("songs that feel like the moon", "Any", 9),
-    ("the smell of petrichor in sound", "Any", 9),
-    ("the feeling of almost remembering", "Any", 9),
-    ("the specific dread of sunday evening", "Any", 9),
-    ("the anticipation before lightning strikes", "Any", 9),
-    ("music for a recurring dream", "Any", 9),
-    ("a song that shouldn't exist but does", "Any", 9),
-    ("happy sad simultaneously", "Any", 9),
-    ("calm but urgent", "Any", 9),
-    ("loud silence", "Any", 9),
-    ("bright darkness", "Any", 9),
-    ("soft thunder", "Any", 9),
-    ("music that heals and hurts at once", "Any", 9),
-    ("unknown familiarity", "Any", 9),
-    ("purposeful accident", "Any", 9),
-    ("ordered randomness", "Any", 9),
-    ("nostalgic for tomorrow", "Any", 9),
-    ("bored excitement", "Any", 9),
-    ("beautiful dread", "Any", 9),
-    ("three words that feel like a whole life", "Any", 9),
-    ("one last time", "Any", 9),
-    ("almost", "Any", 9),
-    ("not yet", "Any", 9),
-    ("finally", "Any", 0),
-    ("already", "Any", 9),
-    ("still here", "Any", 14),
-    ("gone now", "Any", 9),
-    ("pujabi dace hrad", "Any", 0),
-    ("hapy vbies onyl", "Any", 0),
-    ("amient focus snd", "Any", 0),
-    ("gud vbes onely", "Any", 0),
-    ("drk ambint slp", "Any", 0),
-    ("sft lov sng", "Any", 0),
-    ("vilin era drk", "Any", 0),
-    ("gthic drk wave", "Any", 0),
-    ("shogaze gtar", "Any", 0),
-    ("jzz clb nigt", "Any", 0),
-    ("reggaetn sumer", "Any", 0),
-    ("hpy hardcore fst", "Any", 0),
-    ("vaprwav aesthtic", "Any", 0),
-    ("slwd rvb em", "Any", 0),
-    ("mtal brk dwn", "Any", 0),
-    ("bollwd rom hindi", "Hindi", 0),
-    ("hnd brkp sad", "Hindi", 0),
+    # -- Original 125 --
+    ("late night drive through rain-slicked streets, Travis Scott on the radio", "English", 14, "trap", "Travis Scott"),
+    ("dil toota hai, 2 baje raat, akela baitha hoon, Aditya Rikhari type", "Hindi", 1, "indie pop", "Aditya Rikhari"),
+    ("full bhangra session, shaadi wali raat, Diljit Dosanjh energy", "Punjabi", 11, "bhangra", "Diljit Dosanjh"),
+    ("3am coding, dark room, chai getting cold, lofi study beats", "Hindi", 12, "lofi hip hop", None),
+    ("heavy gym session, phonk, beast mode activated, mass bgm vibes", "English", 10, "drift phonk", None),
+    ("sufi night, rooftop old Delhi, Nusrat Fateh Ali Khan energy, ghazal", "Urdu", 14, "qawwali", "Nusrat Fateh Ali Khan"),
+    ("BTS sad hours, crying at 1am, ARMY feels, kpop ballad emotional wreck", "Korean", 14, "k-pop ballad", "BTS"),
+    ("solo trip to Himachal, acoustic guitar, bittersweet feelings, Sahiba", "Hindi", 13, "hindi acoustic", None),
+    ("desi hip hop underground, Raftaar and Divine energy, Mumbai streets", "Hindi", 11, "desi hip hop", "Divine"),
+    ("Haryanvi rap, attitude mode, success story, heavy bass drops, desi swag", "Hindi", 11, "haryanvi", "Masoom Sharma"),
+    ("Tamil mass action BGM, Thalapathy Vijay movie energy, whistling moment", "Tamil", 10, "kollywood action", "Anirudh"),
+    ("4am can't sleep, indie pop sad, GINI type, windows open, city sounds", "English", 14, "indie sad", "GINI"),
+    ("Reels mein viral song, Instagram explore type, trending 2025 desi", "Hindi", 7, "bollywood", None),
+    ("sangeet night, bhangra and bollywood mix, dholak beats, full crowd", "Punjabi", 10, "bhangra", None),
+    ("dark phonk midnight workout, tunnel vision, heavy bass, menacing synths", "English", 11, "phonk", None),
+    ("90s Bollywood nostalgia, Kumar Sanu, rainy evening, purani yaadein", "Hindi", 13, "old bollywood", "Kumar Sanu"),
+    ("BLACKPINK type energy, girl group bops, Pink Venom vibes, dance along", "Korean", 10, "k-pop", "BLACKPINK"),
+    ("sad and numb but kinda okay, November mood, Phoebe Bridgers, slow indie", "English", 14, "indie folk", "Phoebe Bridgers"),
+    ("empty highway 2am, no destination, stars above, melancholy beautiful", "English", 12, "dream pop", None),
+    ("lofi hip hop study, late night exam prep, cozy room, soft rain outside", "English", 12, "lofi hip hop", None),
+    ("Punjabi breakup feels, tenu pata nahi si, dil tutda hai, slow sad", "Punjabi", 14, "punjabi sad", "B Praak"),
+    ("Telugu mass blockbuster, Pushpa type, Allu Arjun swag, folk mass beats", "Telugu", 10, "tollywood mass", "S.S. Thaman"),
+    ("bhajan clubbing vibes, tabla meets EDM, Navratri garba remix, spiritual", "Hindi", 10, "bollywood edm", None),
+    ("bedroom pop, indie aesthetic, Rex Orange County type, pastel colors", "English", 13, "bedroom pop", "Rex Orange County"),
+    ("Kerala rain, Malayalam film songs, ocean waves, peaceful summer vibes", "Malayalam", 14, "malayalam", None),
+    ("Arijit Singh type ballad, tere bina, rainy window, emotional Bollywood", "Hindi", 14, "bollywood sad", "Arijit Singh"),
+    ("Afrobeats party, Burna Boy Wizkid type, sweaty late night club", "Afrobeats", 10, "afrobeats", "Burna Boy"),
+    ("Jaipur night, rooftop, chill playlist, friends laughing, no AC", "Hindi", 12, "hindi chill", None),
+    ("pehli baarish, monsoon magic, petrichor, slow romantic, window mein", "Hindi", 14, "bollywood romantic", None),
+    ("BGMI ranked match, solo squad, trap beats, dark room setup, focus", "English", 10, "trap", None),
+    ("getting ready for night out, Dua Lipa Olivia Rodrigo vibes, hype girlie pop", "English", 10, "dance pop", "Dua Lipa"),
+    ("board exam stress, 12th class, sad anxious, cram session, raat ke 2 baje", "Hindi", 9, "hindi sad", None),
+    ("indie Japanese city pop, anime OST vibes, Tokyo rain, Ado type", "Japanese", 13, "city pop", "Ado"),
+    ("empty highway 2am clean version, no artist named, stars, drive, beautiful", "English", 12, "ambient", None),
+    ("Goa beach sunset, coconut toddy, reggae trance, feet in sand, ocean", "English", 12, "reggae", None),
+    ("rave festival sunrise, trance music, sweaty crowd, spiritual high, arms up", "English", 10, "psytrance", None),
+    ("coming out of depression era, finally okay, self love summer, indie happy", "English", 13, "indie pop", None),
+    ("urdu poetry mood, Faiz Ahmad Faiz, dimly lit, intellectual, chai and cigarette", "Urdu", 9, "ghazal", None),
+    ("Spanish romantic evening, Latin vibes, salsa nights, sangria and dancing", "Spanish", 13, "salsa", None),
+    ("Rabindra Sangeet, Bengali monsoon, bhalobasa, philosophical, Tagore poetry", "Bengali", 14, "rabindra sangeet", None),
+    ("post-punk existential dread, Radiohead Thom Yorke OK Computer era, dystopian", "English", 10, "post-punk", "Radiohead"),
+    ("Kendrick Lamar introspective, deep rap thinking, late night city bus, bars", "English", 13, "hip-hop", "Kendrick Lamar"),
+    ("The Weeknd dark RnB, neon lights hotel room, heartbreak high, 80s synth", "English", 10, "synthwave", "The Weeknd"),
+    ("Bollywood item number, Badshah rap, desi club banger, shaadi floor packed", "Hindi", 10, "bollywood dance", "Badshah"),
+    ("college hostel night, new friends, laughing at 3am, spontaneous, carefree", "English", 13, "indie pop", None),
+    ("NewJeans Hype Boy type, cute kpop, bubbly pop, walking to class bop", "Korean", 13, "k-pop", "NewJeans"),
+    ("midnight anxiety can't sleep, overthinking, soft piano, need to calm down", "Any", 9, "ambient", None),
+    ("first love feeling, butterflies, Spotify crush playlist, acoustic warm, shy", "Any", 14, "acoustic pop", None),
+    ("amapiano crossover desi, tabla and piano, new wave Indian club sound", "Any", 10, "amapiano", None),
+    ("morning run sunrise, motivational, upbeat, headphones in, city waking up", "English", 5, "dance pop", None),
+    ("Kanye West dark fantasy era, maximalist production, introspective rap", "English", 10, "hip-hop", "Kanye West"),
+    ("lo-fi but make it Indian, sitar samples, tabla background, desi chill study", "Hindi", 12, "hindi lofi", None),
+    ("Frank Ocean Blonde era, introspective RnB, summer grief, soft production", "English", 14, "neo soul", "Frank Ocean"),
+    ("Sabrina Carpenter Espresso type, flirty pop, confidence walk, fun bops", "English", 10, "pop", "Sabrina Carpenter"),
+    ("pre exam raat ki chai, anxiety, past paper, stressed student, midnight", "Hindi", 9, "hindi acoustic", None),
+    ("Tamil kuthu beats, Yuvan Shankar Raja style, mass folk EDM, whistling", "Tamil", 10, "kollywood dance", "Yuvan Shankar Raja"),
+    ("late night Bangalore techno underground, warehouse rave, no sleep till sunrise", "English", 10, "hard techno", None),
+    ("Coldplay Yellow era, dreamy guitar, hopeful sad, soft glowing lights", "English", 13, "indie rock", "Coldplay"),
+    ("KGF Rocky Bhai energy, mass BGM, power walk, goosebumps moment", "Kannada", 10, "kannada bgm", "Ravi Basrur"),
+    ("Punjabi breakup, Shubh dark Punjabi, bass heavy, night out modern sound", "Punjabi", 11, "punjabi trap", "Shubh"),
+    ("vibing alone on Sunday, no plans, lazy afternoon, sunlight through curtains", "Any", 12, "chillhop", None),
+    ("DIVINE Mumbai street rap, gully boy energy, underground, represent", "Hindi", 11, "desi hip hop", "DIVINE"),
+    ("Portuguese saudade, melancholic longing, fado vibes, ocean and nostalgia", "Portuguese", 14, "fado", None),
+    ("Arabic trap, Egyptian drill, Cairo nights, dark energy, Middle Eastern bass", "Arabic", 10, "arabic trap", None),
+    ("Mitski devastated, indie rock crying, emotional breakdown, loud then quiet", "English", 14, "indie rock", "Mitski"),
+    ("Taylor Swift revenge era, angry empowerment pop, glow up anthem", "English", 10, "pop", "Taylor Swift"),
+    ("desi wedding reception, everyone on floor, Bollywood classics 2000s, timepass", "Hindi", 7, "bollywood", None),
+    ("chillhop anime aesthetic, lo-fi girl energy, cozy rainy window, study", "Japanese", 12, "lofi hip hop", None),
+    ("Carnatic fusion, AR Rahman style, orchestral Indian, emotional cinematic", "Tamil", 13, "kollywood bgm", "A.R. Rahman"),
+    ("sad Malayalam film scene, emotional climax, rain, crying, background score", "Malayalam", 14, "malayalam sad", None),
+    ("Haryanvi folk meets hip hop, Sapna Choudhary energy, desi swag, jat vibes", "Hindi", 11, "haryanvi", "Sapna Choudhary"),
+    ("Bon Iver sad beautiful, falsetto, indie folk car cry, winter isolated", "English", 14, "indie folk", "Bon Iver"),
+    ("Tame Impala psychedelic, mind melting, floating in space, reverb heavy", "English", 13, "psychedelic rock", "Tame Impala"),
+    ("post breakup glow up, Taylor Swift revenge, angry pop, empowerment", "English", 10, "pop", "Olivia Rodrigo"),
+    ("Chill Arabic pop, khaleeji vibes, desert night, oud and beats, ambient", "Arabic", 12, "khaleeji", None),
+    ("exam over relief, summer vacation, carefree, windows down, screaming bops", "English", 10, "pop punk", None),
+    ("2000s Bollywood nostalgia, Udit Narayan, Shah Rukh film, slow dance scene", "Hindi", 13, "old bollywood", "Udit Narayan"),
+    ("Telugu love song, AR Rahman feel, soft rain, first date nervous, beautiful", "Telugu", 14, "tollywood romantic", "A.R. Rahman"),
+    ("UK drill meets desi, British Indian diaspora, London streets, grime + curry", "English", 10, "uk drill", "Central Cee"),
+    ("Himesh Reshammiya era, nasal vocals, 2005 Bollywood, ringtone era nostalgia", "Hindi", 13, "bollywood", "Himesh Reshammiya"),
+    ("Ibiza deep house, golden hour terrace, sipping something cold, smooth", "English", 12, "melodic house", None),
+    ("Harry Styles Harry's House era, soft indie pop, summery, dancing in kitchen", "English", 13, "indie pop", "Harry Styles"),
+    ("GTA at 3am, city crime vibes, old school hip hop, 2000s West Coast rap", "English", 10, "hip-hop", "Dr. Dre"),
+    ("Lana Del Rey Hollywood sadcore, vintage California, glamour and grief", "English", 14, "sadcore", "Lana Del Rey"),
+    ("Marathi Ganesh chaturthi, dhol taasha, loud crowd, festival energy", "Any", 10, "marathi folk", "Ajay-Atul"),
+    ("AP Dhillon Punjabi RnB, smooth international sound, diaspora love song", "Punjabi", 13, "punjabi rnb", "AP Dhillon"),
+    ("sunrise after all-nighter, watching sun come up, bittersweet tired beautiful", "Any", 14, "ambient", None),
+    ("Carnatic meets jazz, Indian classical improvisation, sophisticated late night", "Any", 12, "carnatic jazz", None),
+    ("Gully Boy full soundtrack energy, multiple desi rappers, raw streets, real", "Hindi", 11, "desi hip hop", "Naezy"),
+    ("post concert high, ears ringing, emotional, grateful, favourite artist live", "English", 14, "indie pop", None),
+    ("Assamese Bihu festival, folk instruments, harvest celebration, northeast joy", "Any", 10, "bihu", None),
+    ("late night coding bug fixing, energy drink, intense focus, dark IDE", "English", 10, "idm", None),
+    ("Bengali indie rock, Fossils or Cactus type, Kolkata, emotion and rain", "Bengali", 13, "bengali rock", "Fossils"),
+    ("sad vibes only, no specific genre, just recommend me something for crying", "Any", 14, "sad", None),
+    ("Woke up feeling like Ranveer Singh, hyper confident, Bollywood hero entry", "Hindi", 10, "bollywood", "Ranveer Singh"),
+    ("playing something from my city's underground music scene, Delhi", "English", 12, "delhi indie", "Peter Cat Recording Co."),
+    ("totally exhausted, need something that isn't English, just give me something beautiful", "Japanese", 9, "japanese ambient", None),
+    ("describe VibeFinderAI itself — oscilloscope, neural, music discovery engine", "Any", 12, "ambient techno", None),
+    ("my favorite prompt of the test — whichever vibe you felt worked best, try it again with higher nicheness", "Hindi", 8, "indie folk", "Prateek Kuhad"),
+    ("one more thing — give me something I've never heard before, maximum nicheness, any language, any vibe", "Any", 8, "experimental", None),
+    ("grungy 90s alt rock, seattle flannel, angst and heavy distortion", "English", 10, "grunge", "Nirvana"),
+    ("hyperpop glitchcore madness, sugar rush, 200 bpm, internet brain rot", "English", 6, "hyperpop", "100 gecs"),
+    ("Bhojpuri mass dance, high energy, village party, loud beats", "Hindi", 10, "bhojpuri", "Pawan Singh"),
+    ("soft french cafe morning, accordion, espresso, romantic paris vibes", "French", 13, "chanson", "Edith Piaf"),
+    ("cyberpunk 2077 night city drive, dark synthwave, neon lights glowing", "English", 10, "cyberpunk", "Gesaffelstein"),
+    ("heavy metal gym PR, double bass pedals, screaming vocals, purely aggressive", "English", 6, "metalcore", "Bring Me The Horizon"),
+    ("soft country morning, acoustic guitar on a porch, cowboy coffee, peaceful", "English", 13, "americana", "Tyler Childers"),
+    ("retro 80s pop montage, training for the big fight, synth brass, euphoric", "English", 5, "80s pop", "Survivor"),
+    ("midwest emo revival, twinkly guitars, screaming in a basement, nostalgic", "English", 14, "midwest emo", "American Football"),
+    ("bossa nova afternoon, ipanema beach, gentle acoustic, portuguese singing", "Portuguese", 13, "bossa nova", "João Gilberto"),
+    ("shoegaze wall of sound, looking at my pedals, fuzzy dreamy loud", "English", 13, "shoegaze", "My Bloody Valentine"),
+    ("industrial techno warehouse, berlin 4am, strobe lights, dark heavy bass", "English", 10, "industrial techno", "Amelie Lens"),
+    ("symphonic epic battle, dragons flying, choir swelling, huge orchestration", "Any", 10, "epic orchestral", "Hans Zimmer"),
+    ("classic 70s soul, motown feel, funky bassline, smooth vocals", "English", 13, "soul", "Marvin Gaye"),
+    ("latin trap bad bunny style, perreo, aggressive club vibes, puertorico", "Spanish", 11, "latin trap", "Bad Bunny"),
+    ("celtic folk pub night, fiddles playing fast, drinking songs, happy", "English", 10, "celtic folk", "The Dubliners"),
+    ("reggae dub chill out, kingston vibes, heavy bass slow tempo, smoke", "English", 12, "dub", "Bob Marley"),
+    ("lofi house, 4 on the floor but dusty samples, deep groove, late night", "English", 12, "lofi house", "Ross From Friends"),
+    ("classical piano solo, chopin nocturne vibes, raining outside, very sad", "Any", 14, "classical piano", "Chopin"),
+    ("vaporwave mall music, 1995 nostalgia, pitched down diana ross, purple", "Any", 12, "vaporwave", "Macintosh Plus"),
+    ("hardstyle euphoric drop, q-dance festival, 150 bpm, laser show", "English", 6, "hardstyle", "Headhunterz"),
+    ("neo-soul cafe, baduizm era, smooth rhodes piano, head nodding groove", "English", 13, "neo soul", "Erykah Badu"),
+    ("garage rock revival, 2001 new york city, leather jackets, raw guitars", "English", 10, "garage rock", "The Strokes"),
+    ("sandalwood romantic hits, puneeth rajkumar movies, soft melody", "Kannada", 14, "kannada", "Puneeth Rajkumar"),
+    ("desi lofi mashup, old bollywood vocals over hip hop beats, chillhop", "Hindi", 12, "bollywood lofi", None),
+    
+    # -- New 125 Seeds (Total 250) -- 
+    ("patrika gate hangouts, cool evening in Jaipur, acoustic indie covers", "Hindi", 13, "indie pop", "Osho Jain"),
+    ("sigma male patrick bateman phonk walk, literally me", "English", 11, "drift phonk", "Kordhell"),
+    ("skibidi toilet rizz party, literal brain rot music, sped up", "English", 6, "hyperpop", "Nettspend"),
+    ("sad boi hours, missed her call, slowed and reverb hindi", "Hindi", 14, "bollywood lofi", "Jubin Nautiyal"),
+    ("late night long drive on nahargarh, windows down, thinking deep", "Hindi", 12, "hindi chill", "The Local Train"),
+    ("punjabi gym hardstyle, lifting heavy, sidhu moosewala remix edm", "Punjabi", 10, "hardstyle", "Sidhu Moosewala"),
+    ("korean indie cafe, raining outside, matcha latte, soft vocals", "Korean", 12, "k-indie", "The Black Skirts"),
+    ("raw delhi underground rap, seedhe maut energy, moshpit", "Hindi", 11, "desi hip hop", "Seedhe Maut"),
+    ("bhojpuri lollypop lagelu club mix, desi dj night, fully drunk", "Hindi", 10, "bhojpuri", "Pawan Singh"),
+    ("tamil sad scene, anirudh heartbreak bgm, crying in the rain", "Tamil", 14, "kollywood sad", "Anirudh Ravichander"),
+    ("anime opening hype, running to school, anime protagonist energy", "Japanese", 10, "j-pop", "LiSA"),
+    ("late 90s shah rukh khan entry, arms wide open, pure romance", "Hindi", 13, "bollywood romantic", "Jatin-Lalit"),
+    ("chill guitar on the balcony, bangalore weather, evening breeze", "English", 12, "acoustic", "Prateek Kuhad"),
+    ("amapiano sunset party, south african grooves, sipping cocktails", "Afrobeats", 12, "amapiano", "Kabza De Small"),
+    ("goa trance full moon party, anjuna beach, psych, mind expanding", "Any", 10, "goa trance", "Astrix"),
+    ("classical sitar for studying, deep focus, indian classical morning", "Hindi", 9, "hindustani classical", "Ravi Shankar"),
+    ("french house filter sweep, daft punk disco vibes, groovy bass", "French", 10, "french house", "Daft Punk"),
+    ("telugu mass item song, full whistling, packed theatre, celebration", "Telugu", 10, "tollywood", "Devi Sri Prasad"),
+    ("sad mallu breakup song, driving alone in kochi, rain", "Malayalam", 14, "malayalam sad", "Hesham Abdul Wahab"),
+    ("indie folk harmony, autumn leaves falling, nostalgic acoustic", "English", 13, "indie folk", "The Paper Kites"),
+    ("drill rap london, grim reaper, aggressive 808 slides", "English", 11, "uk drill", "Headie One"),
+    ("kannada emotional climax, mother sentiment song, kgf tears", "Kannada", 14, "kannada", "Ravi Basrur"),
+    ("sufi qawwali clapping, divine connection, hypnotic rhythm", "Urdu", 12, "qawwali", "Abida Parveen"),
+    ("gothic post-punk, wearing all black, dancing in a dark room", "English", 10, "post-punk", "Joy Division"),
+    ("synthwave drive outrun, neon grid, retrowave outrun aesthetic", "English", 10, "synthwave", "Kavinsky"),
+    ("marathi lavani dance, high tempo, folk instruments, loud", "Marathi", 10, "marathi folk", "Ajay-Atul"),
+    ("afrobeat fela kuti classic, brass section, political groove", "Afrobeats", 13, "afrobeat", "Fela Kuti"),
+    ("spanish flamenco guitar, passionate clapping, fire dance", "Spanish", 10, "flamenco", "Paco de Lucía"),
+    ("brazilian funk carioca, favela party, heavy bass dirty", "Portuguese", 10, "baile funk", "MC Kevin o Chris"),
+    ("old school boom bap hip hop, new york 90s, scratch dj", "English", 13, "boom bap", "Nas"),
+    ("ambient drone sleep music, floating in space, no beat", "Any", 9, "drone", "Stars of the Lid"),
+    ("irish pub drinking song, dropkick murphys, loud singing", "English", 10, "celtic punk", "The Pogues"),
+    ("reggaeton summer anthem, bad bunny club hit, dancing sweat", "Spanish", 10, "reggaeton", "J Balvin"),
+    ("lofi jazz hop, rainy cafe, saxophone, study relax", "English", 12, "jazz hop", "Nujabes"),
+    ("chicago house 90s, warehouse party, piano chords, soul vocal", "English", 10, "chicago house", "Frankie Knuckles"),
+    ("epic choral trailer music, two steps from hell, world ending", "Any", 10, "epic", "Thomas Bergersen"),
+    ("bedroom pop diy, girl in red, softly singing, queer love", "English", 13, "bedroom pop", "girl in red"),
+    ("math rock tapping, odd time signatures, complex guitar", "English", 10, "math rock", "Polyphia"),
+    ("shoegaze wall of guitar fuzz, my bloody valentine, loud hazy", "English", 13, "shoegaze", "Slowdive"),
+    ("kpop boy group hype, stray kids, loud aggressive choreography", "Korean", 10, "k-pop", "Stray Kids"),
+    ("japanese city pop driving, mariya takeuchi, 80s tokyo night", "Japanese", 13, "city pop", "Mariya Takeuchi"),
+    ("punjabi folk sad, old memories, village life, tumbi", "Punjabi", 14, "punjabi folk", "Gurdas Maan"),
+    ("hindi indie pop, local train type, nostalgia road trip", "Hindi", 13, "indie pop", "When Chai Met Toast"),
+    ("metalcore breakdown, open up the pit, architect style", "English", 6, "metalcore", "Architects"),
+    ("country pop summer radio, luke bryan, drinking beer outside", "English", 10, "country pop", "Luke Bryan"),
+    ("dubstep heavy drop, skrillex, laser show, bass face", "English", 11, "dubstep", "Skrillex"),
+    ("nu disco funky bass, purple disco machine, groovy night", "English", 10, "nu disco", "Purple Disco Machine"),
+    ("cumbia sonidera, dancing cumbia, accordion, latin party", "Spanish", 10, "cumbia", "Los Ángeles Azules"),
+    ("bengali rock fossils, kolkata underground, emotional shouting", "Bengali", 11, "bengali rock", "Rupam Islam"),
+    ("urdu lofi poetry, sad aesthetic, moonlit balcony", "Urdu", 14, "lofi", "Ali Sethi"),
+    ("assamese bihu dance, spring festival, dhol pepa", "Assamese", 10, "bihu", "Zubeen Garg"),
+    ("gujarati dj song, garba night, non stop dance", "Marathi", 10, "garba", "Kirtidan Gadhvi"),
+    ("nepali bihu folk, northeast melodies, sweet romantic", "Any", 13, "folk", "Papon"),
+    ("slowed reverb phonk, late night street racing, dark", "English", 14, "drift phonk", "PlayaPhonk"),
+    ("hyperpop 100 gecs chaotic, sugar crash, distorted bass", "English", 6, "hyperpop", "Laura Les"),
+    ("glitchcore internet music, chronically online, discord call", "English", 10, "glitchcore", "glaive"),
+    ("dark academia classical, cellos, dusty library, studying", "Any", 9, "classical", "Vivaldi"),
+    ("cottagecore folk, hozier, running through fields", "English", 13, "indie folk", "Hozier"),
+    ("royalcore orchestral, bridgerton ball, string quartet", "Any", 10, "classical crossover", "Vitamin String Quartet"),
+    ("pirate tavern music, hurdy gurdy, sea shanty", "English", 10, "sea shanty", "The Longest Johns"),
+    ("vaporwave mallsoft, empty mall 1998, muzak slowed", "Any", 12, "mallsoft", "猫 シ Corp."),
+    ("soviet post punk, molchat doma, cold bleak winter", "Any", 10, "russian post-punk", "Molchat Doma"),
+    ("mexican corridos tumbados, peso pluma, acoustic guitar trap", "Spanish", 11, "corridos tumbados", "Peso Pluma"),
+    ("jamaican dancehall bashment, whining, loud sound system", "English", 10, "dancehall", "Vybz Kartel"),
+    ("nigerian alte cruise, cruise music, smooth afrobeats", "Afrobeats", 12, "alte", "Cruel Santino"),
+    ("south african gqom, dark electronic dance, heavy drums", "Afrobeats", 10, "gqom", "DJ Maphorisa"),
+    ("moroccan mahraganat, street wedding, auto tune loud", "Arabic", 10, "mahraganat", "Hassan Shakosh"),
+    ("turkish gnawa folk, spiritual trance, desert instruments", "Arabic", 12, "gnawa", "Hamza El Din"),
+    ("persian psych rock, 70s anatolian rock, funky", "Any", 10, "anatolian rock", "Altın Gün"),
+    ("french rap marseille, pnl, aggressive street trap", "French", 11, "french rap", "PNL"),
+    ("german techno bunker, 140bpm, dark sweat", "English", 11, "hard techno", "Klangkuenstler"),
+    ("italian disco 80s, synth pop, cheesy but good", "Any", 10, "italo disco", "Giorgio Moroder"),
+    ("korean trot music, ahjumma dance, upbeat old school", "Korean", 10, "trot", "Lim Young-woong"),
+    ("japanese visual kei, x japan, dramatic rock goth", "Japanese", 10, "visual kei", "X Japan"),
+    ("chinese vocaloid, hatsune miku, electronic pop fast", "Japanese", 6, "vocaloid", "Hatsune Miku"),
+    ("thai funk 70s, groovy bass, rare vinyl find", "Any", 10, "thai funk", "Khruangbin"),
+    ("indonesian bossa nova, cafe music, breezy morning", "Any", 12, "bossa nova", "Tom Jobim"),
+    ("filipino harana, acoustic serenading, soft love", "Any", 14, "opm", "Ben&Ben"),
+    ("malaysian dangdut, wedding dance, traditional upbeat", "Any", 10, "dangdut", "Rhoma Irama"),
+    ("australian indie rock, surf trash, sun bleached guitar", "English", 10, "surf rock", "Ocean Alley"),
+    ("new zealand psych, tame impala vibes, fuzzy synths", "English", 12, "psychedelic pop", "Pond"),
+    ("canadian reggae, soft dub, island vibes in the cold", "English", 12, "reggae", "Magic!"),
+    ("hawaiian roots reggae, ukulele, beach bonfire", "English", 12, "hawaiian reggae", "J Boog"),
+    ("trinidadian lovers rock, sweet reggae, romantic slow", "English", 14, "lovers rock", "Gregory Isaacs"),
+    ("cuban mariachi, trumpets, cantina drinking", "Spanish", 10, "mariachi", "Vicente Fernández"),
+    ("argentinian ranchera, heartbreak tequila, loud crying", "Spanish", 14, "ranchera", "Christian Nodal"),
+    ("colombian salsa cubana, fast footwork, brass heavy", "Spanish", 10, "salsa", "Celia Cruz"),
+    ("peruvian vallenato, accordion, emotional folk", "Spanish", 10, "vallenato", "Carlos Vives"),
+    ("chilean tango, dramatic romantic dance, violin", "Spanish", 14, "tango", "Astor Piazzolla"),
+    ("venezuelan merengue, fast tropical, party hits", "Spanish", 10, "merengue", "Elvis Crespo"),
+    ("ecuadorian reggaeton old school, don omar, gasolina", "Spanish", 10, "reggaeton", "Don Omar"),
+    ("bolivian bachata, slow hip movement, guitar romantic", "Spanish", 14, "bachata", "Romeo Santos"),
+    ("paraguayan chicha, psychedelic cumbia, weird synths", "Spanish", 10, "chicha", "Los Destellos"),
+    ("uruguayan zamba, slow sad folk, acoustic", "Spanish", 14, "zamba", "Mercedes Sosa"),
+    ("guyanese calypso, steel pan drum, carnival beach", "Any", 10, "calypso", "Mighty Sparrow"),
+    ("surinamese soca, jump up festival, whistles blowing", "Any", 10, "soca", "Machel Montano"),
+    ("icelandic indie pop, lorde style, soft synth", "English", 13, "indie pop", "Björk"),
+    ("finnish ethereal wave, sigur ros, icy glacier music", "Any", 9, "ethereal wave", "Sigur Rós"),
+    ("swedish death metal, gothenburg sound, melodic fast", "English", 11, "melodic death metal", "In Flames"),
+    ("norwegian black metal, dark forest church burning", "English", 11, "black metal", "Mayhem"),
+    ("danish power metal, dragons fantasy, soaring vocals", "English", 10, "power metal", "Nightwish"),
+    ("poland eurodance 90s, aqua barbie girl vibes, fun", "English", 10, "eurodance", "Aqua"),
+    ("dutch trance classic, tiesto, 1999 rave, arpeggios", "English", 10, "trance", "Tiësto"),
+    ("belgian hardstyle bounce, jumpstyle, crazy bass", "English", 6, "jumpstyle", "Jeckyll & Hyde"),
+    ("austrian gabber, hakken dance, distorted kick drum", "English", 11, "gabber", "Angerfist"),
+    ("swiss classical waltz, ballroom dance, elegant strings", "Any", 9, "waltz", "Johann Strauss II"),
+    ("hungarian folk punk, accordion distortion, drunk party", "Any", 10, "folk punk", "Gogol Bordello"),
+    ("czech dark cabaret, gothic piano, dramatic singing", "Any", 10, "dark cabaret", "The Dresden Dolls"),
+    ("slovakian ska punk, upbeat brass section, skanking", "English", 10, "ska punk", "Streetlight Manifesto"),
+    ("croatian gypsy punk, balkan beats, wild violin", "Any", 10, "balkan brass", "Goran Bregović"),
+    ("serbian turbofolk, balkan club music, accordion edm", "Any", 10, "turbofolk", "Ceca"),
+    ("romanian disco polo, eastern bloc 90s party", "Any", 10, "disco polo", "Akcent"),
+    ("bulgarian manele, street party, synth melodies", "Any", 10, "manele", "Florin Salam"),
+    ("greek arabesk, oriental pop, emotional strings", "Any", 14, "arabesk", "İbrahim Tatlıses"),
+    ("ukrainian hardbass, 200 bpm, squatting in tracksuits", "Any", 6, "hardbass", "DJ Blyatman"),
+    ("lithuanian phonk drift, cowbell melody, car edit", "English", 11, "drift phonk", "Kaito Shoma"),
+    ("latvian chillwave synth, neon nostalgia, slow driving", "English", 12, "chillwave", "Tycho"),
+    ("estonian outrun retro, 80s arcade game, driving fast", "English", 10, "outrun", "Lazerhawk"),
+    ("albanian future funk, french touch, bass slapping", "English", 10, "future funk", "Yung Bae"),
+    ("macedonian trap metal, scarlxrd scream rap, distorted", "English", 11, "trap metal", "Scarlxrd"),
+    ("bosnian emo rap, lil peep style, acoustic guitar trap", "English", 14, "emo rap", "Lil Peep"),
+    ("montenegrin cloud rap, yung lean aesthetic, sad boy", "English", 14, "cloud rap", "Yung Lean"),
+    ("slovenian plugg rnb, autumn leaves, soft beats", "English", 12, "pluggnb", "Autumn!"),
+    ("kosovan jersey club bounce, bed squeak sample, tiktok dance", "English", 10, "jersey club", "Bandmanrill"),
+    ("moldovan drill uk, pop smoke bass slides, aggressive", "English", 11, "uk drill", "Pop Smoke")
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PROMPT BUILDER — expands seeds × knob profiles = 10,000 test cases
+# PROMPT BUILDER — 250 seeds × 16 knobs × 5 Pro Modes = 20,000 cases
 # ══════════════════════════════════════════════════════════════════════════════
 def build_prompts():
     prompts = []
-    for text, language, base_kp in _SEEDS:
+    limits = [5, 10, 20, 50]
+    limit_idx = 0
+
+    for text, language, base_kp, ov_genre, ov_artist in _SEEDS:
         for kp_idx, (af, bpm, niche, label) in enumerate(KNOB_PROFILES):
-            # Use seed's preferred knob profile for the first slot,
-            # then rotate through all 16 for full coverage
-            actual_af   = af
-            actual_bpm  = bpm
-            actual_niche = niche
-            # If this is the seed's preferred profile slot, override with seed defaults
-            if kp_idx == base_kp:
-                actual_af, actual_bpm, actual_niche, label = KNOB_PROFILES[base_kp]
-            prompts.append({
-                "text":         text,
-                "language":     language,
-                "artist_focus": actual_af,
-                "bpm_focus":    actual_bpm,
-                "nicheness":    actual_niche,
-                "knob_label":   label,
-                "track_limit":  20,
-            })
-    return prompts[:10000]
+            
+            # Generate 5 Pro Mode variations for EVERY knob combination
+            for mode in range(5):
+                use_sec = False
+                dismiss = False
+                genre = None
+                artist = None
+
+                if mode == 1:
+                    use_sec = True
+                elif mode == 2:
+                    dismiss = True
+                elif mode == 3 and ov_genre:
+                    genre = ov_genre
+                elif mode == 4 and ov_artist:
+                    artist = ov_artist
+                
+                # Cycle through track limits
+                t_limit = limits[limit_idx % 4]
+                limit_idx += 1
+
+                prompts.append({
+                    "text":         text,
+                    "language":     language,
+                    "artist_focus": af,
+                    "bpm_focus":    bpm,
+                    "nicheness":    niche,
+                    "knob_label":   label,
+                    "track_limit":  t_limit,
+                    "use_secondary_vibe": use_sec,
+                    "override_genre": genre,
+                    "override_artist": artist,
+                    "dismiss_detected_artist": dismiss,
+                    "mode_label":   f"Mode_{mode}"
+                })
+                
+    return prompts[:20000]
 
 PROMPTS = build_prompts()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LOGGER SETUP
 # ══════════════════════════════════════════════════════════════════════════════
-logger = logging.getLogger("VibeFinder_v10k")
+# Main Engine Logger
+logger = logging.getLogger("VibeFinder_v10k_3")
 logger.setLevel(logging.INFO)
-fh = logging.FileHandler("qa_batch_v10k_2.log", encoding="utf-8")
+fh = logging.FileHandler("qa_batch_v10k_3.log", encoding="utf-8")
 sh = logging.StreamHandler()
 fmt = logging.Formatter("%(message)s")
 fh.setFormatter(fmt)
 sh.setFormatter(fmt)
 logger.handlers = [fh, sh]
+
+# Dedicated Gemini Analysis Logger
+gemini_logger = logging.getLogger("GeminiGrader")
+gemini_logger.setLevel(logging.INFO)
+g_fh = logging.FileHandler("qa_batch_gemini_analysis.log", encoding="utf-8")
+g_fh.setFormatter(fmt)
+gemini_logger.handlers = [g_fh, sh] # Logs to its own file AND the console so you can see it
 
 JUNK_PATTERNS = re.compile(
     r'\b(podcast|episode|news|npr|bbc|ted talk|morning edition|'
@@ -744,10 +464,10 @@ async def run_batch():
     db = Prisma()
     await db.connect()
 
-    logger.info("=" * 70)
-    logger.info("  VIBEFINDER AI — MEGA STRESS SUITE v10k")
-    logger.info(f"  {len(PROMPTS)} PROMPTS | 20 TRACKS EACH | 16 KNOB PROFILES | ALL LANGUAGES")
-    logger.info("=" * 70 + "\n")
+    logger.info("=" * 80)
+    logger.info("  VIBEFINDER AI — MEGA STRESS SUITE v3 (JAIPUR/GEN Z EDITION)")
+    logger.info(f"  {len(PROMPTS)} PROMPTS | GEMINI QUEUE ENABLED ({GEMINI_SAMPLE_RATE*100}% sample)")
+    logger.info("=" * 80 + "\n")
 
     try:
         db_artists = await db.artistdirectory.find_many()
@@ -759,6 +479,13 @@ async def run_batch():
     signal_lost = 0
     blocklist_hits = 0
     genre_noise_hits = 0
+    
+    # Setup for deferred Gemini evaluation
+    gemini_eval_queue = []
+    gemini_hits = 0
+    gemini_partials = 0
+    gemini_misses = 0
+
     GENRE_JUNK = {"ghazal", "jazz", "blues", "folk", "pop", "rock", "hip-hop",
                   "classical", "ambient", "soul", "rnb", "indie", "dance",
                   "electronic", "metal", "punk", "country", "reggae"}
@@ -776,6 +503,16 @@ async def run_batch():
         logger.info(f"INPUT    : \"{text}\"")
         logger.info(f"LANGUAGE : {language}")
         logger.info(f"KNOBS    : artist={artist_focus}  bpm={bpm_focus}  niche={nicheness}  [{knob_label}]")
+        logger.info(f"LIMIT    : {track_limit}")
+
+        # Log Pro Mode settings
+        pro_flags = []
+        if item["use_secondary_vibe"]: pro_flags.append("PIVOT: Secondary Vibe")
+        if item["override_genre"]: pro_flags.append(f"FORCE GENRE: {item['override_genre']}")
+        if item["override_artist"]: pro_flags.append(f"FORCE ARTIST: {item['override_artist']}")
+        if item["dismiss_detected_artist"]: pro_flags.append("DISMISS: Auto-Artist")
+        if pro_flags:
+            logger.info(f"PRO MODE : {' | '.join(pro_flags)}")
 
         request = VibeRequest(
             text=text,
@@ -783,40 +520,48 @@ async def run_batch():
             track_limit=track_limit,
             artist_focus=artist_focus,
             bpm_focus=bpm_focus,
+            nicheness=nicheness,
+            use_secondary_vibe=item["use_secondary_vibe"],
+            override_genre=item["override_genre"],
+            override_artist=item["override_artist"],
+            dismiss_detected_artist=item["dismiss_detected_artist"]
         )
+        
         prompt_lower = text.lower()
         prompt_words = len(prompt_lower.split())
 
         # ── Entity scanner ───────────────────────────────────────────────────
-        detected_artist = None
+        detected_artist = request.override_artist
         detected_song   = None
-        for a in db_artists:
-            aname = a.name.lower()
-            if re.search(rf'\b{re.escape(aname)}\b', prompt_lower):
-                if _is_negated_entity(aname, prompt_lower):
-                    continue
-                detected_artist = a.name
-                if a.songs:
-                    for s in [s.strip().lower() for s in a.songs.split(",")]:
-                        if s and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
-                            if not _is_negated_entity(s, prompt_lower):
-                                detected_song = s
-                                break
-                break
-            elif a.songs:
-                for s in [s.strip().lower() for s in a.songs.split(",")]:
-                    if (len(s) > 3
-                            and s not in COMMON_WORDS_BLACKLIST
-                            and re.search(rf'\b{re.escape(s)}\b', prompt_lower)):
-                        if _is_negated_entity(s, prompt_lower):
-                            continue
-                        if prompt_words >= 10:
-                            continue
-                        detected_artist = a.name
-                        detected_song   = s
-                        break
-                if detected_artist:
+        
+        if not detected_artist and not request.dismiss_detected_artist:
+            for a in db_artists:
+                aname = a.name.lower()
+                if re.search(rf'\b{re.escape(aname)}\b', prompt_lower):
+                    if _is_negated_entity(aname, prompt_lower):
+                        continue
+                    detected_artist = a.name
+                    if a.songs:
+                        for s in [s.strip().lower() for s in a.songs.split(",")]:
+                            if s and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
+                                if not _is_negated_entity(s, prompt_lower):
+                                    detected_song = s
+                                    break
                     break
+                elif a.songs:
+                    for s in [s.strip().lower() for s in a.songs.split(",")]:
+                        if (len(s) > 3
+                                and s not in COMMON_WORDS_BLACKLIST
+                                and re.search(rf'\b{re.escape(s)}\b', prompt_lower)):
+                            if _is_negated_entity(s, prompt_lower):
+                                continue
+                            if prompt_words >= 10:
+                                continue
+                            detected_artist = a.name
+                            detected_song   = s
+                            break
+                    if detected_artist:
+                        break
 
         # ── Vibe analysis ────────────────────────────────────────────────────
         vibe_data = vibe_engine.analyze_vibe_algorithm(
@@ -827,13 +572,30 @@ async def run_batch():
         )
         if detected_song and not detected_artist and vibe_data.get("confidence", 0) >= 0.30:
             detected_song = None
+            
         vibe_data["detected_artist"] = detected_artist
         vibe_data["detected_song"]   = detected_song
 
         # ── Target genre resolution ──────────────────────────────────────────
+        active_vibe_for_tags = vibe_data.get("dominant_vibe", "")
+        
         if detected_artist and vibe_data.get("confidence", 0) < 0.10:
             vibe_data["dominant_vibe"] = "artist_driven"
             target_genre = None
+        elif request.override_genre:
+            target_genre = request.override_genre
+            active_vibe_for_tags = "override"
+        elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
+            sec_vibe_name = vibe_data["secondary_vibe"]
+            active_vibe_for_tags = sec_vibe_name
+            _lang = (request.language or "Any").strip()
+            _lang_map_sec = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
+            mapped_genres = vibe_engine.VIBE_MAP.get(sec_vibe_name, {}).get("genres", [sec_vibe_name])
+            target_genre = (
+                _lang_map_sec.get(sec_vibe_name)
+                or _lang_map_sec.get("default")
+                or mapped_genres[0]
+            )
         else:
             _lang = (request.language or "Any").strip()
             _lang_map = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
@@ -843,13 +605,14 @@ async def run_batch():
                 or _lang_map.get("default")
                 or vibe_data.get("genres", ["Dream Pop"])[0]
             )
+            
         vibe_data["target_genre_override"] = target_genre
 
         # ── Pool fetch ───────────────────────────────────────────────────────
         is_fallback = False
         raw_pool: list[dict] = []
 
-        if vibe_data.get("confidence", 0.0) < 0.25 and not detected_artist:
+        if vibe_data.get("confidence", 0.0) < 0.25 and not detected_artist and not request.override_genre:
             is_fallback = True
             vibe_data["dominant_vibe"]   = "Direct Search"
             vibe_data["secondary_vibe"]  = "Fallback Mode"
@@ -858,7 +621,7 @@ async def run_batch():
                 f"{t.get('title','')} {t.get('artist','')}"
             )]
 
-            # v8.0: 3-STAGE DIRECT SEARCH FALLBACK
+            # 3-STAGE DIRECT SEARCH FALLBACK
             if not raw_pool:
                 _STOPWORDS = {
                     "a","an","the","and","or","but","for","with","at","by","of","in",
@@ -896,19 +659,20 @@ async def run_batch():
                     if isinstance(_r, list):
                         raw_pool.extend(_r)
 
-        elif vibe_data.get("dominant_vibe") == "artist_driven":
-            raw_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=200)
+        elif request.override_artist or vibe_data.get("dominant_vibe") == "artist_driven":
+            art_tgt = request.override_artist or detected_artist
+            raw_pool = await fetch_lastfm_artist_tracks(artist=art_tgt, limit=200)
 
         else:
-            # Multi-tag parallel fetch using VIBE_TAG_MATRIX if available
+            # Multi-tag parallel fetch
             _lang    = (request.language or "Any").strip()
-            _dominant = vibe_data.get("dominant_vibe", "")
+            
             if hasattr(vibe_engine, "VIBE_TAG_MATRIX"):
                 _tags = (
                     vibe_engine.VIBE_TAG_MATRIX
-                    .get(_dominant, {})
+                    .get(active_vibe_for_tags, {})
                     .get(_lang)
-                    or vibe_engine.VIBE_TAG_MATRIX.get(_dominant, {}).get("Any")
+                    or vibe_engine.VIBE_TAG_MATRIX.get(active_vibe_for_tags, {}).get("Any")
                     or ([target_genre] if target_genre else [])
                 )
                 _tags = _tags[:4]
@@ -928,11 +692,10 @@ async def run_batch():
             else:
                 genre_pool = []
 
-            # v8.0: Language-agnostic pool retry — if non-English tag returned nothing,
-            # fall back to "Any" tags which have broader Last.fm coverage.
+            # Language-agnostic pool retry
             if not genre_pool and _lang != "Any":
                 _fallback_tags = (
-                    vibe_engine.VIBE_TAG_MATRIX.get(_dominant, {}).get("Any")
+                    vibe_engine.VIBE_TAG_MATRIX.get(active_vibe_for_tags, {}).get("Any")
                     or ([target_genre] if target_genre else [])
                 )
                 if _fallback_tags:
@@ -1009,19 +772,85 @@ async def run_batch():
                 flag_str = "  " + "  ".join(flags) if flags else ""
                 logger.info(f"  {i:>2}. [{score:>5.1f}] {title} — {artist}{flag_str}")
 
-        logger.info("-" * 60 + "\n")
+        # ── GEMINI AUTO-GRADER QUEUEING ───────────────────────────────────────────────
+        if GEMINI_API_KEY and _AIOHTTP_AVAILABLE and best_tracks:
+            if random.random() < GEMINI_SAMPLE_RATE:
+                gemini_eval_queue.append({
+                    "idx": idx,
+                    "text": text,
+                    "dominant_vibe": vibe_data.get('dominant_vibe'),
+                    "best_tracks": best_tracks[:5]
+                })
+                logger.info("  🤖 Queued for Gemini AI evaluation at the end.")
+
+        logger.info("-" * 80 + "\n")
 
     await db.disconnect()
+    
+    # ── GEMINI BATCH EVALUATION (Deferred Phase) ──────────────────────────────────
+    if gemini_eval_queue:
+        logger.info("=" * 80)
+        logger.info(f"  STARTING BATCH GEMINI EVALUATION ({len(gemini_eval_queue)} items)  ")
+        logger.info("  Check 'qa_batch_gemini_analysis.log' for detailed AI grades.")
+        logger.info("=" * 80 + "\n")
+        
+        gemini_logger.info("=" * 80)
+        gemini_logger.info("  VIBEFINDER GEMINI AUTO-GRADER ANALYSIS  ")
+        gemini_logger.info("=" * 80)
+        
+        for i, eval_req in enumerate(gemini_eval_queue, 1):
+            logger.info(f"  🤖 Grading {i}/{len(gemini_eval_queue)}... (sleeping 4s for rate limits)")
+            gemini_logger.info(f"\n--- [EVAL {i}/{len(gemini_eval_queue)} | PROMPT #{eval_req['idx']}] ---")
+            gemini_logger.info(f"INPUT : \"{eval_req['text']}\"")
+            gemini_logger.info(f"VIBE  : {eval_req['dominant_vibe']}")
+            
+            eval_result = await evaluate_with_gemini(
+                eval_req['text'], 
+                eval_req['dominant_vibe'], 
+                eval_req['best_tracks']
+            )
+            
+            if eval_result:
+                verdict = eval_result.get("verdict", "❌ Error")
+                reason = eval_result.get("reason", "No reason provided.")
+                gemini_logger.info(f"RESULT: {verdict} — {reason}")
+                
+                if "✅ Hit" in verdict: gemini_hits += 1
+                elif "⚠️ Partial" in verdict: gemini_partials += 1
+                elif "❌ Miss" in verdict: gemini_misses += 1
+                
+            # Soft throttle to protect free tier limit (15 RPM -> 1 request every 4s)
+            await asyncio.sleep(4)
 
     # ── Final stats ──────────────────────────────────────────────────────────
-    logger.info("=" * 70)
-    logger.info("  VIBEFINDER MEGA STRESS SUITE v10k — COMPLETE")
+    logger.info("=" * 80)
+    logger.info("  VIBEFINDER MEGA STRESS SUITE v3 — COMPLETE")
     logger.info(f"  Total prompts run    : {total}")
     logger.info(f"  Signal lost (0 tracks): {signal_lost} ({100*signal_lost/total:.1f}%)")
     logger.info(f"  Blocklist hits       : {blocklist_hits}")
     logger.info(f"  Genre-as-artist noise: {genre_noise_hits}")
-    logger.info("=" * 70)
-
+    
+    if gemini_eval_queue and (gemini_hits + gemini_partials + gemini_misses) > 0:
+        total_eval = gemini_hits + gemini_partials + gemini_misses
+        
+        # Log to main console
+        logger.info("  --- GEMINI AUTO-GRADER STATS (See separate log) ---")
+        logger.info(f"  Total Evaluated : {total_eval}")
+        logger.info(f"  ✅ HITS          : {gemini_hits} ({(gemini_hits/total_eval)*100:.1f}%)")
+        logger.info(f"  ⚠️ PARTIALS      : {gemini_partials} ({(gemini_partials/total_eval)*100:.1f}%)")
+        logger.info(f"  ❌ MISSES        : {gemini_misses} ({(gemini_misses/total_eval)*100:.1f}%)")
+        
+        # Log to dedicated Gemini file
+        gemini_logger.info("\n" + "=" * 80)
+        gemini_logger.info("  FINAL GEMINI GRADING STATS")
+        gemini_logger.info("=" * 80)
+        gemini_logger.info(f"  Total Evaluated : {total_eval}")
+        gemini_logger.info(f"  ✅ HITS          : {gemini_hits} ({(gemini_hits/total_eval)*100:.1f}%)")
+        gemini_logger.info(f"  ⚠️ PARTIALS      : {gemini_partials} ({(gemini_partials/total_eval)*100:.1f}%)")
+        gemini_logger.info(f"  ❌ MISSES        : {gemini_misses} ({(gemini_misses/total_eval)*100:.1f}%)")
+        gemini_logger.info("=" * 80)
+        
+    logger.info("=" * 80)
 
 if __name__ == "__main__":
     asyncio.run(run_batch())

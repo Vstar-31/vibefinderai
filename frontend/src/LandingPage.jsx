@@ -1,32 +1,29 @@
 import { useState, useEffect, useRef } from "react";
 
-/* ─── WAVEFORM BARS ─────────────────────────────────────────── */
-function WaveformBars({ active = true, count = 22 }) {
+/* ─── WAVEFORM BARS ──────────────────────────────────────────── */
+function WaveformBars({ active = true, count = 16 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "32px" }}>
-      {Array.from({ length: count }).map((_, i) => {
-        const delay = (i * 40) % 700;
-        return (
-          <div key={i} style={{
-            width: "3px", minHeight: "4px", maxHeight: "32px", borderRadius: "2px",
-            background: active
-              ? `hsl(${38 + i * 1.2}, 80%, ${48 + (i % 4) * 5}%)`
-              : "rgba(180,140,80,0.15)",
-            animationName: active ? "barDance" : "none",
-            animationDuration: `${350 + (i % 7) * 80}ms`,
-            animationDelay: `${delay}ms`,
-            animationTimingFunction: "ease-in-out",
-            animationIterationCount: "infinite",
-            animationDirection: "alternate",
-            height: active ? undefined : "6px",
-          }} />
-        );
-      })}
+    <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "28px" }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} style={{
+          width: "3px", minHeight: "4px", maxHeight: "28px", borderRadius: "2px",
+          background: active
+            ? `hsl(${36 + i * 1.5}, 75%, ${50 + (i % 4) * 5}%)`
+            : "rgba(180,140,80,0.12)",
+          animationName: active ? "barDance" : "none",
+          animationDuration: `${380 + (i % 7) * 80}ms`,
+          animationDelay: `${(i * 45) % 700}ms`,
+          animationTimingFunction: "ease-in-out",
+          animationIterationCount: "infinite",
+          animationDirection: "alternate",
+          height: active ? undefined : "5px",
+        }} />
+      ))}
     </div>
   );
 }
 
-/* ─── OSCILLOSCOPE ──────────────────────────────────────────── */
+/* ─── OSCILLOSCOPE ───────────────────────────────────────────── */
 function Oscilloscope({ active }) {
   const canvasRef = useRef(null);
   const frameRef  = useRef(null);
@@ -38,18 +35,18 @@ function Oscilloscope({ active }) {
     const W = canvas.width, H = canvas.height;
     const draw = () => {
       ctx.clearRect(0, 0, W, H);
-      ctx.strokeStyle = active ? "rgba(217,119,6,0.85)" : "rgba(120,80,20,0.25)";
+      ctx.strokeStyle = active ? "rgba(217,119,6,0.8)" : "rgba(120,80,20,0.2)";
       ctx.lineWidth = active ? 1.5 : 1;
-      ctx.shadowBlur = active ? 8 : 0;
-      ctx.shadowColor = "rgba(217,119,6,0.6)";
+      ctx.shadowBlur = active ? 6 : 0;
+      ctx.shadowColor = "rgba(217,119,6,0.5)";
       ctx.beginPath();
       for (let x = 0; x < W; x++) {
         const t = tRef.current;
         const y = active
-          ? H/2 + Math.sin((x/W)*Math.PI*4 + t*0.05)*14
-              + Math.sin((x/W)*Math.PI*9 + t*0.08)*6
-              + Math.sin((x/W)*Math.PI*17 + t*0.03)*3
-          : H/2 + Math.sin((x/W)*Math.PI*2)*3;
+          ? H/2 + Math.sin((x/W)*Math.PI*4 + t*0.05)*12
+              + Math.sin((x/W)*Math.PI*9 + t*0.08)*5
+              + Math.sin((x/W)*Math.PI*17 + t*0.03)*2
+          : H/2 + Math.sin((x/W)*Math.PI*2)*2;
         x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       }
       ctx.stroke();
@@ -61,277 +58,11 @@ function Oscilloscope({ active }) {
   }, [active]);
   return (
     <div style={{
-      background: "rgba(16,10,4,0.80)", border: "1px solid rgba(120,80,20,0.4)",
-      borderRadius: 8, padding: "6px 10px",
-      display: "flex", alignItems: "center", gap: 8,
+      background: "rgba(20,13,5,0.7)", border: "1px solid rgba(120,80,20,0.3)",
+      borderRadius: 7, padding: "5px 10px", display: "flex", alignItems: "center", gap: 7,
     }}>
-      <span style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>OSC</span>
-      <canvas ref={canvasRef} width={160} height={34} style={{ display: "block" }} />
-    </div>
-  );
-}
-
-/* ─── STEP ──────────────────────────────────────────────────── */
-function Step({ num, title, desc, tip, tag }) {
-  return (
-    <div style={{
-      display: "grid", gridTemplateColumns: "56px 1fr", gap: "1.4rem",
-      padding: "1.8rem 0", borderBottom: "1px solid rgba(150,100,25,0.26)",
-    }}>
-      <div style={{
-        width: 44, height: 44, flexShrink: 0,
-        background: "rgba(28,18,6,0.8)", border: "1px solid rgba(160,110,30,0.42)",
-        borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(180,140,80,0.6)",
-        letterSpacing: "0.1em",
-      }}>{num}</div>
-      <div>
-        <div style={{
-          fontFamily: "'Cormorant Garamond', serif", fontWeight: 600,
-          fontSize: 16, color: "#e8d5a3", marginBottom: 6, letterSpacing: "0.03em",
-        }}>{title}</div>
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(180,140,80,0.65)", lineHeight: 1.75 }}>{desc}</div>
-        {tip && (
-          <div style={{
-            marginTop: 10, padding: "10px 14px",
-            background: "rgba(16,10,4,0.62)", borderLeft: "2px solid rgba(217,119,6,0.6)",
-            borderRadius: "0 6px 6px 0",
-            fontFamily: "'DM Mono', monospace", fontStyle: "italic",
-            fontSize: 11, color: "rgba(180,140,80,0.55)", lineHeight: 1.7,
-          }}>{tip}</div>
-        )}
-        {tag && (
-          <span className="freq-tag" style={{ display: "inline-block", marginTop: 10 }}>{tag}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── FEATURE CARD ──────────────────────────────────────────── */
-function FeatureCard({ icon, title, desc, badge, isNew }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <div
-      className="panel-card"
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        padding: "1.8rem 1.6rem", position: "relative",
-        background: hov
-          ? "linear-gradient(160deg, rgba(36,22,7,0.95), rgba(18,11,3,0.98))"
-          : "linear-gradient(160deg, rgba(44,30,12,0.92), rgba(24,15,5,0.96))",
-        transition: "background .2s",
-      }}
-    >
-      {isNew && (
-        <div style={{
-          position: "absolute", top: 12, right: 12,
-          background: "linear-gradient(135deg, #92400e, #d97706)",
-          borderRadius: 4, padding: "2px 7px",
-          fontFamily: "'DM Mono', monospace", fontSize: 8,
-          letterSpacing: "0.15em", textTransform: "uppercase", color: "#fef3c7",
-          boxShadow: "0 0 8px rgba(217,119,6,0.4)",
-        }}>v9.0</div>
-      )}
-      <div style={{ fontSize: 22, marginBottom: 10 }}>{icon}</div>
-      <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontSize: 15, color: "#e8d5a3", marginBottom: 8 }}>{title}</div>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(180,140,80,0.6)", lineHeight: 1.75, marginBottom: 14 }}>{desc}</div>
-      <span className="freq-tag" style={{ color: "rgba(217,160,60,0.9)", borderColor: "rgba(180,120,40,0.4)" }}>{badge}</span>
-    </div>
-  );
-}
-
-/* ─── KNOB DISPLAY ──────────────────────────────────────────── */
-function KnobDisplay({ emoji, name, desc }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <div
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        flex: 1, minWidth: 180,
-        background: "linear-gradient(160deg, rgba(44,30,12,0.92), rgba(24,15,5,0.96))",
-        border: `1px solid ${hov ? "rgba(217,119,6,0.5)" : "rgba(160,110,30,0.42)"}`,
-        borderRadius: 14, padding: "1.6rem 1.4rem", textAlign: "center",
-        transition: "border-color .2s",
-      }}
-    >
-      <div style={{
-        width: 52, height: 52, borderRadius: "50%", margin: "0 auto 14px",
-        background: "radial-gradient(circle at 35% 35%, #5a3a18, #1a0e04)",
-        border: "2px solid rgba(120,80,20,0.5)",
-        boxShadow: hov ? "0 0 18px rgba(217,119,6,0.4), 0 3px 8px rgba(0,0,0,0.6)" : "0 3px 8px rgba(0,0,0,0.6)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 20, position: "relative", transition: "box-shadow .2s",
-      }}>
-        <div style={{
-          position: "absolute", top: 5, left: "50%", transform: "translateX(-50%)",
-          width: 2, height: 12, background: "rgba(217,119,6,0.9)",
-          borderRadius: 1, boxShadow: "0 0 4px rgba(217,119,6,0.6)",
-        }} />
-        {emoji}
-      </div>
-      <div style={{
-        fontFamily: "'DM Mono', monospace", fontSize: 11,
-        letterSpacing: "0.18em", textTransform: "uppercase",
-        color: "rgba(217,160,60,0.8)", marginBottom: 8, fontWeight: 600,
-      }}>{name}</div>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(180,140,80,0.55)", lineHeight: 1.7 }}>{desc}</div>
-    </div>
-  );
-}
-
-/* ─── USE CASE CARD ─────────────────────────────────────────── */
-function UseCaseCard({ emoji, title, desc, example }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <div
-      className="panel-card"
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        padding: "1.6rem",
-        border: `1px solid ${hov ? "rgba(217,119,6,0.4)" : "rgba(155,105,28,0.38)"}`,
-        transform: hov ? "translateY(-2px)" : "none",
-        transition: "border-color .2s, transform .15s",
-      }}
-    >
-      <div style={{ fontSize: 22, marginBottom: 10 }}>{emoji}</div>
-      <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontSize: 15, color: "#e8d5a3", marginBottom: 8 }}>{title}</div>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(180,140,80,0.6)", lineHeight: 1.65 }}>{desc}</div>
-      <div style={{
-        marginTop: 12, padding: "9px 12px",
-        background: "rgba(14,9,3,0.72)", borderLeft: "2px solid rgba(217,119,6,0.5)",
-        borderRadius: "0 6px 6px 0",
-        fontFamily: "'DM Mono', monospace", fontStyle: "italic",
-        fontSize: 11, color: "rgba(180,140,80,0.5)", lineHeight: 1.6,
-      }}>"{example}"</div>
-    </div>
-  );
-}
-
-/* ─── CHANGELOG ITEM ─────────────────────────────────────────── */
-function ChangelogItem({ tag, title, desc, tagColor = "rgba(217,160,60,0.9)" }) {
-  return (
-    <div style={{
-      display: "flex", gap: "1rem", padding: "1rem 0",
-      borderBottom: "1px solid rgba(120,80,20,0.18)",
-    }}>
-      <div style={{ flexShrink: 0, paddingTop: 2 }}>
-        <span style={{
-          display: "inline-block", padding: "2px 8px", borderRadius: 4,
-          background: "rgba(28,18,6,0.9)", border: "1px solid rgba(160,110,30,0.35)",
-          fontFamily: "'DM Mono', monospace", fontSize: 9,
-          letterSpacing: "0.12em", textTransform: "uppercase", color: tagColor,
-          whiteSpace: "nowrap",
-        }}>{tag}</span>
-      </div>
-      <div>
-        <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 14, fontWeight: 600, color: "#e8d5a3", marginBottom: 3 }}>{title}</div>
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(180,140,80,0.55)", lineHeight: 1.7 }}>{desc}</div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── RESULT PREVIEW PANEL ──────────────────────────────────── */
-function ResultPreview() {
-  return (
-    <div className="panel-card screws" style={{ overflow: "hidden" }}>
-      <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(120,80,20,0.03) 7px, rgba(120,80,20,0.03) 8px)", pointerEvents: "none", borderRadius: 16 }} />
-      <div style={{ position: "relative" }}>
-        {/* Header bar */}
-        <div style={{ borderBottom: "1px solid rgba(155,105,28,0.38)", padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(5,3,1,0.5)" }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)" }}>// ANALYSIS COMPLETE</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399", animation: "pulse-glow 1.8s infinite" }} />
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#34d399", letterSpacing: "0.1em" }}>LIVE</span>
-          </div>
-        </div>
-
-        {/* ── Artist warning banner (NEW v9.0) ── */}
-        <div style={{
-          margin: "14px 20px 0",
-          display: "flex", alignItems: "flex-start", gap: 10,
-          background: "rgba(217,119,6,0.07)", border: "1px solid rgba(217,119,6,0.25)",
-          borderRadius: 6, padding: "10px 13px",
-        }}>
-          <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1 }}>🔒</span>
-          <div style={{ flex: 1 }}>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#d97706", fontWeight: 600, letterSpacing: "0.05em" }}>
-              Artist detected: Travis Scott
-            </span>
-            <br />
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(180,140,80,0.6)", lineHeight: 1.6 }}>
-              Engine locked onto this artist. Not your intention? Tap{" "}
-              <span style={{ color: "#d97706", fontWeight: 600 }}>✕</span>
-              {" "}on the tag below to unlock and re-run as pure vibe.
-            </span>
-          </div>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: "0.1em", color: "rgba(217,119,6,0.6)", background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.25)", borderRadius: 3, padding: "2px 6px", whiteSpace: "nowrap" }}>v9.0 NEW</span>
-        </div>
-
-        {/* Stat cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, background: "rgba(120,80,20,0.15)", margin: "14px 0 1px" }}>
-          {[
-            { label: "Dominant Vibe", value: "CHILL",  sub: "Secondary → Heartbreak", conf: 0.53, color: "#60a5fa" },
-            { label: "Target Tempo",  value: "70–100", sub: "Rhythmic Pulse",          bpm: true,  color: "#d97706" },
-          ].map((cell, i) => (
-            <div key={i} style={{ background: "linear-gradient(160deg, rgba(44,30,12,0.92), rgba(24,15,5,0.96))", padding: "20px 22px" }}>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(180,140,80,0.45)", marginBottom: 6 }}>{cell.label}</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#fde68a", textShadow: `0 0 20px ${cell.color}44` }}>{cell.value}</span>
-                {cell.bpm && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(180,140,80,0.5)" }}>BPM</span>}
-              </div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(180,140,80,0.45)", letterSpacing: "0.08em", marginTop: 3 }}>{cell.sub}</div>
-              {cell.conf && (
-                <div style={{ height: 5, borderRadius: 3, background: "rgba(80,50,10,0.4)", overflow: "hidden", marginTop: 10, boxShadow: "inset 0 1px 3px rgba(0,0,0,0.5)" }}>
-                  <div style={{ height: "100%", width: `${cell.conf * 100}%`, background: "linear-gradient(90deg, #92400e, #d97706, #fbbf24)", borderRadius: 3, boxShadow: "0 0 10px rgba(217,119,6,0.5)" }} />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Tags row with dismissable lock */}
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid rgba(120,80,20,0.25)", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-          {/* Dismissable artist lock tag */}
-          <span className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.45)", display: "inline-flex", alignItems: "center", gap: 6 }}>
-            🔒 TRAVIS SCOTT
-            <span style={{ cursor: "pointer", opacity: 0.7, fontSize: 10, lineHeight: 1 }}>✕</span>
-          </span>
-          {["NEO-SOUL", "INDIE R&B", "CHILLWAVE", "LO-FI HIP HOP", "TRIP HOP"].map(t => (
-            <span key={t} className="freq-tag">{t}</span>
-          ))}
-        </div>
-
-        {/* Track rows */}
-        {[
-          { color: "#c8922a", title: "Neon Glow",      artist: "Artist Name · Album Title" },
-          { color: "#9333ea", title: "Midnight Signal", artist: "Another Artist · EP Title" },
-        ].map((track, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px", borderBottom: "1px solid rgba(120,80,20,0.15)", background: i === 0 ? "rgba(217,119,6,0.04)" : "transparent" }}>
-            <div style={{ width: 42, height: 42, borderRadius: 6, flexShrink: 0, background: `conic-gradient(from 0deg, #1a1008, ${track.color}44, #1a1008, #2e1f0d)`, border: "1px solid rgba(180,140,80,0.25)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.5)" }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: `radial-gradient(circle, ${track.color}, #7a4f12)` }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 15, fontWeight: 700, color: "#fde68a" }}>{track.title}</div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(180,140,80,0.6)", marginTop: 3 }}>{track.artist}</div>
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {["👍", "👎", "▶ Preview"].map(act => (
-                <button key={act} style={{ background: "rgba(16,10,4,0.62)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: 6, padding: "5px 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(180,140,80,0.55)", cursor: "pointer" }}>{act}</button>
-              ))}
-              <button style={{ background: "rgba(16,10,4,0.62)", border: "1px solid rgba(30,215,96,0.35)", borderRadius: 6, padding: "5px 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "#1ed760", cursor: "pointer" }}>Spotify</button>
-            </div>
-          </div>
-        ))}
-        <div style={{ padding: "10px 20px", fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(120,80,20,0.7)" }}>
-          NEURAL MATCH →
-          <span style={{ color: "rgba(180,140,80,0.55)", marginLeft: 8 }}>#late night &nbsp; #night drive &nbsp; #rain &nbsp; #travis scott &nbsp; #dark chill</span>
-        </div>
-      </div>
+      <span style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(180,140,80,0.4)", letterSpacing: "0.12em", textTransform: "uppercase" }}>OSC</span>
+      <canvas ref={canvasRef} width={120} height={28} style={{ display: "block" }} />
     </div>
   );
 }
@@ -341,308 +72,313 @@ function ResultPreview() {
 ═══════════════════════════════════════════════════════════════ */
 export default function LandingPage({ onLaunch }) {
   const [navSolid, setNavSolid] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [typed, setTyped]       = useState("");
-  const fullText = `"Late night drive through rain-slicked streets, Travis Scott on the radio, city lights bleeding in the fog..."`;
+  const fullText = `"Late night drive through rain-slicked streets, Travis Scott on the radio, city lights bleeding through fog..."`;
 
   useEffect(() => {
-    const fn = () => setNavSolid(window.scrollY > 40);
+    const fn = () => { setNavSolid(window.scrollY > 40); };
     window.addEventListener("scroll", fn, { passive: true });
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
   useEffect(() => {
     if (typed.length >= fullText.length) return;
-    const t = setTimeout(() => setTyped(fullText.slice(0, typed.length + 1)), 42);
+    const t = setTimeout(() => setTyped(fullText.slice(0, typed.length + 1)), 40);
     return () => clearTimeout(t);
   }, [typed, fullText]);
 
-  const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  const scrollTo = (id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    setMenuOpen(false);
+  };
 
-  const amberBtnBase = {
-    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 10,
+  /* ── Shared tokens ── */
+  const amber = "#d97706";
+  const amberBtn = {
+    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
     background: "linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%)",
-    border: "1px solid rgba(251,191,36,0.3)", color: "#fef3c7",
-    fontFamily: "'DM Mono', monospace", fontSize: 12, letterSpacing: "0.15em",
+    border: "1px solid rgba(251,191,36,0.25)", color: "#fef3c7",
+    fontFamily: "'DM Mono', monospace", fontSize: 12, letterSpacing: "0.14em",
     textTransform: "uppercase", fontWeight: 500, cursor: "pointer", borderRadius: 10,
-    boxShadow: "0 4px 20px rgba(180,100,10,0.35)",
+    boxShadow: "0 4px 18px rgba(180,100,10,0.3)",
     transition: "opacity .2s, transform .15s, box-shadow .2s",
   };
-
+  const mono = "'DM Mono', monospace";
+  const serif = "'Playfair Display', serif";
   const S = {
-    divider:      { border: "none", height: 1, margin: 0, background: "linear-gradient(90deg, transparent, rgba(120,80,20,0.4), transparent)" },
-    container:    { maxWidth: 1080, margin: "0 auto", padding: "0 2rem" },
-    sectionLabel: { fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)", marginBottom: 6 },
-    sectionTitle: { fontFamily: "'Playfair Display', serif", fontSize: "clamp(1.6rem,3vw,2.4rem)", fontWeight: 700, color: "#e8d5a3", marginBottom: "0.8rem", lineHeight: 1.2 },
-    sectionDesc:  { fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(180,140,80,0.6)", lineHeight: 1.8, maxWidth: 580, marginBottom: "2.8rem" },
+    divider:   { border: "none", height: 1, margin: 0, background: "linear-gradient(90deg, transparent, rgba(120,80,20,0.35), transparent)" },
+    container: { maxWidth: 1040, margin: "0 auto", padding: "0 1.4rem" },
+    label:     { fontFamily: mono, fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(180,140,80,0.45)", marginBottom: 6 },
+    h2:        { fontFamily: serif, fontSize: "clamp(1.5rem,3vw,2.2rem)", fontWeight: 700, color: "#ead9a8", marginBottom: "0.7rem", lineHeight: 1.2 },
+    body:      { fontFamily: mono, fontSize: 13, color: "rgba(190,155,90,0.65)", lineHeight: 1.8, maxWidth: 560, marginBottom: "2.4rem" },
   };
+
+  const NAV_LINKS = [["How It Works","how-it-works"],["Features","features"],["Languages","languages"],["Use Cases","use-cases"]];
 
   return (
     <>
-      {/* ── FONTS + KEYFRAMES ── */}
+      {/* ── FONTS + GLOBAL STYLES ── */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Cormorant+Garamond:wght@400;600&display=swap');
-        @keyframes barDance  { from { height: 4px; } to { height: 30px; } }
-        @keyframes lpFadeUp  { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
-        @keyframes lpPulse   { 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.4; transform:scale(1.5); } }
-        @keyframes lpBlink   { 50% { opacity: 0; } }
-        @keyframes shimmer   { from { opacity: 0.4; } to { opacity: 1; } }
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Cormorant+Garamond:wght@400;500;600&display=swap');
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body { background: #100b04; }
+
+        @keyframes barDance   { from { height: 4px; } to { height: 26px; } }
+        @keyframes fadeUp     { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+        @keyframes pulse      { 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(1.5); } }
+        @keyframes blink      { 50% { opacity: 0; } }
+        @keyframes slideDown  { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
+
+        .lp-card {
+          background: linear-gradient(155deg, rgba(38,25,9,0.95), rgba(22,14,4,0.98));
+          border: 1px solid rgba(155,105,28,0.32);
+          border-radius: 14px;
+          transition: border-color .2s, transform .15s;
+        }
+        .lp-card:hover { border-color: rgba(217,119,6,0.38); }
+
+        .freq-tag {
+          display: inline-block;
+          padding: 3px 10px; border-radius: 20px;
+          border: 1px solid rgba(155,105,28,0.38);
+          background: rgba(28,18,6,0.6);
+          font-family: 'DM Mono', monospace; font-size: 10px;
+          letter-spacing: 0.1em; text-transform: uppercase;
+          color: rgba(190,155,90,0.7);
+        }
+
+        /* ── Responsive nav: hide text links on mobile ── */
+        .nav-links { display: flex; align-items: center; gap: 1.2rem; }
+        .nav-link-btn { display: block; }
+        .nav-hamburger { display: none; }
+
+        @media (max-width: 680px) {
+          .nav-links { display: none; }
+          .nav-hamburger { display: flex !important; }
+        }
+
+        /* ── Section padding responsive ── */
+        .lp-section { padding: 70px 1.4rem; }
+        @media (max-width: 600px) { .lp-section { padding: 52px 1.2rem; } }
+
+        /* ── Feature grid ── */
+        .feature-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 1px;
+          background: rgba(155,105,28,0.22);
+          border: 1px solid rgba(155,105,28,0.32);
+          border-radius: 14px;
+          overflow: hidden;
+        }
+        @media (max-width: 540px) {
+          .feature-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ── Use-case grid ── */
+        .usecase-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 1rem;
+        }
+        @media (max-width: 500px) {
+          .usecase-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ── Steps ── */
+        .step-row {
+          display: grid;
+          grid-template-columns: 50px 1fr;
+          gap: 1.2rem;
+          padding: 1.6rem 0;
+          border-bottom: 1px solid rgba(150,100,25,0.2);
+        }
+
+        /* ── Result preview inner grid ── */
+        .rp-stat-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+        }
+        @media (max-width: 420px) {
+          .rp-stat-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ── Pro mode grid ── */
+        .pro-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1rem;
+        }
+        @media (max-width: 700px) {
+          .pro-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ── Knob row ── */
+        .knob-row {
+          display: flex;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+        .knob-item {
+          flex: 1;
+          min-width: 150px;
+        }
+
+        /* ── Mobile menu ── */
+        .mobile-menu {
+          display: none;
+          position: fixed; top: 58px; left: 0; right: 0; z-index: 99;
+          background: rgba(8,5,1,0.98);
+          border-bottom: 1px solid rgba(155,105,28,0.3);
+          padding: 1rem 1.4rem 1.4rem;
+          flex-direction: column; gap: 0;
+          animation: slideDown .18s ease;
+        }
+        .mobile-menu.open { display: flex; }
+        .mobile-menu-link {
+          padding: 13px 0;
+          border-bottom: 1px solid rgba(120,80,20,0.15);
+          font-family: 'DM Mono', monospace; font-size: 12px;
+          letter-spacing: 0.12em; text-transform: uppercase;
+          color: rgba(190,155,90,0.7);
+          background: none; border-left: none; border-right: none; border-top: none;
+          cursor: pointer; text-align: left;
+          transition: color .15s;
+        }
+        .mobile-menu-link:last-child { border-bottom: none; margin-top: 12px; }
+        .mobile-menu-link:hover { color: #ead9a8; }
       `}</style>
 
-      {/* ── NAV ── */}
+      {/* ══ NAV ══════════════════════════════════════════════════ */}
       <nav style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, height: 58,
-        background: navSolid ? "rgba(8,5,1,0.97)" : "rgba(8,5,1,0.85)",
-        backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(155,105,28,0.38)",
-        padding: "0 2rem", display: "flex", alignItems: "center", justifyContent: "space-between",
-        transition: "background .3s", fontFamily: "'DM Mono', monospace",
+        background: navSolid ? "rgba(7,4,1,0.98)" : "rgba(7,4,1,0.88)",
+        backdropFilter: "blur(14px)", borderBottom: "1px solid rgba(155,105,28,0.3)",
+        padding: "0 1.4rem", display: "flex", alignItems: "center", justifyContent: "space-between",
+        transition: "background .3s",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 34, height: 34, borderRadius: "50%", background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008, #2e1a0a, #1a1008)", border: "2px solid rgba(180,140,80,0.4)", boxShadow: "0 0 14px rgba(217,119,6,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: 9, height: 9, borderRadius: "50%", background: "radial-gradient(circle, #d97706, #7a4f12)" }} />
+        {/* Logo */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008, #2e1a0a, #1a1008)", border: "2px solid rgba(180,140,80,0.35)", boxShadow: "0 0 12px rgba(217,119,6,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "radial-gradient(circle, #d97706, #7a4f12)" }} />
           </div>
           <div>
-            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, fontWeight: 900, color: "#e8d5a3", letterSpacing: "-0.01em", lineHeight: 1 }}>VibeFinderAI</div>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.25em", textTransform: "uppercase" }}>Acoustic Intelligence</div>
+            <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 900, color: "#ead9a8", letterSpacing: "-0.01em", lineHeight: 1 }}>VibeFinderAI</div>
+            <div style={{ fontFamily: mono, fontSize: 8, color: "rgba(180,140,80,0.35)", letterSpacing: "0.22em", textTransform: "uppercase" }}>Acoustic Intelligence</div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "1.4rem" }}>
-          {[["How It Works","how-it-works"],["Features","features"],["What's New","changelog"],["Languages","languages"],["Use Cases","use-cases"]].map(([label, id]) => (
-            <button key={id} onClick={() => scrollTo(id)} style={{ background: "none", border: "none", cursor: "pointer", color: id === "changelog" ? "rgba(217,160,60,0.7)" : "rgba(180,140,80,0.5)", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "'DM Mono', monospace", transition: "color .2s" }}
-              onMouseEnter={e => e.target.style.color = "#e8d5a3"}
-              onMouseLeave={e => e.target.style.color = id === "changelog" ? "rgba(217,160,60,0.7)" : "rgba(180,140,80,0.5)"}
+
+        {/* Desktop nav links */}
+        <div className="nav-links">
+          {NAV_LINKS.map(([label, id]) => (
+            <button key={id} onClick={() => scrollTo(id)} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(180,140,80,0.5)", fontFamily: mono, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", transition: "color .2s", padding: "4px 0" }}
+              onMouseEnter={e => e.target.style.color = "#ead9a8"}
+              onMouseLeave={e => e.target.style.color = "rgba(180,140,80,0.5)"}
             >{label}</button>
           ))}
-          <button onClick={onLaunch} className="dial-btn" style={{ ...amberBtnBase, padding: "8px 20px" }}
+          <button onClick={onLaunch} style={{ ...amberBtn, padding: "8px 18px" }}
             onMouseEnter={e => { e.currentTarget.style.opacity = ".85"; e.currentTarget.style.transform = "translateY(-1px)"; }}
             onMouseLeave={e => { e.currentTarget.style.opacity = "1";   e.currentTarget.style.transform = "none"; }}
-          >⚡ Launch App</button>
+          >⚡ Launch</button>
         </div>
+
+        {/* Hamburger (mobile) */}
+        <button className="nav-hamburger" onClick={() => setMenuOpen(o => !o)} style={{ display: "none", background: "none", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 7, padding: "7px 10px", cursor: "pointer", color: "rgba(190,155,90,0.8)", fontFamily: mono, fontSize: 11, letterSpacing: "0.08em", gap: 7, alignItems: "center" }}>
+          <span style={{ fontSize: 14, lineHeight: 1 }}>{menuOpen ? "✕" : "☰"}</span>
+          <span style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase" }}>Menu</span>
+        </button>
       </nav>
 
-      {/* ── HERO ── */}
-      <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "100px 2rem 80px", position: "relative", overflow: "hidden", background: "#0a0602" }}>
-        <div style={{ position: "absolute", inset: 0, zIndex: 0, backgroundImage: "linear-gradient(rgba(120,80,20,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(120,80,20,0.06) 1px, transparent 1px)", backgroundSize: "48px 48px" }} />
-        <div style={{ position: "absolute", width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(ellipse, rgba(180,100,10,0.1), transparent 70%)", top: "50%", left: "50%", transform: "translate(-50%,-55%)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none", backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(0,0,0,0.06) 5px, rgba(0,0,0,0.06) 6px)" }} />
+      {/* Mobile dropdown menu */}
+      <div className={`mobile-menu${menuOpen ? " open" : ""}`}>
+        {NAV_LINKS.map(([label, id]) => (
+          <button key={id} className="mobile-menu-link" onClick={() => scrollTo(id)}>{label}</button>
+        ))}
+        <button onClick={() => { onLaunch(); setMenuOpen(false); }} style={{ ...amberBtn, padding: "12px 20px", marginTop: 4 }}>⚡ Launch App →</button>
+      </div>
 
-        <div style={{ position: "relative", zIndex: 2, textAlign: "center", maxWidth: 840, animation: "lpFadeUp .7s ease both" }}>
-          {/* Signal badge */}
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(120,60,10,0.2)", border: "1px solid rgba(180,120,40,0.35)", padding: "5px 16px", borderRadius: 20, fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(217,160,60,0.8)", marginBottom: "1.8rem" }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399", display: "inline-block", animation: "lpPulse 1.8s infinite" }} />
+      {/* ══ HERO ═════════════════════════════════════════════════ */}
+      <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "100px 1.4rem 72px", position: "relative", overflow: "hidden", background: "linear-gradient(180deg, #0d0803 0%, #130d05 100%)" }}>
+        {/* Grid texture */}
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(rgba(120,80,20,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(120,80,20,0.05) 1px, transparent 1px)", backgroundSize: "44px 44px", pointerEvents: "none" }} />
+        {/* Glow */}
+        <div style={{ position: "absolute", width: "min(500px, 80vw)", height: "min(500px, 80vw)", borderRadius: "50%", background: "radial-gradient(ellipse, rgba(180,100,10,0.09), transparent 70%)", top: "50%", left: "50%", transform: "translate(-50%,-55%)", pointerEvents: "none" }} />
+
+        <div style={{ position: "relative", zIndex: 2, textAlign: "center", maxWidth: 780, width: "100%", animation: "fadeUp .65s ease both" }}>
+
+          {/* Badge */}
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(110,55,8,0.18)", border: "1px solid rgba(180,120,40,0.28)", padding: "5px 14px", borderRadius: 20, fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(210,160,60,0.75)", marginBottom: "1.6rem" }}>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399", display: "inline-block", animation: "pulse 1.8s infinite" }} />
             Neural Engine Active — v9.0
           </div>
 
-          <h1 style={{ fontFamily: "'Playfair Display', serif", fontWeight: 900, fontSize: "clamp(2.2rem,5.5vw,4rem)", lineHeight: 1.1, color: "#e8d5a3", marginBottom: "1.2rem", letterSpacing: "-0.01em" }}>
+          <h1 style={{ fontFamily: serif, fontWeight: 900, fontSize: "clamp(2rem,6vw,3.8rem)", lineHeight: 1.1, color: "#ead9a8", marginBottom: "1.1rem", letterSpacing: "-0.01em" }}>
             Describe a feeling.<br />
-            <span style={{ color: "#d97706" }}>Discover the perfect</span>{" "}
+            <span style={{ color: amber }}>Discover the perfect</span>{" "}
             <span style={{ fontStyle: "italic", color: "#fde68a" }}>soundtrack.</span>
           </h1>
 
-          <p style={{ fontFamily: "'DM Mono', monospace", fontSize: "clamp(13px,2vw,15px)", color: "rgba(180,140,80,0.65)", maxWidth: 580, margin: "0 auto 2.4rem", lineHeight: 1.85 }}>
-            VibeFinderAI is a mood-first music discovery engine. Instead of searching by genre or artist —
+          <p style={{ fontFamily: mono, fontSize: "clamp(12px,1.8vw,14px)", color: "rgba(190,155,90,0.6)", maxWidth: 520, margin: "0 auto 2.2rem", lineHeight: 1.9 }}>
+            A mood-first music discovery engine. Skip the genre dropdown —
             describe the moment, and the AI finds songs that match the exact feeling.
           </p>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, marginBottom: "2.4rem", flexWrap: "wrap" }}>
-            <WaveformBars active={true} count={18} />
+          {/* Animated signal row */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: "2rem", flexWrap: "wrap" }}>
+            <WaveformBars active={true} count={14} />
             <Oscilloscope active={true} />
-            <WaveformBars active={true} count={18} />
+            <WaveformBars active={true} count={14} />
           </div>
 
-          {/* CTA box */}
-          <div className="panel-card screws" style={{ padding: "2.6rem 2.8rem", maxWidth: 700, margin: "0 auto", position: "relative" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, #92400e, #d97706, #fbbf24, #d97706, #92400e)", borderRadius: "16px 16px 0 0" }} />
-            <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 7px, rgba(120,80,20,0.03) 7px, rgba(120,80,20,0.03) 8px)", pointerEvents: "none", borderRadius: 16 }} />
-            <div style={{ position: "relative" }}>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", textAlign: "left", marginBottom: 8 }}>// ACOUSTIC DESCRIPTOR INPUT</div>
-              <div style={{ background: "rgba(5,3,1,0.8)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: 10, padding: "16px", fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(180,140,80,0.7)", lineHeight: 1.65, textAlign: "left", minHeight: 72, marginBottom: "1.6rem", fontStyle: "italic" }}>
-                {typed}
-                <span style={{ display: "inline-block", width: 8, height: 14, background: "rgba(217,119,6,0.9)", marginLeft: 2, animation: "lpBlink 1s step-end infinite", verticalAlign: "text-bottom", boxShadow: "0 0 6px rgba(217,119,6,0.6)" }} />
-              </div>
-              <button onClick={onLaunch} className="dial-btn" style={{ ...amberBtnBase, padding: "14px 32px", width: "100%", fontSize: 13, letterSpacing: "0.18em" }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = ".88"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 30px rgba(180,100,10,0.55)"; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = "1";   e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(180,100,10,0.35)"; }}
-              >
-                <span>⚡</span> Analyse My Vibe — Launch App <span>→</span>
-              </button>
-              <p style={{ marginTop: 10, fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(120,80,20,0.6)", textAlign: "center", letterSpacing: "0.08em" }}>
-                Free to use · No account needed ·{" "}
-                <button onClick={() => scrollTo("how-it-works")} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(217,160,60,0.7)", fontFamily: "'DM Mono', monospace", fontSize: 10, padding: 0, textDecoration: "underline" }}>See how it works ↓</button>
-              </p>
+          {/* CTA card */}
+          <div className="lp-card" style={{ padding: "clamp(1.6rem,4vw,2.4rem)", maxWidth: 660, margin: "0 auto", position: "relative" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, #92400e, #d97706, #fbbf24, #d97706, #92400e)", borderRadius: "14px 14px 0 0" }} />
+            <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.35)", textAlign: "left", marginBottom: 8 }}>// Acoustic Descriptor Input</div>
+            <div style={{ background: "rgba(6,4,1,0.75)", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 9, padding: "14px 16px", fontFamily: mono, fontSize: "clamp(11px,2vw,13px)", color: "rgba(190,155,90,0.65)", lineHeight: 1.7, textAlign: "left", minHeight: 66, marginBottom: "1.4rem", fontStyle: "italic" }}>
+              {typed}
+              <span style={{ display: "inline-block", width: 7, height: 13, background: "rgba(217,119,6,0.85)", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "text-bottom" }} />
             </div>
+            <button onClick={onLaunch} style={{ ...amberBtn, padding: "13px 28px", width: "100%", fontSize: "clamp(11px,2vw,13px)", letterSpacing: "0.16em" }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = ".86"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(180,100,10,0.5)"; }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = "1";   e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(180,100,10,0.3)"; }}
+            >
+              ⚡ Analyse My Vibe — Launch App →
+            </button>
+            <p style={{ marginTop: 9, fontFamily: mono, fontSize: 10, color: "rgba(120,80,20,0.55)", textAlign: "center", letterSpacing: "0.06em" }}>
+              Free to use · No sign-up ·{" "}
+              <button onClick={() => scrollTo("how-it-works")} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(217,160,60,0.6)", fontFamily: mono, fontSize: 10, padding: 0, textDecoration: "underline" }}>How it works ↓</button>
+            </p>
           </div>
         </div>
       </section>
       <hr style={S.divider} />
 
-      {/* ── WHAT'S NEW — v9.0 CHANGELOG ── */}
-      <section id="changelog" style={{ padding: "80px 2rem", background: "rgba(10,6,2,0.98)" }}>
+      {/* ══ HOW IT WORKS ═════════════════════════════════════════ */}
+      <section id="how-it-works" className="lp-section" style={{ background: "#0f0904" }}>
         <div style={S.container}>
-          <p style={S.sectionLabel}>// Release Notes</p>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginBottom: "0.8rem", flexWrap: "wrap" }}>
-            <h2 style={{ ...S.sectionTitle, marginBottom: 0 }}>What's new in v9.0</h2>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(217,160,60,0.7)", background: "rgba(120,60,10,0.2)", border: "1px solid rgba(180,120,40,0.3)", padding: "3px 10px", borderRadius: 4 }}>Latest</span>
-          </div>
-          <p style={S.sectionDesc}>
-            A comprehensive engine update focused on regional music accuracy and false-lock elimination.
-            The underlying routing, pool selection, and artist detection are all significantly overhauled.
-          </p>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "0 3rem" }}>
-            <div>
-              <ChangelogItem
-                tag="New Feature" tagColor="#34d399"
-                title="Artist Detection Warning Banner"
-                desc="When the engine auto-detects an artist from your description, a banner now appears at the top of results explaining what was locked — and how to dismiss it if that wasn't your intention."
-              />
-              <ChangelogItem
-                tag="New Feature" tagColor="#34d399"
-                title="Dismissable Artist Lock (✕)"
-                desc="The 🔒 artist tag in results now has a live ✕ button. Tap it to unlock the detected artist and re-run the analysis as a pure vibe search. State resets automatically on each new prompt."
-              />
-              <ChangelogItem
-                tag="New Feature" tagColor="#34d399"
-                title="Marathi & Assamese Language Pools"
-                desc="Two new regional language pools added. Marathi routes to marathi folk, dhol taasha, lavani, and ajay-atul. Assamese routes to bihu, bihu folk, and northeast Indian music."
-              />
-              <ChangelogItem
-                tag="Fix" tagColor="#60a5fa"
-                title="Cinematic Regional Guard"
-                desc="Indian language prompts with cinematic-adjacent words (BGM, score, scene) no longer fall through to western orchestral. Malayalam, Kannada, Telugu, Marathi now all route to their native BGM pools."
-              />
-              <ChangelogItem
-                tag="Fix" tagColor="#60a5fa"
-                title="Soulful Hindi → Desi Pools"
-                desc="DIVINE, Gully Boy, Carnatic jazz prompts in Hindi/Indian languages were previously routing to Amy Winehouse/SZA type results. Soulful now correctly routes to ghazal, qawwali, desi hip hop, and carnatic."
-              />
-            </div>
-            <div>
-              <ChangelogItem
-                tag="Fix" tagColor="#60a5fa"
-                title="Expanded Stopword Blacklist (60+ words)"
-                desc="35+ new false-lock words identified from 100-prompt testing: indian, scene, crying, peace, live, talk, terror, harvest, down, hyper, wheat, cold, slow, warm, wild, and more. All blocked from artist detection."
-              />
-              <ChangelogItem
-                tag="Fix" tagColor="#60a5fa"
-                title="Morning Run / Motivational → HYPE"
-                desc="Prompts about running, sunrise gym, pre-workout, and motivational vibes were incorrectly being classified as CALM. Now correctly route to HYPE with 120+ BPM."
-              />
-              <ChangelogItem
-                tag="Fix" tagColor="#60a5fa"
-                title="Pro Mode Genre Override Display"
-                desc="When forcing a genre bypass in Pro Mode, the displayed genre tags in results now reflect your override, not the underlying NLP vibe. The badge and pool now match."
-              />
-              <ChangelogItem
-                tag="Fix" tagColor="#60a5fa"
-                title="Radio Show Junk Filter"
-                desc="Internet radio shows (e.g. chutneyradio.com results) and broadcast content were appearing as tracks. Now filtered globally across all pool paths, not just fallback mode."
-              />
-              <ChangelogItem
-                tag="Fix" tagColor="#60a5fa"
-                title="Garba, Devotional & Trance Genre Pools"
-                desc="Hindi party prompts now include garba and devotional EDM routing. Trance is now a valid tag in the English party pool. Psytrance supported via Pro Mode genre bypass."
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-      <hr style={S.divider} />
-
-      {/* ── HOW IT WORKS ── */}
-      <section id="how-it-works" style={{ padding: "80px 2rem", background: "#0a0602" }}>
-        <div style={S.container}>
-          <p style={S.sectionLabel}>// Engine Protocol</p>
-          <h2 style={S.sectionTitle}>How it works</h2>
-          <p style={S.sectionDesc}>Six steps from description to playlist. The whole thing takes about 3–5 seconds.</p>
-          <div style={{ borderTop: "1px solid rgba(150,100,25,0.26)" }}>
-            <Step num="01" title="Describe the Vibe"
-              desc="Type any mood, scene, activity, or feeling. You can be as specific or abstract as you want — the AI handles both."
-              tip={<>"2am, can't sleep, soft piano, city rain outside the window"<br />"hard gym session, angry phonk, no thoughts just lifting"<br />"heartbreak road trip, indie folk, crying with sunglasses on"</>}
-            />
-            <Step num="02" title="Tune the Knobs (optional)"
-              desc="ARTIST controls how closely results sound like a reference artist. NICHENESS slides from mainstream hits to deep underground cuts. BPM sets target energy and tempo."
-              tag="Default settings work great for most prompts"
-            />
-            <Step num="03" title="Select Language"
-              desc="Each language routes to its own dedicated tag pool — a Hindi heartbreak prompt returns Bollywood sad songs, not generic western indie pop. 18 languages supported."
-              tag="18 Languages · 8 Indian Regional Pools"
-            />
-            <Step num="04" title="Set Track Count & Run Analysis"
-              desc="Choose 5, 10, 20, or 50 tracks. The neural engine classifies your vibe, extracts semantic keywords, maps to genre tags, fetches and scores a matched pool of tracks."
-              tag="~3–5 second processing time"
-            />
-            <Step num="05" title="Check the Artist Detection Banner"
-              desc="If the engine detected an artist from your description, a banner appears at the top of results. If that lock is correct, great — if not, tap ✕ to dismiss and re-run as pure vibe."
-              tag="New in v9.0 — full artist transparency"
-            />
-            <Step num="06" title="Listen, Preview, Open on Spotify"
-              desc="Every track has inline preview playback, a direct Spotify link, and 👍 / 👎 feedback. Pivot to the secondary vibe or tweak knobs and re-run if needed."
-              tag="No Spotify account required to preview"
-            />
-          </div>
-        </div>
-      </section>
-      <hr style={S.divider} />
-
-      {/* ── KNOBS ── */}
-      <section style={{ padding: "80px 2rem", background: "rgba(24,15,5,0.96)" }}>
-        <div style={S.container}>
-          <p style={S.sectionLabel}>// Acoustic Parameters</p>
-          <h2 style={S.sectionTitle}>The three knobs</h2>
-          <p style={S.sectionDesc}>Fine-tune the engine without changing your description. Each knob maps to a specific axis of the recommendation space.</p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "1.2rem" }}>
-            <KnobDisplay emoji="🎤" name="Artist"    desc="How closely results sound like a specific artist. Dial up to stay close to a reference. Dial down for broader, mood-only matching." />
-            <KnobDisplay emoji="🔍" name="Nicheness" desc="Slides between mainstream (0) and deep cuts (100). High nicheness surfaces underground and lesser-known tracks. Low for recognisable hits." />
-            <KnobDisplay emoji="⚡" name="BPM"       desc="Controls target tempo and energy. Low BPM for slow, ambient, sleeping. High BPM for workouts, raves, and hype sessions." />
-          </div>
-        </div>
-      </section>
-      <hr style={S.divider} />
-
-      {/* ── FEATURES ── */}
-      <section id="features" style={{ padding: "80px 2rem", background: "#0a0602" }}>
-        <div style={S.container}>
-          <p style={S.sectionLabel}>// Engine Capabilities</p>
-          <h2 style={S.sectionTitle}>What makes it different</h2>
-          <p style={S.sectionDesc}>Not a playlist generator. Not a genre picker. An acoustic intelligence layer that maps language to sound.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 1, background: "rgba(150,100,25,0.26)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: 16, overflow: "hidden" }}>
-            <FeatureCard icon="🧠" title="Natural Language Vibe Analysis"  desc="Describe a moment, emotion, or scene in plain language. The AI extracts semantic concepts, dominant moods, and audio attributes from your text." badge="Pure Metadata Maths" />
-            <FeatureCard icon="🔒" title="Smart Artist Detection & Unlock"  desc='Mention an artist and the engine locks onto their sonic profile automatically. A warning banner tells you exactly what was detected — and a ✕ button lets you dismiss the lock instantly for a pure vibe search.' badge="Artist Transparency" isNew />
-            <FeatureCard icon="🌐" title="18-Language Support"              desc="Deep routing for Indian regional music — Hindi, Punjabi, Tamil, Telugu, Kannada, Malayalam, Bengali, Urdu, Marathi, Assamese — plus Korean, Japanese, Spanish, Arabic and more." badge="Regional Music" isNew />
-            <FeatureCard icon="🎛️" title="Pro Mode Overrides"               desc="Force a specific artist, lock to a genre, or hard-switch to the secondary vibe. Genre override now correctly updates both pool selection and displayed tags." badge="Pro Mode" />
-            <FeatureCard icon="▶️" title="Inline Previews + Spotify"        desc="Preview tracks without leaving the app. Every result links directly to Spotify with album art, artist info, and 👍/👎 feedback buttons." badge="Spotify API" />
-            <FeatureCard icon="🔬" title="Neural Match Breakdown"           desc="See exactly which semantic keywords the AI extracted — like #late night #rain #travis scott — so you know how it interpreted your vibe." badge="Full Transparency" />
-          </div>
-        </div>
-      </section>
-      <hr style={S.divider} />
-
-      {/* ── RESULT ANATOMY ── */}
-      <section style={{ padding: "80px 2rem", background: "rgba(24,15,5,0.96)" }}>
-        <div style={S.container}>
-          <p style={S.sectionLabel}>// Output Anatomy</p>
-          <h2 style={S.sectionTitle}>What you get back</h2>
-          <p style={S.sectionDesc}>Every analysis returns a full breakdown — not just a playlist. Here's a live example including the new v9.0 artist detection banner.</p>
-          <ResultPreview />
-        </div>
-      </section>
-      <hr style={S.divider} />
-
-      {/* ── PRO MODE ── */}
-      <section style={{ padding: "80px 2rem", background: "#0a0602" }}>
-        <div style={S.container}>
-          <p style={S.sectionLabel}>// Advanced Controls</p>
-          <h2 style={S.sectionTitle}>Pro Mode overrides</h2>
-          <p style={S.sectionDesc}>For power users who want to combine AI vibe matching with manual constraints. Expand the Pro Mode panel after any analysis.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
+          <p style={S.label}>// Engine Protocol</p>
+          <h2 style={S.h2}>How it works</h2>
+          <p style={S.body}>Six steps from description to playlist. Takes about 3–5 seconds.</p>
+          <div style={{ borderTop: "1px solid rgba(150,100,25,0.2)" }}>
             {[
-              { title: "⚡ Force Artist Bypass",        desc: "Lock all results to a specific artist's discography or sonic profile — type \"Deftones\" to only get Deftones-adjacent tracks regardless of vibe." },
-              { title: "🎛️ Force Genre Bypass",          desc: "Override the AI's genre inference and lock to a genre directly — \"shoegaze\", \"bhangra\", \"psytrance\" — bypasses vibe detection entirely. Displayed tags now match the override." },
-              { title: "🔄 Hard-Switch Secondary Vibe",  desc: "When the AI detects overlapping vibes, toggle to force the secondary vibe as primary — useful when the dominant classification isn't what you wanted." },
-            ].map(card => (
-              <div key={card.title} className="panel-card" style={{ padding: "1.4rem", borderLeft: "3px solid rgba(217,119,6,0.6)" }}>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(217,160,60,0.85)", marginBottom: 10 }}>{card.title}</div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(180,140,80,0.6)", lineHeight: 1.75 }}>{card.desc}</div>
+              { n: "01", title: "Describe the vibe", desc: "Type any mood, scene, activity, or feeling in plain language. Abstract or specific — the AI handles both.", tip: `"2am, can't sleep, soft piano, rain outside" or "gym rage session, phonk, no thoughts just lifting"` },
+              { n: "02", title: "Tune the knobs", desc: "ARTIST — how closely to match a reference artist. NICHENESS — mainstream to deep cuts. BPM — chill to high energy.", tip: null, tag: "Optional — defaults work great" },
+              { n: "03", title: "Pick a language", desc: "Each language routes to its own pool. Hindi heartbreak → Bollywood sad songs. Punjabi hype → bhangra. Not generic western indie.", tag: "18 languages · 10 Indian regional pools" },
+              { n: "04", title: "Run the analysis", desc: "The engine classifies your vibe, extracts keywords, maps genre tags, fetches and scores a matched track pool.", tag: "~3–5 seconds" },
+              { n: "05", title: "Check the artist banner", desc: "If the engine spotted an artist in your description, a banner tells you what was locked. Tap ✕ to dismiss and switch to pure vibe mode.", tag: "New in v9.0" },
+              { n: "06", title: "Listen & refine", desc: "Preview tracks inline, open in Spotify, rate with 👍/👎. Click genre tags to filter, pivot to secondary vibe, or tweak knobs and re-run.", tag: null },
+            ].map(({ n, title, desc, tip, tag }) => (
+              <div key={n} className="step-row">
+                <div style={{ width: 40, height: 40, flexShrink: 0, background: "rgba(22,14,4,0.8)", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.55)", letterSpacing: "0.08em" }}>{n}</div>
+                <div>
+                  <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontSize: 15, color: "#ead9a8", marginBottom: 5 }}>{title}</div>
+                  <div style={{ fontFamily: mono, fontSize: 12, color: "rgba(190,155,90,0.6)", lineHeight: 1.75 }}>{desc}</div>
+                  {tip && <div style={{ marginTop: 9, padding: "9px 12px", background: "rgba(10,6,2,0.6)", borderLeft: "2px solid rgba(217,119,6,0.5)", borderRadius: "0 6px 6px 0", fontFamily: mono, fontStyle: "italic", fontSize: 11, color: "rgba(180,140,80,0.5)", lineHeight: 1.65 }}>{tip}</div>}
+                  {tag && <span className="freq-tag" style={{ marginTop: 9, display: "inline-block" }}>{tag}</span>}
+                </div>
               </div>
             ))}
           </div>
@@ -650,99 +386,263 @@ export default function LandingPage({ onLaunch }) {
       </section>
       <hr style={S.divider} />
 
-      {/* ── LANGUAGES ── */}
-      <section id="languages" style={{ padding: "80px 2rem", background: "rgba(24,15,5,0.96)" }}>
+      {/* ══ KNOBS ════════════════════════════════════════════════ */}
+      <section className="lp-section" style={{ background: "rgba(20,13,5,0.97)" }}>
         <div style={S.container}>
-          <p style={S.sectionLabel}>// Language Routing</p>
-          <h2 style={S.sectionTitle}>18 languages, regional-aware routing</h2>
-          <p style={S.sectionDesc}>Most music apps treat language as a metadata filter. VibeFinderAI routes each language to dedicated Last.fm tag pools — so a Hindi heartbreak prompt actually returns Bollywood sad songs, not generic western indie.</p>
+          <p style={S.label}>// Acoustic Parameters</p>
+          <h2 style={S.h2}>Three knobs. Full control.</h2>
+          <p style={S.body}>Fine-tune results without rewriting your prompt. Each knob shifts a different dimension of the recommendation space.</p>
+          <div className="knob-row">
+            {[
+              { emoji: "🎤", name: "Artist",    desc: "How tightly to match a reference artist's sound. High = close to the artist. Low = pure mood-based results." },
+              { emoji: "🔍", name: "Nicheness", desc: "0 = recognisable mainstream. 100 = deep underground cuts. Crank it up to discover hidden gems." },
+              { emoji: "⚡", name: "BPM",       desc: "Target tempo and energy. Low for slow ambient. High for raves, runs, and hype sessions." },
+            ].map(({ emoji, name, desc }) => (
+              <div key={name} className="lp-card knob-item" style={{ padding: "1.4rem 1.2rem", textAlign: "center" }}>
+                <div style={{ width: 48, height: 48, borderRadius: "50%", margin: "0 auto 12px", background: "radial-gradient(circle at 35% 35%, #4a2e10, #180e04)", border: "2px solid rgba(120,80,20,0.45)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, position: "relative", boxShadow: "0 3px 10px rgba(0,0,0,0.5)" }}>
+                  <div style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", width: 2, height: 10, background: "rgba(217,119,6,0.85)", borderRadius: 1 }} />
+                  {emoji}
+                </div>
+                <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(210,165,60,0.8)", marginBottom: 7, fontWeight: 600 }}>{name}</div>
+                <div style={{ fontFamily: mono, fontSize: 11, color: "rgba(190,155,90,0.55)", lineHeight: 1.7 }}>{desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+      <hr style={S.divider} />
 
-          {/* Indian languages */}
-          <div style={{ marginBottom: "1.2rem" }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", marginBottom: 8 }}>Indian Regional</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {/* ══ FEATURES ═════════════════════════════════════════════ */}
+      <section id="features" className="lp-section" style={{ background: "#0f0904" }}>
+        <div style={S.container}>
+          <p style={S.label}>// Engine Capabilities</p>
+          <h2 style={S.h2}>What makes it different</h2>
+          <p style={S.body}>Not a playlist generator. An acoustic intelligence layer that maps language, mood, and context to sound.</p>
+          <div className="feature-grid">
+            {[
+              { icon: "🧠", title: "Natural Language Analysis",   badge: "Core Engine",       desc: "Describe any moment in plain language. The AI extracts moods, semantic concepts, and audio attributes to build a matching pool." },
+              { icon: "🔒", title: "Smart Artist Detection",      badge: "Artist Transparency", desc: "Mentions of artists auto-lock the pool. A banner tells you exactly what was detected, and a ✕ lets you dismiss it for pure vibe mode." },
+              { icon: "🌐", title: "18 Languages",                badge: "Regional Music",    desc: "Deep routing for 10 Indian regional pools — Hindi, Punjabi, Tamil, Telugu, Marathi, Assamese and more — plus Korean, Arabic, Afrobeats." },
+              { icon: "🎛️", title: "Pro Mode Overrides",           badge: "Power Users",       desc: "Force an artist, lock a genre, or flip to the secondary vibe. Genre bypass now correctly updates the tag display too." },
+              { icon: "▶️", title: "Inline Previews + Spotify",   badge: "Spotify API",       desc: "Preview any track without leaving the app. Every result links to Spotify with cover art and 👍/👎 feedback buttons." },
+              { icon: "🔬", title: "Neural Match Breakdown",      badge: "Transparency",      desc: "See the exact keywords the AI extracted — #late night #rain #travis scott — so you always know how your vibe was read." },
+            ].map(({ icon, title, badge, desc }) => (
+              <div key={title} className="lp-card" style={{ padding: "1.6rem 1.4rem", borderRadius: 0, border: "none", background: "linear-gradient(155deg, rgba(36,23,8,0.95), rgba(18,11,3,0.98))" }}>
+                <div style={{ fontSize: 20, marginBottom: 10 }}>{icon}</div>
+                <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontSize: 14, color: "#ead9a8", marginBottom: 7 }}>{title}</div>
+                <div style={{ fontFamily: mono, fontSize: 11, color: "rgba(190,155,90,0.55)", lineHeight: 1.75, marginBottom: 12 }}>{desc}</div>
+                <span className="freq-tag" style={{ color: "rgba(210,160,60,0.85)", borderColor: "rgba(180,120,40,0.35)" }}>{badge}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+      <hr style={S.divider} />
+
+      {/* ══ RESULT PREVIEW ═══════════════════════════════════════ */}
+      <section className="lp-section" style={{ background: "rgba(20,13,5,0.97)" }}>
+        <div style={S.container}>
+          <p style={S.label}>// Output Anatomy</p>
+          <h2 style={S.h2}>What you get back</h2>
+          <p style={S.body}>Not just a playlist — a full analysis with vibe data, genre tags, and a breakdown of how your prompt was interpreted.</p>
+
+          <div className="lp-card" style={{ overflow: "hidden" }}>
+            {/* Top bar */}
+            <div style={{ borderBottom: "1px solid rgba(155,105,28,0.28)", padding: "11px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(5,3,1,0.5)" }}>
+              <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.45)" }}>// Analysis Complete</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 5px #34d399", animation: "pulse 1.8s infinite" }} />
+                <span style={{ fontFamily: mono, fontSize: 9, color: "#34d399", letterSpacing: "0.1em" }}>Live</span>
+              </div>
+            </div>
+
+            {/* Artist detection banner */}
+            <div style={{ margin: "12px 18px 0", display: "flex", alignItems: "flex-start", gap: 9, background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.2)", borderRadius: 6, padding: "9px 12px" }}>
+              <span style={{ fontSize: 13, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>🔒</span>
+              <div>
+                <span style={{ fontFamily: mono, fontSize: 10, color: amber, fontWeight: 600, letterSpacing: "0.04em" }}>Artist detected: Travis Scott</span>
+                <br />
+                <span style={{ fontFamily: mono, fontSize: 10, color: "rgba(190,155,90,0.55)", lineHeight: 1.6 }}>Not your intention? Tap ✕ on the tag below to unlock and re-run as a pure vibe search.</span>
+              </div>
+            </div>
+
+            {/* Stat cards */}
+            <div className="rp-stat-grid" style={{ gap: 1, background: "rgba(120,80,20,0.12)", margin: "12px 0 1px" }}>
+              {[
+                { label: "Dominant Vibe", value: "CHILL",   sub: "Secondary → Heartbreak", conf: 0.53 },
+                { label: "Target Tempo",  value: "70–100",  sub: "BPM · Rhythmic Pulse",   bpm: true },
+              ].map((c, i) => (
+                <div key={i} style={{ background: "linear-gradient(155deg, rgba(40,26,10,0.95), rgba(20,12,3,0.98))", padding: "18px 20px" }}>
+                  <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", marginBottom: 5 }}>{c.label}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                    <span style={{ fontFamily: serif, fontSize: 26, fontWeight: 700, color: "#fde68a" }}>{c.value}</span>
+                    {c.bpm && <span style={{ fontFamily: mono, fontSize: 12, color: "rgba(180,140,80,0.45)" }}>BPM</span>}
+                  </div>
+                  <div style={{ fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.4)", marginTop: 2 }}>{c.sub}</div>
+                  {c.conf && (
+                    <div style={{ height: 4, borderRadius: 2, background: "rgba(80,50,10,0.4)", overflow: "hidden", marginTop: 9 }}>
+                      <div style={{ height: "100%", width: `${c.conf * 100}%`, background: "linear-gradient(90deg, #92400e, #d97706, #fbbf24)", borderRadius: 2 }} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Genre tags row */}
+            <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(120,80,20,0.18)", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+              <span className="freq-tag" style={{ color: amber, borderColor: "rgba(217,119,6,0.4)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                🔒 Travis Scott <span style={{ opacity: 0.7, cursor: "pointer" }}>✕</span>
+              </span>
+              {["Neo-Soul","Indie R&B","Chillwave","Lo-fi Hip Hop"].map(t => (
+                <span key={t} className="freq-tag">{t}</span>
+              ))}
+            </div>
+
+            {/* Track rows */}
+            {[{ c: "#c8922a", t: "Neon Glow", a: "Artist · Album" }, { c: "#6366f1", t: "Midnight Signal", a: "Another Artist · EP" }].map((track, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderBottom: "1px solid rgba(120,80,20,0.12)", background: i === 0 ? "rgba(217,119,6,0.03)" : "transparent", flexWrap: "wrap" }}>
+                <div style={{ width: 38, height: 38, borderRadius: 6, flexShrink: 0, background: `conic-gradient(from 0deg, #1a1008, ${track.c}44, #1a1008)`, border: "1px solid rgba(180,140,80,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: 9, height: 9, borderRadius: "50%", background: `radial-gradient(circle, ${track.c}, #7a4f12)` }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 100 }}>
+                  <div style={{ fontFamily: serif, fontSize: 14, fontWeight: 700, color: "#fde68a" }}>{track.t}</div>
+                  <div style={{ fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.55)", marginTop: 2 }}>{track.a}</div>
+                </div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  {["👍","👎","▶"].map(act => (
+                    <button key={act} style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 6, padding: "4px 9px", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.5)", cursor: "pointer" }}>{act}</button>
+                  ))}
+                  <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(30,215,96,0.3)", borderRadius: 6, padding: "4px 9px", fontFamily: mono, fontSize: 10, color: "#1ed760", cursor: "pointer" }}>Spotify</button>
+                </div>
+              </div>
+            ))}
+            <div style={{ padding: "9px 18px", fontFamily: mono, fontSize: 10, color: "rgba(120,80,20,0.6)" }}>
+              Neural Match → <span style={{ color: "rgba(190,155,90,0.5)", marginLeft: 6 }}>#late night &nbsp; #rain &nbsp; #travis scott &nbsp; #dark chill</span>
+            </div>
+          </div>
+        </div>
+      </section>
+      <hr style={S.divider} />
+
+      {/* ══ PRO MODE ═════════════════════════════════════════════ */}
+      <section className="lp-section" style={{ background: "#0f0904" }}>
+        <div style={S.container}>
+          <p style={S.label}>// Advanced Controls</p>
+          <h2 style={S.h2}>Pro Mode overrides</h2>
+          <p style={S.body}>For when you want full manual control on top of AI vibe matching. Expand the Pro Mode panel after any analysis.</p>
+          <div className="pro-grid">
+            {[
+              { icon: "⚡", title: "Force Artist Bypass",     desc: "Lock all results to a specific artist's discography — type \"Deftones\" and every track comes from that sonic world." },
+              { icon: "🎛️", title: "Force Genre Bypass",      desc: "Override AI genre inference entirely — type \"psytrance\", \"bhangra\", \"drum and bass\" — bypasses vibe detection. Tags update to match." },
+              { icon: "🔄", title: "Flip Secondary Vibe",     desc: "When the AI detects two overlapping moods, toggle to force the secondary vibe as your main result — useful when the dominant pick was off." },
+            ].map(card => (
+              <div key={card.title} className="lp-card" style={{ padding: "1.3rem 1.2rem", borderLeft: "3px solid rgba(217,119,6,0.5)" }}>
+                <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(210,160,60,0.8)", marginBottom: 9 }}>{card.icon} {card.title}</div>
+                <div style={{ fontFamily: mono, fontSize: 11, color: "rgba(190,155,90,0.55)", lineHeight: 1.75 }}>{card.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+      <hr style={S.divider} />
+
+      {/* ══ LANGUAGES ════════════════════════════════════════════ */}
+      <section id="languages" className="lp-section" style={{ background: "rgba(20,13,5,0.97)" }}>
+        <div style={S.container}>
+          <p style={S.label}>// Language Routing</p>
+          <h2 style={S.h2}>18 languages, native pools</h2>
+          <p style={S.body}>Language isn't a filter here — it's a routing signal. Each language maps to its own tag pool, so a Hindi heartbreak prompt returns Bollywood sad songs, not western indie pop.</p>
+
+          <div style={{ marginBottom: "1rem" }}>
+            <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(180,140,80,0.35)", marginBottom: 8 }}>Indian Regional</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
               {["Hindi","Punjabi","Tamil","Telugu","Kannada","Malayalam","Bengali","Urdu"].map(l => (
-                <span key={l} className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.45)", background: "rgba(120,60,10,0.25)" }}>{l}</span>
+                <span key={l} className="freq-tag" style={{ color: amber, borderColor: "rgba(217,119,6,0.38)", background: "rgba(100,50,8,0.2)" }}>{l}</span>
               ))}
               {["Marathi","Assamese"].map(l => (
-                <span key={l} className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.45)", background: "rgba(120,60,10,0.25)", position: "relative" }}>
-                  {l}
-                  <span style={{ marginLeft: 5, fontSize: 8, color: "#34d399", letterSpacing: "0.08em" }}>NEW</span>
+                <span key={l} className="freq-tag" style={{ color: "#34d399", borderColor: "rgba(52,211,153,0.3)", background: "rgba(5,40,25,0.2)" }}>
+                  {l} <span style={{ fontSize: 8, opacity: 0.8 }}>new</span>
                 </span>
               ))}
             </div>
           </div>
 
-          {/* Global languages */}
-          <div style={{ marginBottom: "1.6rem" }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", marginBottom: 8 }}>Global</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(180,140,80,0.35)", marginBottom: 8 }}>Global</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
               {["English","Korean","Japanese","Spanish","Portuguese","French","Arabic","Afrobeats"].map(l => (
                 <span key={l} className="freq-tag">{l}</span>
               ))}
             </div>
           </div>
 
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(180,140,80,0.6)", borderLeft: "2px solid rgba(217,119,6,0.5)", paddingLeft: 14, lineHeight: 1.8 }}>
-            Indian languages are highlighted — VibeFinderAI was built with South Asian music discovery as a first-class use case.
-            Describe a shaadi vibe, a heartbreak in Hindi, a bhangra session, a Marathi chaturthi, or a late-night sufi moment — and get the right regional pool back.
-            <br /><br />
-            v9.0 adds <span style={{ color: "#d97706" }}>Marathi</span> (lavani, dhol taasha, ajay-atul) and <span style={{ color: "#d97706" }}>Assamese</span> (bihu, northeast folk) as dedicated pools.
+          <div style={{ marginTop: "1.6rem", fontFamily: mono, fontSize: 12, color: "rgba(190,155,90,0.55)", borderLeft: "2px solid rgba(217,119,6,0.4)", paddingLeft: 13, lineHeight: 1.85 }}>
+            South Asian music discovery is a first-class use case. Bollywood sadness, bhangra energy, Navratri garba,
+            late-night ghazal, Carnatic fusion, KGF mass BGM — every mood routes to the right native pool.
           </div>
         </div>
       </section>
       <hr style={S.divider} />
 
-      {/* ── USE CASES ── */}
-      <section id="use-cases" style={{ padding: "80px 2rem", background: "#0a0602" }}>
+      {/* ══ USE CASES ════════════════════════════════════════════ */}
+      <section id="use-cases" className="lp-section" style={{ background: "#0f0904" }}>
         <div style={S.container}>
-          <p style={S.sectionLabel}>// Scenarios</p>
-          <h2 style={S.sectionTitle}>What people use it for</h2>
-          <p style={S.sectionDesc}>Anything that has a feeling but doesn't map neatly to a genre.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" }}>
-            <UseCaseCard emoji="🌧️" title="Mood-based listening"         desc="You feel something but don't know what song fits. Just describe the feeling."   example="sad and numb but also kind of okay, november rain, slow indie" />
-            <UseCaseCard emoji="💻" title="Activity playlists"            desc="Gaming, coding late night, gym, studying — describe the context."               example="3am coding session, lofi beats, hyperfocus, dark room, monitors glow" />
-            <UseCaseCard emoji="🎸" title="Artist-inspired discovery"     desc="Mention a reference artist, crank Nicheness, find lesser-known gems."           example="sounds like Radiohead but more ambient, deep cuts only, post-2000" />
-            <UseCaseCard emoji="🪘" title="Indian regional discovery"     desc="Desi vibes, regional emotions, Bollywood moods — fully supported across 10 Indian pools." example="sufi night, rooftop, chai, Nusrat Fateh Ali Khan energy, ghazal" />
-            <UseCaseCard emoji="🎉" title="Event & party playlists"       desc="Shaadi, birthday, garba, sangeet — describe the occasion and get the right energy." example="Navratri garba remix, tabla meets EDM, spiritual but hype, devotional dance" />
-            <UseCaseCard emoji="🌅" title="Scene & cinematic vibes"       desc="Describe a scene or visual. Indian language prompts now correctly route to native BGM pools, not western orchestral." example="KGF Rocky Bhai energy, mass BGM, power walk moment, goosebumps" />
+          <p style={S.label}>// Scenarios</p>
+          <h2 style={S.h2}>What people use it for</h2>
+          <p style={S.body}>Anything with a feeling that doesn't map neatly to a genre.</p>
+          <div className="usecase-grid">
+            {[
+              { e: "🌧️", t: "Mood-based listening",    d: "Feel something but don't know what song fits. Describe the feeling and let the AI find it.", q: "sad and numb but kinda okay, november rain, slow indie" },
+              { e: "💻", t: "Activity playlists",       d: "Gaming, coding, gym, studying — describe the context and get the right energy.", q: "3am coding session, dark IDE, lofi beats, intense focus mode" },
+              { e: "🎸", t: "Artist-led discovery",     d: "Mention a reference artist and crank Nicheness for lesser-known gems.", q: "sounds like Radiohead but more ambient, deep cuts only" },
+              { e: "🪘", t: "Desi & regional moods",    d: "Bollywood, Punjabi, Tamil kuthu, Carnatic, ghazal — all natively routed.", q: "sufi night, rooftop, Nusrat Fateh Ali Khan energy, chai" },
+              { e: "🎉", t: "Events & parties",         d: "Shaadi, sangeet, garba, birthday — describe the occasion and energy.", q: "Navratri garba remix, tabla meets EDM, spiritual but hype" },
+              { e: "🌅", t: "Cinematic & scene vibes",  d: "Describe a visual or scene. Indian language prompts route to native BGM pools, not western orchestral.", q: "KGF Rocky Bhai energy, power walk moment, mass BGM" },
+            ].map(({ e, t, d, q }) => (
+              <div key={t} className="lp-card" style={{ padding: "1.4rem 1.3rem" }}>
+                <div style={{ fontSize: 20, marginBottom: 9 }}>{e}</div>
+                <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontSize: 14, color: "#ead9a8", marginBottom: 7 }}>{t}</div>
+                <div style={{ fontFamily: mono, fontSize: 11, color: "rgba(190,155,90,0.55)", lineHeight: 1.7, marginBottom: 11 }}>{d}</div>
+                <div style={{ padding: "8px 11px", background: "rgba(8,5,1,0.7)", borderLeft: "2px solid rgba(217,119,6,0.4)", borderRadius: "0 6px 6px 0", fontFamily: mono, fontStyle: "italic", fontSize: 10, color: "rgba(190,155,90,0.45)", lineHeight: 1.6 }}>"{q}"</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
       <hr style={S.divider} />
 
-      {/* ── FINAL CTA ── */}
-      <section style={{ padding: "100px 2rem", background: "rgba(14,9,3,0.97)", textAlign: "center", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", fontFamily: "'Playfair Display', serif", fontSize: "clamp(60px,12vw,130px)", color: "rgba(120,60,10,0.04)", fontWeight: 900, top: "50%", left: "50%", transform: "translate(-50%,-50%)", whiteSpace: "nowrap", pointerEvents: "none", userSelect: "none" }}>VibeFinderAI</div>
+      {/* ══ FINAL CTA ════════════════════════════════════════════ */}
+      <section className="lp-section" style={{ background: "rgba(10,6,2,0.98)", textAlign: "center", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", fontFamily: serif, fontSize: "clamp(50px,11vw,120px)", color: "rgba(100,50,8,0.04)", fontWeight: 900, top: "50%", left: "50%", transform: "translate(-50%,-50%)", whiteSpace: "nowrap", pointerEvents: "none", userSelect: "none" }}>VibeFinderAI</div>
         <div style={{ position: "relative", zIndex: 1 }}>
-          <p style={S.sectionLabel}>// Ready?</p>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(1.6rem,4vw,2.8rem)", fontWeight: 900, color: "#e8d5a3", marginBottom: "1rem", lineHeight: 1.2 }}>
+          <p style={S.label}>// Ready?</p>
+          <h2 style={{ fontFamily: serif, fontSize: "clamp(1.5rem,4vw,2.6rem)", fontWeight: 900, color: "#ead9a8", marginBottom: "0.9rem", lineHeight: 1.2 }}>
             Stop searching.<br /><span style={{ fontStyle: "italic", color: "#fde68a" }}>Start describing.</span>
           </h2>
-          <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "rgba(180,140,80,0.6)", maxWidth: 460, margin: "0 auto 2.4rem", lineHeight: 1.8 }}>
-            Type a feeling. The engine handles the rest.<br />No account, no sign-up — just launch and run your first analysis.
+          <p style={{ fontFamily: mono, fontSize: 13, color: "rgba(190,155,90,0.55)", maxWidth: 420, margin: "0 auto 2.2rem", lineHeight: 1.85 }}>
+            Type a feeling. The engine handles the rest.<br />Free to use, no account needed.
           </p>
-          <button onClick={onLaunch} className="dial-btn" style={{ ...amberBtnBase, padding: "16px 44px", fontSize: 13, letterSpacing: "0.2em" }}
-            onMouseEnter={e => { e.currentTarget.style.opacity = ".88"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(180,100,10,0.55)"; }}
-            onMouseLeave={e => { e.currentTarget.style.opacity = "1";   e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(180,100,10,0.35)"; }}
+          <button onClick={onLaunch} style={{ ...amberBtn, padding: "15px 40px", fontSize: 13, letterSpacing: "0.18em" }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = ".86"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 30px rgba(180,100,10,0.5)"; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = "1";   e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(180,100,10,0.3)"; }}
           >⚡ Launch VibeFinderAI →</button>
         </div>
       </section>
 
-      {/* ── FOOTER ── */}
-      <footer style={{ borderTop: "1px solid rgba(155,105,28,0.38)", padding: "1.6rem 2rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(120,80,20,0.6)", background: "#0a0602" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 22, height: 22, borderRadius: "50%", background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008)", border: "1px solid rgba(180,140,80,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "radial-gradient(circle, #d97706, #7a4f12)" }} />
+      {/* ══ FOOTER ═══════════════════════════════════════════════ */}
+      <footer style={{ borderTop: "1px solid rgba(155,105,28,0.28)", padding: "1.4rem 1.4rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, fontFamily: mono, fontSize: 11, color: "rgba(120,80,20,0.55)", background: "#0a0602" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <div style={{ width: 20, height: 20, borderRadius: "50%", background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008)", border: "1px solid rgba(180,140,80,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 5, height: 5, borderRadius: "50%", background: "radial-gradient(circle, #d97706, #7a4f12)" }} />
           </div>
-          <span style={{ letterSpacing: "0.15em", textTransform: "uppercase", fontFamily: "'Playfair Display', serif", fontSize: 12, color: "#e8d5a3" }}>VibeFinderAI</span>
+          <span style={{ fontFamily: serif, fontSize: 12, color: "#ead9a8", letterSpacing: "-0.01em" }}>VibeFinderAI</span>
         </div>
-        <span style={{ letterSpacing: "0.06em" }}>Neural engine v9.0 · 18 Languages · Last.fm + Spotify</span>
-        <div style={{ display: "flex", gap: "1.2rem" }}>
-          {[["App", onLaunch], ["How It Works", () => scrollTo("how-it-works")], ["What's New", () => scrollTo("changelog")], ["Features", () => scrollTo("features")]].map(([label, fn]) => (
-            <button key={label} onClick={fn} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(120,80,20,0.6)", fontFamily: "'DM Mono', monospace", fontSize: 11, letterSpacing: "0.08em" }}
-              onMouseEnter={e => e.target.style.color = "rgba(180,140,80,0.7)"}
-              onMouseLeave={e => e.target.style.color = "rgba(120,80,20,0.6)"}
+        <span>v9.0 · 18 Languages · Last.fm + Spotify</span>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          {[["App", onLaunch], ["How It Works", () => scrollTo("how-it-works")], ["Features", () => scrollTo("features")]].map(([label, fn]) => (
+            <button key={label} onClick={fn} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(120,80,20,0.55)", fontFamily: mono, fontSize: 11, letterSpacing: "0.06em" }}
+              onMouseEnter={e => e.target.style.color = "rgba(190,155,90,0.7)"}
+              onMouseLeave={e => e.target.style.color = "rgba(120,80,20,0.55)"}
             >{label}</button>
           ))}
         </div>
