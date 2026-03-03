@@ -554,7 +554,19 @@ function GlobalStyles() {
 function CopyPlaylistButton({ tracks, activeColor }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
+    // Track analytics event
+    try {
+      const url = buildApiUrl("/api/analytics/engagement");
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: "playlist_save" })
+      }).catch(() => {});
+    } catch (err) {
+      console.error("Analytics error:", err);
+    }
+
     const text = tracks.map((t, i) => `${i + 1}. ${t.title} — ${t.artist}`).join("\n");
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
@@ -668,12 +680,26 @@ export default function App() {
   }, []);
 
   /* Toggle the In-App Preview Player */
+  const trackEngagement = async (eventType) => {
+    try {
+      const url = buildApiUrl("/api/analytics/engagement");
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: eventType })
+      }).catch(() => {});
+    } catch (err) {
+      console.error("Analytics error:", err);
+    }
+  };
+
   const togglePlay = (url) => {
     if (!url) return;
     if (playingTrack === url) {
       audioRef.current.pause();
       setPlayingTrack(null);
     } else {
+      trackEngagement("preview_click");
       audioRef.current.src = url;
       audioRef.current.play();
       setPlayingTrack(url);
@@ -1035,7 +1061,10 @@ export default function App() {
               {/* ── PRO MODE OVERRIDES ── */}
               <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
                 <button
-                  onClick={() => setShowOverrides(!showOverrides)}
+                  onClick={() => {
+                    trackEngagement("pro_mode");
+                    setShowOverrides(!showOverrides);
+                  }}
                   disabled={!token}
                   style={{ background: "none", border: "none", color: "rgba(180,140,80,0.6)", fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px", cursor: token ? "pointer" : "default", fontFamily: "'DM Mono', monospace", alignSelf: "flex-start", opacity: token ? 1 : 0.5 }}
                 >
@@ -1475,6 +1504,7 @@ export default function App() {
 
                               <a 
                                 href={track.spotify_uri} 
+                                onClick={() => trackEngagement("spotify_click")}
                                 className="dial-btn"
                                 style={{ 
                                   ...S.authBtn(false), 

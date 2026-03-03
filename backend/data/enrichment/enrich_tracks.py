@@ -109,26 +109,39 @@ MB_LIMITER = RateLimiter(MB_RATE_LIMIT)
 # Prevents 100 concurrent workers from hitting MusicBrainz for the exact same track simultaneously
 MBID_MEMORY_CACHE: Dict[str, Any] = {}
 
-async def memoized_mbid_lookup(client: httpx.AsyncClient, title: str, artist: str) -> Optional[str]:
-    """Smart cache: Returns existing ID or hitches a ride on an already-running API request task."""
+async def memoized_mbid_and_isrc_lookup(
+    client: httpx.AsyncClient, title: str, artist: str
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Smart cache: Returns (mbid, isrc) tuple or hitches a ride on already-running API request.
+    """
     if not title or not artist:
-        return None
+        return (None, None)
         
     key = f"{title.lower().strip()}|{artist.lower().strip()}"
     
     if key in MBID_MEMORY_CACHE:
         val = MBID_MEMORY_CACHE[key]
         if isinstance(val, asyncio.Task):
-            # Bro, another worker is already fetching this! Let's just wait for their answer.
+            # Another worker is already fetching this! Wait for their answer.
             return await val
         return val
 
     # Create a task and store it so other workers can await it instead of spamming the API
-    task = asyncio.create_task(mb_recording_to_mbid(client, title, artist))
+    task = asyncio.create_task(mb_recording_to_mbid_and_isrc(client, title, artist))
     MBID_MEMORY_CACHE[key] = task
     
-    mbid = await task
-    MBID_MEMORY_CACHE[key] = mbid # Replace task with actual string result
+    result = await task
+    MBID_MEMORY_CACHE[key] = result  # Replace task with actual tuple result
+    return result
+
+
+async def memoized_mbid_lookup(client: httpx.AsyncClient, title: str, artist: str) -> Optional[str]:
+    """
+    Legacy wrapper: Smart cache returning just MBID.
+    Use memoized_mbid_and_isrc_lookup for ISRC as well.
+    """
+    mbid, _ = await memoized_mbid_and_isrc_lookup(client, title, artist)
     return mbid
 
 
@@ -267,13 +280,14 @@ async def ab_get_mood_features(
         return None
 
 
-async def mb_recording_to_mbid(
+async def mb_recording_to_mbid_and_isrc(
     client: httpx.AsyncClient,
     title: str,
     artist: str
-) -> Optional[str]:
+) -> tuple[Optional[str], Optional[str]]:
     """
-    Look up a MusicBrainz Recording ID (MBID) by title + artist.
+    Look up a MusicBrainz Recording and extract MBID + ISRC code.
+    Returns (mbid, isrc) tuple. Either can be None if not found.
     """
     await MB_LIMITER.acquire()
     try:
@@ -287,11 +301,30 @@ async def mb_recording_to_mbid(
         r.raise_for_status()
         recordings = r.json().get("recordings", [])
         if recordings and recordings[0].get("score", 0) >= 85:
-            return recordings[0]["id"]
-        return None
+            mbid = recordings[0].get("id")
+            # ISRC codes are in isrc-list array, take the first one
+            isrc = None
+            isrc_list = recordings[0].get("isrc-list", [])
+            if isrc_list:
+                isrc = isrc_list[0]
+            return (mbid, isrc)
+        return (None, None)
     except Exception as e:
         log.debug(f"[MB] recording lookup failed for '{title}' by '{artist}': {e}")
-        return None
+        return (None, None)
+
+
+async def mb_recording_to_mbid(
+    client: httpx.AsyncClient,
+    title: str,
+    artist: str
+) -> Optional[str]:
+    """
+    Legacy wrapper: Look up a MusicBrainz Recording ID (MBID) by title + artist.
+    Use mb_recording_to_mbid_and_isrc for ISRC as well.
+    """
+    mbid, _ = await mb_recording_to_mbid_and_isrc(client, title, artist)
+    return mbid
 
 
 # ─── CACHE WRITER ────────────────────────────────────────────────────────────
@@ -300,11 +333,12 @@ async def cache_track_features(
     db: Prisma,
     spotify_id: Optional[str],
     mbid: Optional[str],
+    isrc: Optional[str],
     title: str,
     artist: str,
     features: dict,
 ) -> None:
-    """Upsert a track's features into TrackFeatureCache."""
+    """Upsert a track's features into TrackFeatureCache with ISRC support."""
     if not spotify_id and not mbid:
         return
 
@@ -313,13 +347,15 @@ async def cache_track_features(
         "artist": artist,
         **{k: v for k, v in features.items() if v is not None},
     }
+    if isrc:
+        data["isrc"] = isrc
 
     try:
         if spotify_id:
             await db.trackfeaturecache.upsert(
                 where={"spotifyId": spotify_id},
                 data={
-                    "create": {"spotifyId": spotify_id, "mbid": mbid, **data},
+                    "create": {"spotifyId": spotify_id, "mbid": mbid, "isrc": isrc, **data},
                     "update": data,
                 },
             )
@@ -327,7 +363,7 @@ async def cache_track_features(
             await db.trackfeaturecache.upsert(
                 where={"mbid": mbid},
                 data={
-                    "create": {"mbid": mbid, **data},
+                    "create": {"mbid": mbid, "isrc": isrc, **data},
                     "update": data,
                 },
             )
@@ -391,7 +427,7 @@ async def enrich_from_artist_songs(db: Prisma, client: httpx.AsyncClient) -> Non
         nonlocal completed, total_cached
         async with sem:
             try:
-                mbid = await memoized_mbid_lookup(client, song_title, artist_name)
+                mbid, isrc = await memoized_mbid_and_isrc_lookup(client, song_title, artist_name)
                 features = {}
                 
                 if mbid:
@@ -401,7 +437,7 @@ async def enrich_from_artist_songs(db: Prisma, client: httpx.AsyncClient) -> Non
 
                 if features:
                     await cache_track_features(
-                        db, spotify_id=None, mbid=mbid,
+                        db, spotify_id=None, mbid=mbid, isrc=isrc,
                         title=song_title, artist=artist_name,
                         features=features,
                     )
@@ -473,7 +509,7 @@ async def enrich_from_spotify_ids(
                 rb_task = asyncio.create_task(rb_get_features(client, spotify_id))
                 mb_task = None
                 if title and artist:
-                    mb_task = asyncio.create_task(memoized_mbid_lookup(client, title, artist))
+                    mb_task = asyncio.create_task(memoized_mbid_and_isrc_lookup(client, title, artist))
 
                 # Wait for RB to finish
                 rb = await rb_task
@@ -481,8 +517,10 @@ async def enrich_from_spotify_ids(
                     features.update({k: v for k, v in rb.items() if v is not None})
 
                 # Wait for MB to finish (if we ran it)
+                mbid = None
+                isrc = None
                 if mb_task:
-                    mbid = await mb_task
+                    mbid, isrc = await mb_task
                     if mbid:
                         ab = await ab_get_mood_features(client, mbid)
                         if ab:
@@ -492,7 +530,7 @@ async def enrich_from_spotify_ids(
 
                 if features:
                     await cache_track_features(
-                        db, spotify_id=spotify_id, mbid=None,
+                        db, spotify_id=spotify_id, mbid=mbid, isrc=isrc,
                         title=title, artist=artist, features=features,
                     )
             except Exception as e:
@@ -544,9 +582,10 @@ async def enrich_from_playlist_tracks(db: Prisma, client: httpx.AsyncClient) -> 
                 rb_task = asyncio.create_task(rb_get_features(client, track.spotifyId))
                 
                 mbid = track.mbid
+                isrc = track.isrc if hasattr(track, 'isrc') else None
                 mb_task = None
                 if not mbid:
-                    mb_task = asyncio.create_task(memoized_mbid_lookup(client, track.title, track.artist))
+                    mb_task = asyncio.create_task(memoized_mbid_and_isrc_lookup(client, track.title, track.artist))
                 
                 # Await ReccoBeats
                 rb = await rb_task
@@ -555,7 +594,7 @@ async def enrich_from_playlist_tracks(db: Prisma, client: httpx.AsyncClient) -> 
                 
                 # Await MusicBrainz if we needed it
                 if mb_task:
-                    mbid = await mb_task
+                    mbid, isrc = await mb_task
                 
                 if mbid:
                     ab = await ab_get_mood_features(client, mbid)
@@ -566,7 +605,7 @@ async def enrich_from_playlist_tracks(db: Prisma, client: httpx.AsyncClient) -> 
                                 
                 if features:
                     await cache_track_features(
-                        db, spotify_id=track.spotifyId, mbid=mbid,
+                        db, spotify_id=track.spotifyId, mbid=mbid, isrc=isrc,
                         title=track.title, artist=track.artist, features=features,
                     )
             except Exception as e:

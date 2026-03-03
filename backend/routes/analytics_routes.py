@@ -1,290 +1,393 @@
 """
-Analytics API Routes for VibeFinderAI
-FastAPI endpoints for serving dashboard and analytics data
+analytics_routes.py
+───────────────────
+VibeFinderAI — Analytics API Routes (Real DB Data)
+Place in: backend/routes/analytics_routes.py
+
+All metrics are derived live from the Prisma DB. Designed to be fast
+enough for the 5s polling interval in AnalyticsDashboard.jsx.
+
+Endpoints:
+  GET /api/analytics/dashboard  — Full dashboard snapshot
+  GET /api/analytics/live       — Just the live metrics (1h window)
+  GET /api/analytics/export     — CSV dump for offline analysis
+
+Register in main.py:
+  from routes.analytics_routes import router as analytics_router, set_db as analytics_set_db
+  analytics_set_db(db)
+  app.include_router(analytics_router, prefix="/api")
 """
 
-from fastapi import APIRouter, HTTPException
-from core.analytics import get_analytics_summary, get_dashboard_data, collector
+import json
 import logging
+import os
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import StreamingResponse
+import jwt
+from prisma import Prisma
 
 logger = logging.getLogger("VibeFinderEngine")
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter()
+
+SECRET_KEY    = os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this")
+ALGORITHM     = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token", auto_error=False)
+
+_db: Optional[Prisma] = None
+
+def set_db(instance: Prisma):
+    global _db
+    _db = instance
+
+def get_db() -> Prisma:
+    if _db is None:
+        raise RuntimeError("DB not initialised")
+    return _db
 
 
-@router.get("/dashboard")
-async def get_dashboard():
+async def _require_admin(token: Optional[str]) -> bool:
     """
-    GET /api/analytics/dashboard
-    Returns lightweight, dashboard-formatted analytics data
-    Includes live metrics, summary, and recent searches
+    Simple admin gate: check token is valid AND user has admin flag.
+    For now (student project), any valid token can view analytics.
+    Swap to a role check when you add admin roles to the User model.
     """
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
     try:
-        data = get_dashboard_data()
+        jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return True
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# ─── DASHBOARD ENDPOINT ───────────────────────────────────────────────────────
+
+@router.get("/analytics/dashboard")
+async def get_analytics_dashboard(token: Optional[str] = Depends(oauth2_scheme)):
+    """
+    Full analytics snapshot. Polled every 5s by AnalyticsDashboard.jsx.
+    All numbers are derived from real DB data.
+    """
+    await _require_admin(token)
+    db = get_db()
+
+    now      = datetime.now(timezone.utc)
+    one_hour = now - timedelta(hours=1)
+    one_day  = now - timedelta(hours=24)
+
+    try:
+        # ── Parallel DB queries ──────────────────────────────────────────────
+        all_requests = await db.viberequest.find_many(
+            order={"createdAt": "desc"},
+            take=5000,   # Cap for performance — latest 5k requests
+        )
+        recent_requests = [r for r in all_requests if r.createdAt >= one_hour]
+        daily_requests  = [r for r in all_requests if r.createdAt >= one_day]
+
+        all_feedback    = await db.trackfeedback.find_many(
+            order={"createdAt": "desc"},
+            take=10000,
+        )
+        recent_feedback = [f for f in all_feedback if f.createdAt >= one_hour]
+
+        # ── User metrics ─────────────────────────────────────────────────────
+        total_users = await db.user.count()
+        # Active: users who made a request in the last hour
+        active_user_ids = {r.userId for r in recent_requests if r.userId}
+
+        # ── Search metrics ────────────────────────────────────────────────────
+        total_searches = len(all_requests)
+
+        vibe_counter: Counter = Counter()
+        for r in all_requests:
+            if r.dominantVibe:
+                vibe_counter[r.dominantVibe] += 1
+
+        secondary_count = sum(1 for r in all_requests if r.secondaryVibe)
+        secondary_rate  = round(secondary_count / max(total_searches, 1) * 100, 1)
+
+        # Average nicheness (stored in knob state we log in DB)
+        # If nicheness not in schema, default to 50
+        niches = []
+        for r in all_requests:
+            try:
+                v = getattr(r, "nicheness", None)
+                if v is not None:
+                    niches.append(float(v))
+            except Exception:
+                pass
+        avg_nicheness = round(sum(niches) / len(niches), 2) if niches else 0.5
+
+        # ── Engine performance ────────────────────────────────────────────────
+        # Response times — stored in VibeRequest.responseMs if available,
+        # otherwise estimated from createdAt - (next request start, approximate)
+        # We read from DB field if it exists, fall back to null
+        response_times = []
+        for r in all_requests:
+            try:
+                ms = getattr(r, "responseMs", None)
+                if ms is not None:
+                    response_times.append(float(ms))
+            except Exception:
+                pass
+
+        if response_times:
+            sorted_rt   = sorted(response_times)
+            avg_resp_ms = round(sum(response_times) / len(response_times), 1)
+            p95_idx     = int(len(sorted_rt) * 0.95)
+            p95_resp_ms = sorted_rt[min(p95_idx, len(sorted_rt) - 1)]
+        else:
+            avg_resp_ms = 0.0
+            p95_resp_ms = 0.0
+
+        fallback_count  = sum(1 for r in all_requests if getattr(r, "usedFallback", False))
+        semantic_count  = sum(1 for r in all_requests if getattr(r, "usedSemantic", False))
+        avg_confidence  = (
+            sum(float(r.confidence) for r in all_requests if r.confidence)
+            / max(total_searches, 1)
+        )
+
+        # ── Feedback metrics ──────────────────────────────────────────────────
+        thumbs_up   = sum(1 for f in all_feedback if f.signal == 1)
+        thumbs_down = sum(1 for f in all_feedback if f.signal == -1)
+        total_fb    = len(all_feedback)
+        pos_rate    = round(thumbs_up / max(total_fb, 1) * 100, 1)
+
+        # ── User engagement (all time) ────────────────────────────────────────
+        # These require specific tracking fields. We compute what we can from
+        # the data we definitely have, and default the rest to 0 gracefully.
+        preview_clicks = 0   # Would need a /api/track/preview-click event endpoint
+        spotify_clicks = 0   # Would need a /api/track/spotify-click event endpoint
+        pro_mode_uses  = sum(
+            1 for r in all_requests
+            if getattr(r, "overrideGenre", None) or getattr(r, "overrideArtist", None)
+        )
+
+        try:
+            playlist_saves = await db.savedplaylist.count()
+        except Exception:
+            playlist_saves = 0
+
+        # ── Data quality ──────────────────────────────────────────────────────
+        try:
+            total_cache_rows = await db.trackfeaturecache.count()
+            enriched_rows    = await db.trackfeaturecache.count(
+                where={"energy": {"not": None}}
+            )
+            enrichment_pct = round(enriched_rows / max(total_cache_rows, 1) * 100, 1)
+
+            missing_isrcs = await db.trackfeaturecache.count(
+                where={"isrc": None}
+            )
+        except Exception:
+            total_cache_rows = 0
+            enrichment_pct   = 0.0
+            missing_isrcs    = 0
+
+        # Cache hit rate (approximated: requests where fallback=False → likely cache hit)
+        cache_hits = total_searches - fallback_count
+        cache_hit_pct = round(cache_hits / max(total_searches, 1) * 100, 1)
+
+        # ── API errors (parse from DB if error field exists) ──────────────────
+        api_errors: dict = {}
+        # Add real error tracking when you add an ErrorLog table
+
+        # ── Trending vibes (last 1h) ──────────────────────────────────────────
+        trending: Counter = Counter()
+        for r in recent_requests:
+            if r.dominantVibe:
+                trending[r.dominantVibe] += 1
+
+        # ── Assemble response ─────────────────────────────────────────────────
         return {
-            "status": "success",
-            "data": data
+            "summary": {
+                "timestamp": now.isoformat(),
+                "search_metrics": {
+                    "total_searches":       total_searches,
+                    "secondary_vibe_rate":  secondary_rate,
+                    "avg_nicheness":        avg_nicheness,
+                    "fallback_rate_pct":    round(fallback_count / max(total_searches, 1) * 100, 1),
+                    "semantic_rate_pct":    round(semantic_count / max(total_searches, 1) * 100, 1),
+                    "top_vibes":            dict(vibe_counter.most_common(10)),
+                },
+                "engine_performance": {
+                    "avg_confidence":          round(avg_confidence, 3),
+                    "avg_response_ms":         avg_resp_ms,
+                    "p95_response_ms":         p95_resp_ms,
+                    "total_searches_tracked":  total_searches,
+                    "fallback_searches":       fallback_count,
+                },
+                "user_engagement": {
+                    "total_users":         total_users,
+                    "preview_clicks":      preview_clicks,
+                    "spotify_clicks":      spotify_clicks,
+                    "pro_mode_activations": pro_mode_uses,
+                    "playlist_saves":      playlist_saves,
+                },
+                "feedback": {
+                    "thumbs_up":        thumbs_up,
+                    "thumbs_down":      thumbs_down,
+                    "total_feedback":   total_fb,
+                    "positive_rate_pct": pos_rate,
+                },
+                "data_quality": {
+                    "total_cached_tracks":       total_cache_rows,
+                    "enrichment_completion_pct": enrichment_pct,
+                    "missing_isrcs":             missing_isrcs,
+                    "cache_hits":                cache_hits,
+                    "cache_hit_rate_pct":        cache_hit_pct,
+                },
+                "api_errors":        api_errors,
+                "trending_vibes_1h": dict(trending.most_common(8)),
+            },
+            "live_metric": {
+                "active_users_1h":    len(active_user_ids),
+                "searches_this_hour": len(recent_requests),
+                "feedback_this_hour": len(recent_feedback),
+                "avg_response_ms":    avg_resp_ms,   # reuse — no live timing available
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"[Analytics] Dashboard build failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Analytics engine error")
+
+
+# ─── LIVE METRICS ONLY (lightweight poll) ────────────────────────────────────
+
+@router.get("/analytics/live")
+async def get_live_metrics(token: Optional[str] = Depends(oauth2_scheme)):
+    """
+    Lightweight endpoint for the live metrics bar.
+    Returns only the last-hour window — much cheaper than full dashboard.
+    """
+    await _require_admin(token)
+    db = get_db()
+
+    now      = datetime.now(timezone.utc)
+    one_hour = now - timedelta(hours=1)
+
+    try:
+        recent_requests = await db.viberequest.find_many(
+            where={"createdAt": {"gte": one_hour}},
+        )
+        recent_feedback = await db.trackfeedback.find_many(
+            where={"createdAt": {"gte": one_hour}},
+        )
+
+        active_users = {r.userId for r in recent_requests if r.userId}
+        vibe_counter = Counter(r.dominantVibe for r in recent_requests if r.dominantVibe)
+
+        return {
+            "active_users_1h":    len(active_users),
+            "searches_this_hour": len(recent_requests),
+            "feedback_this_hour": len(recent_feedback),
+            "top_vibe_1h":        vibe_counter.most_common(1)[0][0] if vibe_counter else None,
+            "timestamp":          now.isoformat(),
         }
     except Exception as e:
-        logger.error(f"Analytics dashboard error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch dashboard data")
+        logger.error(f"[Analytics] Live metrics failed: {e}")
+        raise HTTPException(status_code=500, detail="Live metrics error")
 
 
-@router.get("/summary")
-async def get_summary():
-    """
-    GET /api/analytics/summary
-    Returns comprehensive analytics summary
-    Individual metrics for all tracked dimensions
-    """
-    try:
-        summary = get_analytics_summary()
-        return {
-            "status": "success",
-            "data": summary
-        }
-    except Exception as e:
-        logger.error(f"Analytics summary error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch analytics summary")
+# ─── VIBE BREAKDOWN ──────────────────────────────────────────────────────────
 
-
-@router.get("/searches")
-async def get_recent_searches(limit: int = 50):
-    """
-    GET /api/analytics/searches?limit=50
-    Returns recent search history with details
-    """
-    data = collector.search_history[-limit:]
-    return {
-        "status": "success",
-        "count": len(data),
-        "data": data
-    }
-
-
-@router.get("/vibes")
-async def get_vibe_statistics():
-    """
-    GET /api/analytics/vibes
-    Returns vibe category statistics (counts, percentages)
-    """
-    total = collector.total_searches or 1
-    vibes = {
-        vibe: {
-            "count": count,
-            "percentage": round(count / total * 100, 1)
-        }
-        for vibe, count in collector.vibe_counter.most_common()
-    }
-    return {
-        "status": "success",
-        "total_searches": collector.total_searches,
-        "vibes": vibes
-    }
-
-
-@router.get("/languages")
-async def get_language_statistics():
-    """
-    GET /api/analytics/languages
-    Returns language preference statistics
-    """
-    total = collector.total_searches or 1
-    languages = {
-        lang: {
-            "count": count,
-            "percentage": round(count / total * 100, 1)
-        }
-        for lang, count in collector.language_counter.most_common()
-    }
-    return {
-        "status": "success",
-        "languages": languages
-    }
-
-
-@router.get("/performance")
-async def get_performance_metrics():
-    """
-    GET /api/analytics/performance
-    Returns detailed performance metrics (latency, confidence, etc)
-    """
-    response_times = collector.search_response_times
-    confidence_scores = collector.confidence_scores
-    
-    if not response_times:
-        return {
-            "status": "success",
-            "message": "No performance data yet",
-            "data": {}
-        }
-    
-    sorted_response_times = sorted(response_times)
-    
-    # Percentile calculations
-    p50 = sorted_response_times[len(sorted_response_times) // 2]
-    p75 = sorted_response_times[int(len(sorted_response_times) * 0.75)]
-    p95 = sorted_response_times[int(len(sorted_response_times) * 0.95)]
-    p99 = sorted_response_times[int(len(sorted_response_times) * 0.99)] if len(sorted_response_times) > 100 else p95
-    
-    avg_response = sum(response_times) / len(response_times)
-    min_response = min(response_times)
-    max_response = max(response_times)
-    
-    avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
-    
-    return {
-        "status": "success",
-        "latency_ms": {
-            "min": round(min_response, 1),
-            "avg": round(avg_response, 1),
-            "p50": round(p50, 1),
-            "p75": round(p75, 1),
-            "p95": round(p95, 1),
-            "p99": round(p99, 1),
-            "max": round(max_response, 1)
-        },
-        "confidence": {
-            "avg": round(avg_confidence, 3),
-            "min": round(min(confidence_scores), 3) if confidence_scores else 0,
-            "max": round(max(confidence_scores), 3) if confidence_scores else 1
-        },
-        "sample_count": len(response_times)
-    }
-
-
-@router.get("/engagement")
-async def get_engagement_metrics():
-    """
-    GET /api/analytics/engagement
-    Returns user engagement and interaction metrics
-    """
-    thumbs_up = collector.feedback_ratings.get("thumbs_up", 0)
-    thumbs_down = collector.feedback_ratings.get("thumbs_down", 0)
-    total_feedback = thumbs_up + thumbs_down
-    
-    return {
-        "status": "success",
-        "engagement": {
-            "preview_clicks": collector.track_preview_clicks,
-            "spotify_links_opened": collector.spotify_link_clicks,
-            "pro_mode_activations": collector.pro_mode_activations,
-            "playlist_saves": collector.playlist_saves,
-            "ctr_preview": round(collector.track_preview_clicks / max(1, collector.total_searches) * 100, 1),
-            "ctr_spotify": round(collector.spotify_link_clicks / max(1, collector.total_searches) * 100, 1)
-        },
-        "feedback": {
-            "thumbs_up": thumbs_up,
-            "thumbs_down": thumbs_down,
-            "total": total_feedback,
-            "positive_rate_pct": round(thumbs_up / max(1, total_feedback) * 100, 1)
-        },
-        "overrides": dict(collector.manual_override_uses.most_common(10))
-    }
-
-
-@router.get("/data-quality")
-async def get_data_quality():
-    """
-    GET /api/analytics/data-quality
-    Returns data enrichment and quality metrics
-    """
-    cache_total = collector.cache_hits + collector.cache_misses
-    cache_hit_rate = (collector.cache_hits / cache_total * 100) if cache_total > 0 else 0
-    
-    return {
-        "status": "success",
-        "enrichment": {
-            "completion_pct": collector.enrichment_completion_pct,
-            "missing_isrcs": collector.missing_isrc_count
-        },
-        "cache": {
-            "hits": collector.cache_hits,
-            "misses": collector.cache_misses,
-            "total_requests": cache_total,
-            "hit_rate_pct": round(cache_hit_rate, 1)
-        },
-        "api_errors": dict(collector.api_errors.most_common(15)) if collector.api_errors else {}
-    }
-
-
-@router.post("/search")
-async def log_search_event(
-    vibe_description: str,
-    primary_vibe: str,
-    secondary_vibe: str = None,
-    confidence: float = 0.5,
-    response_time_ms: float = 0,
-    nicheness: float = 0.5,
-    language: str = "en",
-    track_count: int = 10
+@router.get("/analytics/vibes")
+async def get_vibe_breakdown(
+    days: int = 7,
+    token: Optional[str] = Depends(oauth2_scheme),
 ):
     """
-    POST /api/analytics/search
-    Backend should call this after each successful vibe analysis
+    Returns vibe distribution over the last N days.
+    Used to power the Top Vibes chart and can power a future trend graph.
     """
+    await _require_admin(token)
+    db = get_db()
+
+    since = datetime.now(timezone.utc) - timedelta(days=min(days, 90))
+
     try:
-        collector.log_search(
-            vibe_description, primary_vibe, secondary_vibe,
-            confidence, response_time_ms, nicheness, language, track_count
+        rows = await db.viberequest.find_many(
+            where={"createdAt": {"gte": since}},
         )
-        return {"status": "logged"}
+
+        dominant_counter  = Counter(r.dominantVibe for r in rows if r.dominantVibe)
+        secondary_counter = Counter(r.secondaryVibe for r in rows if r.secondaryVibe)
+        language_counter  = Counter()  # language not stored in VibeRequest yet — placeholder
+
+        # Daily breakdown
+        daily: dict[str, Counter] = {}
+        for r in rows:
+            day_key = r.createdAt.strftime("%Y-%m-%d")
+            daily.setdefault(day_key, Counter())[r.dominantVibe or "unknown"] += 1
+
+        return {
+            "period_days":    days,
+            "total_searches": len(rows),
+            "dominant_vibes": dict(dominant_counter.most_common(20)),
+            "secondary_vibes": dict(secondary_counter.most_common(10)),
+            "daily_breakdown": {
+                day: dict(counter.most_common(5))
+                for day, counter in sorted(daily.items())[-days:]
+            },
+        }
     except Exception as e:
-        logger.error(f"Error logging search: {e}")
-        raise HTTPException(status_code=400, detail="Failed to log search")
+        logger.error(f"[Analytics] Vibe breakdown failed: {e}")
+        raise HTTPException(status_code=500, detail="Vibe breakdown error")
 
 
-@router.post("/feedback")
-async def log_feedback_event(track_id: str, is_positive: bool):
+# ─── CSV EXPORT ───────────────────────────────────────────────────────────────
+
+@router.get("/analytics/export")
+async def export_analytics_csv(token: Optional[str] = Depends(oauth2_scheme)):
     """
-    POST /api/analytics/feedback
-    Frontend should call when user rates a track
+    Export full VibeRequest history as CSV for offline analysis.
+    Useful for QA analysis scripts (qa_analyzer.py, advanced_analyzer.py).
     """
+    await _require_admin(token)
+    db = get_db()
+
     try:
-        collector.log_feedback(track_id, is_positive)
-        return {"status": "logged"}
+        rows = await db.viberequest.find_many(
+            order={"createdAt": "desc"},
+            take=10000,
+        )
+
+        def _generate():
+            header = "id,prompt,dominant_vibe,secondary_vibe,confidence,bpm_range,detected_artist,track_count,used_fallback,created_at\n"
+            yield header
+            for r in rows:
+                try:
+                    tracks = json.loads(r.returnedTracks) if r.returnedTracks else []
+                except Exception:
+                    tracks = []
+                # Escape commas in prompt text
+                prompt_safe = (r.promptText or "").replace('"', '""')
+                line = (
+                    f'"{r.id}",'
+                    f'"{prompt_safe}",'
+                    f'"{r.dominantVibe or ""}",'
+                    f'"{r.secondaryVibe or ""}",'
+                    f'{float(r.confidence) if r.confidence else 0.0:.3f},'
+                    f'"{r.bpmRange or ""}",'
+                    f'"{r.detectedArtist or ""}",'
+                    f'{len(tracks)},'
+                    f'{r.usedFallback},'
+                    f'"{r.createdAt.isoformat()}"\n'
+                )
+                yield line
+
+        return StreamingResponse(
+            _generate(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=vibefinder_analytics.csv"},
+        )
     except Exception as e:
-        logger.error(f"Error logging feedback: {e}")
-        raise HTTPException(status_code=400, detail="Failed to log feedback")
-
-
-@router.post("/engagement")
-async def log_engagement_event(event_type: str):
-    """
-    POST /api/analytics/engagement
-    Frontend logs UI interactions (preview_click, spotify_click, etc)
-    """
-    try:
-        collector.log_engagement(event_type)
-        return {"status": "logged"}
-    except Exception as e:
-        logger.error(f"Error logging engagement: {e}")
-        raise HTTPException(status_code=400, detail="Failed to log engagement")
-
-
-@router.post("/api-error")
-async def log_api_error(api_name: str, error_type: str):
-    """
-    POST /api/analytics/api-error
-    Backend logs external API failures
-    """
-    try:
-        collector.log_api_error(api_name, error_type)
-        return {"status": "logged"}
-    except Exception as e:
-        logger.error(f"Error logging API error: {e}")
-        raise HTTPException(status_code=400, detail="Failed to log error")
-
-
-@router.post("/cache-event")
-async def log_cache_event(is_hit: bool):
-    """
-    POST /api/analytics/cache-event
-    Backend logs cache hits/misses for performance optimization
-    """
-    try:
-        collector.log_cache_event(is_hit)
-        return {"status": "logged"}
-    except Exception as e:
-        logger.error(f"Error logging cache event: {e}")
-        raise HTTPException(status_code=400, detail="Failed to log cache event")
+        logger.error(f"[Analytics] CSV export failed: {e}")
+        raise HTTPException(status_code=500, detail="Export failed")

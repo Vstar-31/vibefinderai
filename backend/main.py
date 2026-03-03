@@ -34,6 +34,9 @@ from core import vibe_engine
 # Import semantic fallback ranker (gracefully degrades if model not installed)
 from analyzers import semantic_search
 
+# Import Gemini vibe analyzer for fallback enhancement
+from core.gemini_vibe import GeminiVibeAnalyzer
+
 # Load environment variables
 load_dotenv()
 
@@ -78,13 +81,15 @@ async def lifespan(app: FastAPI):
     # ── Load TrackFeatureCache into memory for fast O(1) scoring lookups ──────
     # The DB has 690+ tracks with real audio features (tempo, energy, valence,
     # moodHappy, moodSad, moodRelaxed, moodAggressive, moodParty).
-    # We load them all into a dict keyed by "title_lower|artist_lower" so
-    # filter_and_score_tracks can enrich any matching track without a DB call.
+    # We load them all into multiple lookup dicts:
+    #   1. title_lower|artist_lower (primary key)
+    #   2. isrc (fallback key for spelling mismatches across APIs)
+    # filter_and_score_tracks tries primary first, then falls back to ISRC.
     try:
         _cache_rows = await db.trackfeaturecache.find_many()
+        _isrc_index: dict[str, dict] = {}  # Fallback: ISRC → features
         for row in _cache_rows:
-            _key = f"{(row.title or '').strip().lower()}|{(row.artist or '').strip().lower()}"
-            TRACK_FEATURE_INDEX[_key] = {
+            _feat = {
                 "tempo":           float(row.tempo) if row.tempo else None,
                 "energy":          float(row.energy) if row.energy else None,
                 "valence":         float(row.valence) if row.valence else None,
@@ -94,9 +99,18 @@ async def lifespan(app: FastAPI):
                 "moodAggressive":  float(row.moodAggressive) if row.moodAggressive else None,
                 "moodParty":       float(row.moodParty) if row.moodParty else None,
             }
-        logger.info(f"TrackFeatureCache loaded: {len(TRACK_FEATURE_INDEX)} tracks indexed.")
+            # Primary key: title|artist
+            _key = f"{(row.title or '').strip().lower()}|{(row.artist or '').strip().lower()}"
+            TRACK_FEATURE_INDEX[_key] = _feat
+            # Fallback key: ISRC code (for cross-database matching when title/artist mismatch)
+            if row.isrc:
+                _isrc_index[row.isrc.upper()] = _feat
+        # Store ISRC index as a secondary lookup in app state for use during scoring
+        app.state.isrc_feature_index = _isrc_index
+        logger.info(f"TrackFeatureCache loaded: {len(TRACK_FEATURE_INDEX)} tracks indexed, {len(_isrc_index)} with ISRC codes.")
     except Exception as e:
         logger.warning(f"TrackFeatureCache load failed (scoring will use heuristics only): {e}")
+        app.state.isrc_feature_index = {}
 
     # ── Load ArtistDirectory niche→name index for DB-assisted pool building ───
     # Maps niche string → list of artist names, used to supplement Last.fm pools
@@ -191,6 +205,9 @@ app = FastAPI(
     description="Core backend for music discovery and NLP integrations",
     lifespan=lifespan
 )
+
+# Initialize Gemini fallback enhancer
+gemini_analyzer = GeminiVibeAnalyzer()
 
 # Wire rate limiter if available
 if _RATE_LIMIT_AVAILABLE:
@@ -1091,8 +1108,12 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
                 score += 20
 
         # 4+5. AUDIO FEATURE SCORING — real data from TrackFeatureCache if available
+        # Primary lookup by title|artist; fallback to ISRC code for cross-database matching
         feat_key = f"{title}|{artist}"
         feat = TRACK_FEATURE_INDEX.get(feat_key)
+        if not feat and t.get("isrc"):
+            # ISRC fallback: high-precision track matching when title/artist spelling differs across APIs
+            feat = app.state.isrc_feature_index.get(t["isrc"].upper())
 
         if feat:
             # ── REAL BPM SCORING ─────────────────────────────────────────────
@@ -1427,6 +1448,17 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         bpm_focus=request.bpm_focus
     )
     
+    # 1.5 GEMINI FALLBACK ENHANCEMENT
+    # If confidence is low, try Gemini Flash to boost accuracy on novel vibes/slang
+    if gemini_analyzer.should_enhance(vibe_data, request.text):
+        logger.info(f"[Gemini] Vibe confidence low ({vibe_data.get('confidence')}). Requesting enhancement...")
+        vibe_data = await gemini_analyzer.enhance(
+            prompt=request.text,
+            language=request.language,
+            heuristic_result=vibe_data
+        )
+        logger.info(f"[Gemini] Enhancement complete. New confidence: {vibe_data.get('confidence')}")
+    
     prompt_lower = request.text.lower()
     detected_artist = request.override_artist
     detected_song = None
@@ -1579,7 +1611,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     
     if vibe_data.get("confidence", 0.0) < 0.25 and not detected_artist and not request.override_genre:
         is_fallback = True
-        logger.warning(f"Engine Confidence Critical ({vibe_data.get('confidence')} < 0.25). Triggering Fallback Protocol!")
+        logger.warning(f"Engine Confidence Critical ({vibe_data.get('confidence')} < 0.25). Gemini enhancement was not enough or unavailable. Triggering Fallback Protocol to Direct Search!")
         vibe_data["dominant_vibe"] = "Direct Search" 
         vibe_data["secondary_vibe"] = "Fallback Mode"
         raw_pool = await fetch_lastfm_track_search(request.text, limit=100)
