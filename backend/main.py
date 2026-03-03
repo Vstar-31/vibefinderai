@@ -18,7 +18,7 @@ import logging
 import sys
 import time
 import hashlib
-
+from vibe_engine import LANGUAGE_TAG_MAP
 # aiohttp is the async-safe HTTP client (replaces urllib in hot paths)
 # Falls back gracefully to the sync urllib path if not installed.
 try:
