@@ -18,7 +18,7 @@ import logging
 import sys
 import time
 import hashlib
-from vibe_engine import LANGUAGE_TAG_MAP
+from core.vibe_engine import LANGUAGE_TAG_MAP
 # aiohttp is the async-safe HTTP client (replaces urllib in hot paths)
 # Falls back gracefully to the sync urllib path if not installed.
 try:
@@ -29,10 +29,10 @@ except ImportError:
     import urllib.request  # kept only for the legacy sync fallback
 
 # Import our modularized vibe engine
-import vibe_engine
+from core import vibe_engine
 
 # Import semantic fallback ranker (gracefully degrades if model not installed)
-import semantic_search
+from analyzers import semantic_search
 
 # Load environment variables
 load_dotenv()

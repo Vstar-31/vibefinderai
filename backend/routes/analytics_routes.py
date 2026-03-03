@@ -4,7 +4,7 @@ FastAPI endpoints for serving dashboard and analytics data
 """
 
 from fastapi import APIRouter, HTTPException
-from analytics import get_analytics_summary, get_dashboard_data, collector
+from core.analytics import get_analytics_summary, get_dashboard_data, collector
 import logging
 
 logger = logging.getLogger("VibeFinderEngine")
