@@ -1453,7 +1453,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             db_artists = await db.artistdirectory.find_many()
             for a in db_artists:
                 # 🚨 FIX: Skip DB entries with dot-placeholder names (bad data migration)
-                if not a.name or re.match(r"^[\.\ \s]+$", a.name):
+                if not a.name or not re.search(r"\w", a.name):  # skip dot/symbol-only names like "..." or "!!!"
                     continue
                 artist_name = _normalize_for_matching(a.name)
                 _prompt_norm = _normalize_for_matching(request.text)
@@ -1659,9 +1659,10 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(f"{t.get('title','')} {t.get('artist','')}")] 
         # Also filter tracks with very long title strings (usually YouTube content)
         raw_pool = [t for t in raw_pool if len(t.get('title', '')) < 120]
-        # 🚨 FIX: Filter out Last.fm dot-placeholder artists like "......."
-        _DOT_PLACEHOLDER = re.compile(r'^\.[\.\s]+$')
-        raw_pool = [t for t in raw_pool if t.get('artist') and not _DOT_PLACEHOLDER.match(t.get('artist', ''))]
+        # 🚨 FIX: Filter out Last.fm junk-placeholder artists like ".......", "!!!", "???", etc.
+        # Catches any artist string that contains zero actual word characters (letters/digits).
+        _JUNK_ARTIST = re.compile(r'^[^\w]+$')
+        raw_pool = [t for t in raw_pool if t.get('artist') and not _JUNK_ARTIST.match(t.get('artist', ''))]
         logger.info(f"After junk filter: {len(raw_pool)} tracks remain.")
 
         # v1.3 NEW: Semantic reranking — when Last.fm keyword search gives us a
