@@ -56,9 +56,9 @@ logger = logging.getLogger("VibeFinderEngine.Gemini")
 # ─── CONSTANTS ───────────────────────────────────────────────────────────────
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL   = "gemini-2.0-flash"
+GEMINI_MODEL   = "gemini-2.0-flash-lite"
 GEMINI_URL     = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"https://generativelanguage.googleapis.com/v1/models/"
     f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 )
 
@@ -66,7 +66,7 @@ GEMINI_URL     = (
 CONFIDENCE_THRESHOLD = 0.40
 
 # Rolling rate limiter: max 13 calls per 60s (free tier = 15 RPM)
-_MAX_CALLS_PER_WINDOW = 13
+_MAX_CALLS_PER_WINDOW = 27  # flash-lite free tier = 30 RPM
 _WINDOW_SECONDS       = 60.0
 
 # All valid vibe names the engine recognises (keep in sync with VIBE_MAP)
