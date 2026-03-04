@@ -19,3 +19,5 @@ python-multipart>=0.0.9
 aiohttp
 slowapi
 requests
+sentence-transformers
+scikit-learn
