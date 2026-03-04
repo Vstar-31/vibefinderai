@@ -623,8 +623,7 @@ export default function App() {
 
   // ── NEW: Playlist Panel State ─────────────────────────────────
   const [showPlaylistPanel, setShowPlaylistPanel] = useState(false);
-  // Increments when a playlist is saved — triggers PlaylistPanel to refresh its list
-  const [playlistSaveCount, setPlaylistSaveCount] = useState(0);
+  // (playlistSaveCount removed — PlaylistPanel manages its own refresh internally)
 
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
@@ -1536,10 +1535,11 @@ export default function App() {
           onClose={() => setShowPlaylistPanel(false)}
           currentResult={result}
           currentPrompt={prompt}
-          onLoadPrompt={(p) => { setPrompt(p); setShowPlaylistPanel(false); }}
-          onPlaylistSaved={() => setPlaylistSaveCount(c => c + 1)}
-          saveCount={playlistSaveCount}
-          activeColor={activeColor}
+          onLoadPlaylist={(tracks) => {
+            setResult(prev => prev ? { ...prev, tracks } : prev);
+            setShowPlaylistPanel(false);
+          }}
+          onReRunPrompt={(p) => { setPrompt(p); setShowPlaylistPanel(false); }}
         />
       )}
     </>
