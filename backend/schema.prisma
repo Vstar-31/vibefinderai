@@ -64,6 +64,7 @@ model User {
   forumPosts      ForumPost[]
   comments        Comment[]
   vibeRequests    VibeRequest[]
+  savedPlaylists  SavedPlaylist[]
 }
 
 model OAuthIdentity {
@@ -305,6 +306,32 @@ model TrackFeedback {
   @@index([signal])
   @@index([createdAt])
   @@index([trackSpotifyId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SAVED PLAYLISTS
+// Persists AI-generated playlists so users can reload and share them.
+// Tracks stored as JSON (no normalisation needed — they're snapshots).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SavedPlaylist {
+  id            String    @id @default(cuid())
+  userId        String
+  name          String
+  dominantVibe  String?
+  prompt        String?
+  language      String?
+  tracks        String    // JSON: [{title, artist, spotify_uri, apple_uri, preview_url, cover_art}]
+  isPublic      Boolean   @default(false)
+  shareToken    String?   @unique @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([shareToken])
+  @@index([createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
