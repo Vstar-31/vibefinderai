@@ -212,7 +212,10 @@ export default function LandingPage({ onLaunch }) {
           grid-template-columns: repeat(3, 1fr);
           gap: 1rem;
         }
-        @media (max-width: 700px) {
+        @media (max-width: 900px) {
+          .pro-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 560px) {
           .pro-grid { grid-template-columns: 1fr; }
         }
 
@@ -312,7 +315,7 @@ export default function LandingPage({ onLaunch }) {
           {/* Badge */}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(110,55,8,0.18)", border: "1px solid rgba(180,120,40,0.28)", padding: "5px 14px", borderRadius: 20, fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(210,160,60,0.75)", marginBottom: "1.6rem" }}>
             <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399", display: "inline-block", animation: "pulse 1.8s infinite" }} />
-            Neural Engine Active — v9.0
+            Neural Engine Active — Phase 7
           </div>
 
           <h1 style={{ fontFamily: serif, fontWeight: 900, fontSize: "clamp(2rem,6vw,3.8rem)", lineHeight: 1.1, color: "#ead9a8", marginBottom: "1.1rem", letterSpacing: "-0.01em" }}>
@@ -369,7 +372,7 @@ export default function LandingPage({ onLaunch }) {
               { n: "03", title: "Pick a language", desc: "Each language routes to its own pool. Hindi heartbreak → Bollywood sad songs. Punjabi hype → bhangra. Not generic western indie.", tag: "18 languages · 10 Indian regional pools" },
               { n: "04", title: "Run the analysis", desc: "The engine classifies your vibe, extracts keywords, maps genre tags, fetches and scores a matched track pool.", tag: "~3–5 seconds" },
               { n: "05", title: "Check the artist banner", desc: "If the engine spotted an artist in your description, a banner tells you what was locked. Tap ✕ to dismiss and switch to pure vibe mode.", tag: "New in v9.0" },
-              { n: "06", title: "Listen & refine", desc: "Preview tracks inline, open in Spotify, rate with 👍/👎. Click genre tags to filter, pivot to secondary vibe, or tweak knobs and re-run.", tag: null },
+              { n: "06", title: "Listen, refine & save", desc: "Preview tracks inline, open in Spotify, rate with 👍/👎. Click genre tags to filter, pivot to secondary vibe, or tweak knobs and re-run. Save playlists and share them with a public link.", tag: null },
             ].map(({ n, title, desc, tip, tag }) => (
               <div key={n} className="step-row">
                 <div style={{ width: 40, height: 40, flexShrink: 0, background: "rgba(22,14,4,0.8)", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.55)", letterSpacing: "0.08em" }}>{n}</div>
@@ -420,12 +423,14 @@ export default function LandingPage({ onLaunch }) {
           <p style={S.body}>Not a playlist generator. An acoustic intelligence layer that maps language, mood, and context to sound.</p>
           <div className="feature-grid">
             {[
-              { icon: "🧠", title: "Natural Language Analysis",   badge: "Core Engine",       desc: "Describe any moment in plain language. The AI extracts moods, semantic concepts, and audio attributes to build a matching pool." },
+              { icon: "🧠", title: "Natural Language Analysis",   badge: "Core Engine",        desc: "Describe any moment in plain language. The AI extracts moods, semantic concepts, and audio attributes — including sensory metaphors like 'sunflowers and honey' — to build a matched pool." },
+              { icon: "✨", title: "Gemini + Sentiment Layer",    badge: "Dual NLP",           desc: "Heuristic engine runs first. When confidence is low, Gemini Flash fires for deeper understanding. TextBlob sentiment analysis boosts study/focus intent and disambiguates emotional prompts." },
               { icon: "🔒", title: "Smart Artist Detection",      badge: "Artist Transparency", desc: "Mentions of artists auto-lock the pool. A banner tells you exactly what was detected, and a ✕ lets you dismiss it for pure vibe mode." },
-              { icon: "🌐", title: "18 Languages",                badge: "Regional Music",    desc: "Deep routing for 10 Indian regional pools — Hindi, Punjabi, Tamil, Telugu, Marathi, Assamese and more — plus Korean, Arabic, Afrobeats." },
-              { icon: "🎛️", title: "Pro Mode Overrides",           badge: "Power Users",       desc: "Force an artist, lock a genre, or flip to the secondary vibe. Genre bypass now correctly updates the tag display too." },
-              { icon: "▶️", title: "Inline Previews + Spotify",   badge: "Spotify API",       desc: "Preview any track without leaving the app. Every result links to Spotify with cover art and 👍/👎 feedback buttons." },
-              { icon: "🔬", title: "Neural Match Breakdown",      badge: "Transparency",      desc: "See the exact keywords the AI extracted — #late night #rain #travis scott — so you always know how your vibe was read." },
+              { icon: "🌐", title: "18 Languages",                badge: "Regional Music",     desc: "Deep routing for 10 Indian regional pools — Hindi, Punjabi, Tamil, Telugu, Marathi, Assamese and more — plus Korean, Arabic, Afrobeats." },
+              { icon: "🎛️", title: "Pro Mode Overrides",          badge: "Power Users",        desc: "Force an artist, lock a genre, flip to secondary vibe, find artists similar to a reference, or lock strict discography mode." },
+              { icon: "💾", title: "Playlists & Sharing",         badge: "New — Phase 6",      desc: "Save any result as a named playlist. Share it publicly with a single link — recipients see the full playlist with previews, no account needed." },
+              { icon: "▶️", title: "Inline Previews + Spotify",   badge: "Spotify API",        desc: "Preview any track without leaving the app. DB-matched tracks link directly via Spotify track IDs — no search guessing." },
+              { icon: "🔬", title: "Neural Match Breakdown",      badge: "Transparency",       desc: "See the exact keywords the AI extracted — #late night #rain #travis scott — so you always know how your vibe was read." },
             ].map(({ icon, title, badge, desc }) => (
               <div key={title} className="lp-card" style={{ padding: "1.6rem 1.4rem", borderRadius: 0, border: "none", background: "linear-gradient(155deg, rgba(36,23,8,0.95), rgba(18,11,3,0.98))" }}>
                 <div style={{ fontSize: 20, marginBottom: 10 }}>{icon}</div>
@@ -519,6 +524,11 @@ export default function LandingPage({ onLaunch }) {
             <div style={{ padding: "9px 18px", fontFamily: mono, fontSize: 10, color: "rgba(120,80,20,0.6)" }}>
               Neural Match → <span style={{ color: "rgba(190,155,90,0.5)", marginLeft: 6 }}>#late night &nbsp; #rain &nbsp; #travis scott &nbsp; #dark chill</span>
             </div>
+            <div style={{ padding: "9px 18px 13px", borderTop: "1px solid rgba(120,80,20,0.12)", display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+              <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(217,119,6,0.35)", borderRadius: 6, padding: "5px 12px", fontFamily: mono, fontSize: 10, color: "rgba(217,119,6,0.75)", cursor: "pointer", letterSpacing: "0.06em" }}>💾 Save Playlist</button>
+              <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(155,105,28,0.3)", borderRadius: 6, padding: "5px 12px", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.5)", cursor: "pointer", letterSpacing: "0.06em" }}>🔗 Share Link</button>
+              <span style={{ fontFamily: mono, fontSize: 9, color: "rgba(120,80,20,0.45)", marginLeft: 2 }}>Public · No login required to view</span>
+            </div>
           </div>
         </div>
       </section>
@@ -535,6 +545,8 @@ export default function LandingPage({ onLaunch }) {
               { icon: "⚡", title: "Force Artist Bypass",     desc: "Lock all results to a specific artist's discography — type \"Deftones\" and every track comes from that sonic world." },
               { icon: "🎛️", title: "Force Genre Bypass",      desc: "Override AI genre inference entirely — type \"psytrance\", \"bhangra\", \"drum and bass\" — bypasses vibe detection. Tags update to match." },
               { icon: "🔄", title: "Flip Secondary Vibe",     desc: "When the AI detects two overlapping moods, toggle to force the secondary vibe as your main result — useful when the dominant pick was off." },
+              { icon: "🔍", title: "Similar to Artist",       desc: "Seed the pool from an artist's sonic neighbourhood — ListenBrainz similar-artist data builds the pool without a cold API call." },
+              { icon: "🔐", title: "Lock Artist Mode",        desc: "When an artist override is set, toggle Lock to get strict discography only — no vibe-pool mixing, just that artist's tracks." },
             ].map(card => (
               <div key={card.title} className="lp-card" style={{ padding: "1.3rem 1.2rem", borderLeft: "3px solid rgba(217,119,6,0.5)" }}>
                 <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(210,160,60,0.8)", marginBottom: 9 }}>{card.icon} {card.title}</div>
@@ -593,7 +605,7 @@ export default function LandingPage({ onLaunch }) {
           <div className="usecase-grid">
             {[
               { e: "🌧️", t: "Mood-based listening",    d: "Feel something but don't know what song fits. Describe the feeling and let the AI find it.", q: "sad and numb but kinda okay, november rain, slow indie" },
-              { e: "💻", t: "Activity playlists",       d: "Gaming, coding, gym, studying — describe the context and get the right energy.", q: "3am coding session, dark IDE, lofi beats, intense focus mode" },
+              { e: "💻", t: "Study & focus sessions",   d: "Sentiment analysis detects study intent and routes to lo-fi, chillhop, and instrumental pools — not random dark tracks.", q: "late night study session, soft background music, no distractions" },
               { e: "🎸", t: "Artist-led discovery",     d: "Mention a reference artist and crank Nicheness for lesser-known gems.", q: "sounds like Radiohead but more ambient, deep cuts only" },
               { e: "🪘", t: "Desi & regional moods",    d: "Bollywood, Punjabi, Tamil kuthu, Carnatic, ghazal — all natively routed.", q: "sufi night, rooftop, Nusrat Fateh Ali Khan energy, chai" },
               { e: "🎉", t: "Events & parties",         d: "Shaadi, sangeet, garba, birthday — describe the occasion and energy.", q: "Navratri garba remix, tabla meets EDM, spiritual but hype" },
@@ -620,7 +632,7 @@ export default function LandingPage({ onLaunch }) {
             Stop searching.<br /><span style={{ fontStyle: "italic", color: "#fde68a" }}>Start describing.</span>
           </h2>
           <p style={{ fontFamily: mono, fontSize: 13, color: "rgba(190,155,90,0.55)", maxWidth: 420, margin: "0 auto 2.2rem", lineHeight: 1.85 }}>
-            Type a feeling. The engine handles the rest.<br />Free to use, no account needed.
+            Type a feeling. The engine handles the rest.<br />Free to use · Sign up to save & share playlists.
           </p>
           <button onClick={onLaunch} style={{ ...amberBtn, padding: "15px 40px", fontSize: 13, letterSpacing: "0.18em" }}
             onMouseEnter={e => { e.currentTarget.style.opacity = ".86"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 30px rgba(180,100,10,0.5)"; }}
@@ -637,7 +649,7 @@ export default function LandingPage({ onLaunch }) {
           </div>
           <span style={{ fontFamily: serif, fontSize: 12, color: "#ead9a8", letterSpacing: "-0.01em" }}>VibeFinderAI</span>
         </div>
-        <span>v9.0 · 18 Languages · Last.fm + Spotify</span>
+        <span>Phase 7 · 18 Languages · Last.fm + Spotify + Gemini</span>
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
           {[["App", onLaunch], ["How It Works", () => scrollTo("how-it-works")], ["Features", () => scrollTo("features")]].map(([label, fn]) => (
             <button key={label} onClick={fn} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(120,80,20,0.55)", fontFamily: mono, fontSize: 11, letterSpacing: "0.06em" }}
