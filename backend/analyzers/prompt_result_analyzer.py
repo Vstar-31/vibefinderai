@@ -14,7 +14,7 @@ import google.generativeai as genai
 
 # Configure Gemini
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.0-flash-lite')
 
 class PromptResultAnalyzer:
     def __init__(self, log_file: str, output_dir: str = "analysis_reports"):
