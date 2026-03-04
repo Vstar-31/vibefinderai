@@ -1,15 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import LandingPage from "./LandingPage.jsx";
+import PlaylistPanel from "./PlaylistPanel.jsx";
 
 /* ─── API CONFIGURATION ─────────────────────────────────────── */
-// Use environment variable for API URL in production, empty string for dev (uses proxy)
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
-
-// Helper to build API URLs
 const buildApiUrl = (path) => {
-  // If API_BASE_URL is set (production), use full URL
   if (API_BASE_URL) return `${API_BASE_URL}${path}`;
-  // Otherwise use relative path (dev with vite proxy)
   return path;
 };
 
@@ -27,6 +23,9 @@ const IconFilter  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="
 const IconRefresh = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>;
 const IconThumbUp   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>;
 const IconThumbDown = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>;
+/* NEW: Library icon for the playlist panel button */
+const IconLibrary = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>;
+const IconBookmark = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>;
 
 /* ─── WAVEFORM VISUALISER ────────────────────────────────────── */
 function WaveformBars({ active, count = 28 }) {
@@ -138,9 +137,9 @@ function Oscilloscope({ active }) {
       display: "flex",
       alignItems: "center",
       gap: "8px",
-      cursor: "default",       // was "help" which gave text cursor — now clearly non-interactive
+      cursor: "default",
       userSelect: "none",
-      pointerEvents: "none",   // fully non-interactive, can't accidentally click/select
+      pointerEvents: "none",
     }}>
       <span style={{ fontSize: "9px", fontFamily: "monospace", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>OSC</span>
       <canvas ref={canvasRef} width={180} height={36} style={{ display: "block" }} />
@@ -241,11 +240,9 @@ function Knob({ label, value, onChange }) {
   const dragStart = useRef({ x: 0, y: 0, val: 0 });
 
   useEffect(() => {
-    // Drag direction: UP = increase (more natural for a rotary knob)
-    // Also accepts horizontal for touch/trackpad users
     const handleMove = (clientX, clientY) => {
       const deltaX = clientX - dragStart.current.x;
-      const deltaY = dragStart.current.y - clientY; // inverted: up = positive
+      const deltaY = dragStart.current.y - clientY;
       const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
       let newVal = Math.max(0, Math.min(100, dragStart.current.val + delta * 0.7));
       setLocalVal(newVal);
@@ -285,7 +282,7 @@ function Knob({ label, value, onChange }) {
 
   const renderTicks = () => {
     const ticks = [];
-    const totalTicks = 11; 
+    const totalTicks = 11;
     for (let i = 0; i < totalTicks; i++) {
       const pct = i / (totalTicks - 1);
       const deg = -135 + (pct * 270);
@@ -311,7 +308,6 @@ function Knob({ label, value, onChange }) {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
       <div style={{ position: 'relative', width: '56px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {renderTicks()}
-        {/* Value tooltip — visible on hover and while dragging */}
         {(showTooltip || isDragging) && (
           <div style={{
             position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)',
@@ -330,8 +326,8 @@ function Knob({ label, value, onChange }) {
           onMouseLeave={() => { if (!isDragging) setShowTooltip(false); }}
           onTouchStart={handleTouchStart}
           className="knob"
-          style={{ 
-            transform: `rotate(${rotation}deg)`, 
+          style={{
+            transform: `rotate(${rotation}deg)`,
             cursor: isDragging ? 'grabbing' : 'grab',
             position: 'absolute', zIndex: 2, width: '32px', height: '32px',
             boxShadow: isDragging ? '0 6px 12px rgba(0,0,0,0.9), inset 0 1px 2px rgba(255,200,80,0.3)' : '',
@@ -355,42 +351,21 @@ function SkeletonTrackCard() {
       borderRadius: "10px",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-        {/* cover art skeleton */}
-        <div style={{
-          width: 44, height: 44, borderRadius: 6,
-          background: "rgba(120,80,20,0.15)",
-          position: "relative", overflow: "hidden",
-        }}>
-          <div style={{
-            position: "absolute", inset: 0,
-            background: "linear-gradient(90deg, transparent 0%, rgba(217,119,6,0.07) 50%, transparent 100%)",
-            animation: "shimmer 1.4s ease-in-out infinite",
-          }} />
+        <div style={{ width: 44, height: 44, borderRadius: 6, background: "rgba(120,80,20,0.15)", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent 0%, rgba(217,119,6,0.07) 50%, transparent 100%)", animation: "shimmer 1.4s ease-in-out infinite" }} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {/* title skeleton */}
-          <div style={{
-            width: 160, height: 14, borderRadius: 4,
-            background: "rgba(120,80,20,0.2)", position: "relative", overflow: "hidden",
-          }}>
+          <div style={{ width: 160, height: 14, borderRadius: 4, background: "rgba(120,80,20,0.2)", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, rgba(217,119,6,0.07), transparent)", animation: "shimmer 1.4s ease-in-out infinite" }} />
           </div>
-          {/* artist skeleton */}
-          <div style={{
-            width: 100, height: 10, borderRadius: 4,
-            background: "rgba(120,80,20,0.12)", position: "relative", overflow: "hidden",
-          }}>
+          <div style={{ width: 100, height: 10, borderRadius: 4, background: "rgba(120,80,20,0.12)", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, rgba(217,119,6,0.07), transparent)", animation: "shimmer 1.4s ease-in-out 0.2s infinite" }} />
           </div>
         </div>
       </div>
-      {/* action buttons skeleton */}
       <div style={{ display: "flex", gap: "8px" }}>
         {[32, 32, 72, 72].map((w, i) => (
-          <div key={i} style={{
-            width: w, height: 32, borderRadius: 8,
-            background: "rgba(120,80,20,0.12)", position: "relative", overflow: "hidden",
-          }}>
+          <div key={i} style={{ width: w, height: 32, borderRadius: 8, background: "rgba(120,80,20,0.12)", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, rgba(217,119,6,0.07), transparent)", animation: `shimmer 1.4s ease-in-out ${i * 0.1}s infinite` }} />
           </div>
         ))}
@@ -507,14 +482,22 @@ function GlobalStyles() {
         text-transform: uppercase;
       }
 
+      /* ── PLAYLIST PANEL ANIMATIONS ─────────────────────────────── */
+      @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to   { transform: translateX(0);    opacity: 1; }
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+
       /* ── MOBILE RESPONSIVE ─────────────────────────────────── */
       @media (max-width: 600px) {
-        /* Header */
         .app-header { padding-bottom: 16px !important; margin-bottom: 20px !important; }
         .app-header-osc { display: none !important; }
         .app-logo-sub { display: none !important; }
 
-        /* Input panel */
         .app-panel { padding: 16px !important; }
         .app-knob-row { flex-direction: column !important; gap: 0 !important; }
         .app-knob-strip { justify-content: space-around !important; width: 100% !important; }
@@ -526,11 +509,9 @@ function GlobalStyles() {
         .app-signal-row { display: none !important; }
         .app-lang-row { flex-wrap: wrap !important; }
 
-        /* Result cards */
         .app-result-grid { grid-template-columns: 1fr !important; }
         .app-result-stat-grid { grid-template-columns: 1fr 1fr !important; }
 
-        /* Track rows */
         .app-track-row { flex-wrap: wrap !important; gap: 8px !important; padding: 12px 14px !important; }
         .app-track-meta { flex: 1 1 100% !important; order: -1 !important; }
         .app-track-art { width: 36px !important; height: 36px !important; flex-shrink: 0 !important; }
@@ -538,7 +519,6 @@ function GlobalStyles() {
         .app-track-actions button,
         .app-track-actions a { padding: 6px 10px !important; font-size: 9px !important; }
 
-        /* Pro mode overrides */
         .app-overrides { flex-direction: column !important; }
         .app-overrides input { width: 100% !important; box-sizing: border-box !important; }
       }
@@ -554,25 +534,12 @@ function GlobalStyles() {
 function CopyPlaylistButton({ tracks, activeColor }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = async () => {
-    // Track analytics event
-    try {
-      const url = buildApiUrl("/api/analytics/engagement");
-      await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event_type: "playlist_save" })
-      }).catch(() => {});
-    } catch (err) {
-      console.error("Analytics error:", err);
-    }
-
+  const handleCopy = () => {
     const text = tracks.map((t, i) => `${i + 1}. ${t.title} — ${t.artist}`).join("\n");
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }).catch(() => {
-      // Fallback for browsers that block clipboard
       const el = document.createElement("textarea");
       el.value = text;
       document.body.appendChild(el);
@@ -615,13 +582,12 @@ function CopyPlaylistButton({ tracks, activeColor }) {
 ═══════════════════════════════════════════════════════════════ */
 export default function App() {
   const [showLanding, setShowLanding] = useState(true);
-  // Persist auth token across page reloads via localStorage
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem("vf_token") || null; }
     catch { return null; }
   });
   const [prompt, setPrompt]           = useState("");
-  const [lastPrompt, setLastPrompt]   = useState(""); // NEW: Tracks prompt changes for intelligent caching
+  const [lastPrompt, setLastPrompt]   = useState("");
   const [result, setResult]           = useState(null);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
@@ -630,13 +596,12 @@ export default function App() {
   const [authForm, setAuthForm]       = useState({ email: "", username: "", password: "" });
   const [vuLevel, setVuLevel]         = useState(0);
   const [isSkeletonLoading, setIsSkeletonLoading] = useState(false);
-  // Tracks what triggered the current load — "pivot", "genre", "main" — for targeted UI states
   const [loadReason, setLoadReason] = useState(null);
-  
+
   const [knobs, setKnobs]             = useState({ artist: 50, nicheness: 50, bpm: 50 });
   const [trackLimit, setTrackLimit]   = useState(5);
   const [language, setLanguage]       = useState("Any");
-  
+
   // Override & Pro Mode State
   const [showOverrides, setShowOverrides]     = useState(false);
   const [overrideArtist, setOverrideArtist]   = useState("");
@@ -648,22 +613,25 @@ export default function App() {
   const audioRef = useRef(null);
   const vuRef = useRef(null);
 
-  // Detected artist unlock state — user can dismiss the lock tag
+  // Detected artist unlock state
   const [artistUnlocked, setArtistUnlocked] = useState(false);
 
-  // Feedback state — tracks which tracks have been rated this session
-  // key: "title|artist", value: 1 (liked) | -1 (disliked)
+  // Feedback state
   const [feedbackGiven, setFeedbackGiven] = useState({});
-  // Micro-toast: shows "Noted — improving future results" briefly after a rating
   const [feedbackToast, setFeedbackToast] = useState(false);
   const feedbackToastTimer = useRef(null);
 
+  // ── NEW: Playlist Panel State ─────────────────────────────────
+  const [showPlaylistPanel, setShowPlaylistPanel] = useState(false);
+  // Increments when a playlist is saved — triggers PlaylistPanel to refresh its list
+  const [playlistSaveCount, setPlaylistSaveCount] = useState(0);
+
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
-    euphoric: '#e879f9', soulful: '#fbbf24', retro: '#818cf8', dreamy: '#c084fc', cinematic: '#fb923c', 
-    dark: '#9ca3af', heartbreak: '#f472b6', hyperpop: '#d946ef', party: '#ec4899', country: '#d97706',   
+    euphoric: '#e879f9', soulful: '#fbbf24', retro: '#818cf8', dreamy: '#c084fc', cinematic: '#fb923c',
+    dark: '#9ca3af', heartbreak: '#f472b6', hyperpop: '#d946ef', party: '#ec4899', country: '#d97706',
     tropical: '#14b8a6', industrial: '#6b7280', desi: '#e11d48', neutral: '#d97706',
-    'Direct Search': '#facc15' 
+    'Direct Search': '#facc15'
   };
 
   const activeColor = result ? (vibeColors[useSecondaryVibe ? result.secondary_vibe : result.dominant_vibe] || vibeColors.neutral) : vibeColors.neutral;
@@ -680,26 +648,12 @@ export default function App() {
   }, []);
 
   /* Toggle the In-App Preview Player */
-  const trackEngagement = async (eventType) => {
-    try {
-      const url = buildApiUrl("/api/analytics/engagement");
-      await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event_type: eventType })
-      }).catch(() => {});
-    } catch (err) {
-      console.error("Analytics error:", err);
-    }
-  };
-
   const togglePlay = (url) => {
     if (!url) return;
     if (playingTrack === url) {
       audioRef.current.pause();
       setPlayingTrack(null);
     } else {
-      trackEngagement("preview_click");
       audioRef.current.src = url;
       audioRef.current.play();
       setPlayingTrack(url);
@@ -739,7 +693,6 @@ export default function App() {
       });
       if (!logRes.ok) throw new Error("Authentication failed — check credentials");
       const data = await logRes.json();
-      // Persist token so page refresh doesn't log user out
       try { localStorage.setItem("vf_token", data.access_token); } catch {}
       setToken(data.access_token);
       setShowAuthModal(false);
@@ -749,35 +702,30 @@ export default function App() {
     finally { setLoading(false); }
   };
 
-  const handleLogout = () => { 
+  const handleLogout = () => {
     try { localStorage.removeItem("vf_token"); } catch {}
-    setToken(null); setResult(null); setPrompt(""); setVuLevel(0); 
+    setToken(null); setResult(null); setPrompt(""); setVuLevel(0);
+    setShowPlaylistPanel(false);
   };
 
-  // FIX: The New Intelligent Cache Engine & Auto-Run Handler
   const analyzeVibe = async (config = {}) => {
     if (!prompt.trim()) return;
     try {
       setLoading(true); setError(""); setIsSkeletonLoading(true);
-      // Tag what kind of load this is for targeted UI messaging
       if (config.targetSecondary !== undefined) setLoadReason("pivot");
       else if (config.targetGenre !== undefined) setLoadReason("genre");
       else setLoadReason("main");
-      
+
       let finalSecondary = useSecondaryVibe;
       let finalGenre = overrideGenre;
       let finalArtist = overrideArtist;
 
-      // Did the user click a filter tag/button? If yes, apply those explicitly.
       if (config.isFilterClick) {
           if (config.targetSecondary !== undefined) finalSecondary = config.targetSecondary;
           if (config.targetGenre !== undefined) finalGenre = config.targetGenre;
       } else {
-          // It's a standard "Run Analysis" button click. 
-          // If they typed a brand new prompt, wipe the old result filters so it doesn't poison the new search!
           if (prompt !== lastPrompt) {
               finalSecondary = false;
-              // Only wipe override genre/artist if the Pro Mode menu is hidden (standard user).
               if (!showOverrides) {
                   finalGenre = "";
                   finalArtist = "";
@@ -785,7 +733,6 @@ export default function App() {
           }
       }
 
-      // Sync the cleaned state back to the UI instantly
       setUseSecondaryVibe(finalSecondary);
       setOverrideGenre(finalGenre);
       setOverrideArtist(finalArtist);
@@ -794,10 +741,10 @@ export default function App() {
       const res = await fetch(buildApiUrl("/api/vibe/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           text: prompt,
           artist_focus: Math.round(knobs.artist),
-          nicheness: Math.round(knobs.nicheness), 
+          nicheness: Math.round(knobs.nicheness),
           bpm_focus: Math.round(knobs.bpm),
           track_limit: trackLimit,
           use_secondary_vibe: finalSecondary,
@@ -807,14 +754,14 @@ export default function App() {
           dismiss_detected_artist: artistUnlocked,
         }),
       });
-      
+
       if (res.status === 401) { handleLogout(); throw new Error("Session expired — re-authenticate"); }
-      
+
       if (!res.ok) {
         const errData = await res.json().catch(() => null);
         throw new Error(errData?.detail || "Analysis failed due to server error.");
       }
-      
+
       const data = await res.json();
       setResult(data);
       setArtistUnlocked(false);
@@ -838,17 +785,12 @@ export default function App() {
   };
 
   // FEEDBACK SUBMISSION
-  // Fires immediately on thumb click. Optimistic UI — we update local state
-  // before the network call completes so the button feels instant.
   const submitFeedback = async (track, position, signal) => {
     const key = `${track.title}|${track.artist}`;
-
-    // Optimistic update — flip if same button clicked again (toggle off → 0)
     const current = feedbackGiven[key];
     const newSignal = current === signal ? 0 : signal;
     setFeedbackGiven(prev => ({ ...prev, [key]: newSignal }));
 
-    // Micro-toast confirmation
     if (newSignal !== 0) {
       setFeedbackToast(true);
       clearTimeout(feedbackToastTimer.current);
@@ -955,31 +897,53 @@ export default function App() {
           {/* ── HEADER ─── */}
           <header className="app-header" style={S.header}>
             <div style={S.logoWrap}>
-          <button
-            onClick={() => setShowLanding(true)}
-            title="Back to Home"
-            style={{
-              background: "none", border: "none", cursor: "pointer",
-              color: "rgba(180,140,80,0.45)", fontSize: "11px",
-              fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em",
-              textTransform: "uppercase", display: "flex", alignItems: "center",
-              gap: "5px", padding: "4px 10px 4px 0", transition: "color 0.2s",
-            }}
-            onMouseOver={e => e.currentTarget.style.color = "#e8d5a3"}
-            onMouseOut={e => e.currentTarget.style.color = "rgba(180,140,80,0.45)"}
-          >
-            &#8592; Home
-          </button>
+              <button
+                onClick={() => setShowLanding(true)}
+                title="Back to Home"
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "rgba(180,140,80,0.45)", fontSize: "11px",
+                  fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em",
+                  textTransform: "uppercase", display: "flex", alignItems: "center",
+                  gap: "5px", padding: "4px 10px 4px 0", transition: "color 0.2s",
+                }}
+                onMouseOver={e => e.currentTarget.style.color = "#e8d5a3"}
+                onMouseOut={e => e.currentTarget.style.color = "rgba(180,140,80,0.45)"}
+              >
+                &#8592; Home
+              </button>
               <div style={S.logoDisc}><div style={S.logoDiscInner} /></div>
               <div><div style={S.logoText}>VibeFinder</div><div className="app-logo-sub" style={S.logoSub}>Acoustic Intelligence Engine</div></div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <div className="app-header-osc"><Oscilloscope active={loading || !!playingTrack} /></div>
+
+              {/* ── NEW: LIBRARY / PLAYLIST PANEL BUTTON ── */}
+              {token && (
+                <button
+                  onClick={() => setShowPlaylistPanel(true)}
+                  className="dial-btn"
+                  title="My Playlists & History"
+                  style={{
+                    display: "flex", alignItems: "center", gap: "7px",
+                    padding: "8px 14px", borderRadius: "8px",
+                    fontFamily: "'DM Mono', monospace", fontSize: "11px",
+                    fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase",
+                    cursor: "pointer", transition: "all 0.2s",
+                    background: "rgba(40,20,5,0.8)",
+                    color: "rgba(180,140,80,0.7)",
+                    border: "1px solid rgba(120,80,20,0.4)",
+                  }}
+                >
+                  <IconLibrary /> Library
+                </button>
+              )}
+
               <button onClick={token ? handleLogout : () => setShowAuthModal(true)} className="dial-btn" style={S.authBtn(!!token)}>{token ? <IconUnlock /> : <IconLock />}{token ? "Sign Out" : "Sign In"}</button>
             </div>
           </header>
 
-          {/* ── ERROR ─── Only show when no valid result is present (prevents stale banner) */}
+          {/* ── ERROR ─── */}
           {error && !showAuthModal && !result && (
             <div style={S.errorBox} className="animate-in"><div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#ef4444", flexShrink: 0, animation: "pulse-glow 1.2s infinite" }} />{error}</div>
           )}
@@ -1004,21 +968,16 @@ export default function App() {
               </div>
 
               <div style={S.textareaWrap}>
-                <textarea 
-                    value={prompt} 
-                    onChange={(e) => setPrompt(e.target.value)} 
-                    placeholder={"Ex: Late night drive through rain-slicked streets, Travis Scott on the radio..."} 
-                    style={S.textarea} 
-                    disabled={!token || loading} 
-                    onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }} 
-                    onBlur={e => { e.target.style.borderColor = "rgba(160,110,30,0.42)"; e.target.style.boxShadow = "none"; }} 
+                <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder={"Ex: Late night drive through rain-slicked streets, Travis Scott on the radio..."}
+                    style={S.textarea}
+                    disabled={!token || loading}
+                    onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }}
+                    onBlur={e => { e.target.style.borderColor = "rgba(160,110,30,0.42)"; e.target.style.boxShadow = "none"; }}
                 />
-                {/* Character counter + sweet-spot hint */}
-                <div style={{
-                  position: "absolute", bottom: "10px", right: "14px",
-                  display: "flex", alignItems: "center", gap: "8px",
-                  pointerEvents: "none",
-                }}>
+                <div style={{ position: "absolute", bottom: "10px", right: "14px", display: "flex", alignItems: "center", gap: "8px", pointerEvents: "none" }}>
                   {prompt.length > 0 && (
                     <span style={{
                       fontSize: "9px", fontFamily: "'DM Mono', monospace",
@@ -1033,6 +992,7 @@ export default function App() {
                 </div>
                 {!token && <div style={S.lockOverlay}><button onClick={() => setShowAuthModal(true)} style={S.lockBtn}><IconLock /> Authentication Required</button></div>}
               </div>
+
               {/* Language Selector */}
               <div className="app-lang-row" style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "9px", color: "rgba(200,160,90,0.6)", textTransform: "uppercase", letterSpacing: "0.15em" }}>Language</span>
@@ -1056,15 +1016,10 @@ export default function App() {
                 {language !== "Any" && <span style={{ fontSize: "9px", color: "rgba(217,160,60,0.7)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{language} pool active</span>}
               </div>
 
-
-
               {/* ── PRO MODE OVERRIDES ── */}
               <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
                 <button
-                  onClick={() => {
-                    trackEngagement("pro_mode");
-                    setShowOverrides(!showOverrides);
-                  }}
+                  onClick={() => setShowOverrides(!showOverrides)}
                   disabled={!token}
                   style={{ background: "none", border: "none", color: "rgba(180,140,80,0.6)", fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px", cursor: token ? "pointer" : "default", fontFamily: "'DM Mono', monospace", alignSelf: "flex-start", opacity: token ? 1 : 0.5 }}
                 >
@@ -1081,7 +1036,7 @@ export default function App() {
                        <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Genre Filter</label>
                        <input type="text" value={overrideGenre} onChange={e => setOverrideGenre(e.target.value)} placeholder="e.g. shoegaze" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
                     </div>
-                    
+
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "18px", cursor: "pointer", width: "100%" }} onClick={() => setUseSecondaryVibe(!useSecondaryVibe)}>
                       <div style={{ width: "36px", height: "18px", borderRadius: "9px", background: useSecondaryVibe ? "rgba(217,119,6,0.6)" : "rgba(80,50,10,0.4)", position: "relative", transition: "background 0.2s", border: "1px solid rgba(155,105,28,0.38)" }}>
                          <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: useSecondaryVibe ? "#fde68a" : "rgba(180,140,80,0.6)", position: "absolute", top: "2px", left: useSecondaryVibe ? "20px" : "3px", transition: "left 0.2s, background 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.5)" }} />
@@ -1100,13 +1055,11 @@ export default function App() {
                   </div>
                   <WaveformBars active={loading || !!playingTrack} count={22} vibeColor={activeColor} />
                 </div>
-                
-                {/* TRACK COUNT & RUN BUTTON CONTROLS */}
+
                 <div className="app-track-controls" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  
-                  {/* ENGINE KILL SWITCH */}
+
                   {result && (
-                      <button 
+                      <button
                           onClick={resetEngine}
                           disabled={loading}
                           title="Clear all filters and drop results"
@@ -1198,7 +1151,7 @@ export default function App() {
                     )}
                     <br />
                     <span style={{ opacity: 0.75 }}>
-                      The engine has locked onto this artist from your description. If that wasn't your intention — 
+                      The engine has locked onto this artist from your description. If that wasn't your intention —
                       tap <strong style={{ color: activeColor }}>✕</strong> on the tag below to unlock and re-run for a pure vibe search.
                     </span>
                   </div>
@@ -1211,8 +1164,7 @@ export default function App() {
                   <div style={{ ...S.cardValue, color: activeColor }}>
                     {useSecondaryVibe ? result.secondary_vibe || result.dominant_vibe : result.dominant_vibe}
                   </div>
-                  
-                  {/* Visually show if we bypassed into direct search */}
+
                   {result.dominant_vibe === 'Direct Search' && !useSecondaryVibe && (
                      <div style={{ fontSize: "10px", background: "rgba(250,204,21,0.15)", color: "#facc15", padding: "4px 8px", borderRadius: "4px", border: "1px solid rgba(250,204,21,0.3)", marginTop: "4px" }}>
                        FALLBACK MODE ACTIVE
@@ -1221,17 +1173,15 @@ export default function App() {
 
                   <ConfidenceMeter value={useSecondaryVibe ? result.secondary_confidence : result.confidence} vibeColor={activeColor} />
                   <div style={S.cardSub}>Confidence: {Math.round((useSecondaryVibe ? result.secondary_confidence : result.confidence) * 100)}%</div>
-                  
-                  {/* BI-DIRECTIONAL PIVOT BUTTON WITH AUTO-RUN */}
-                  {/* Only show if secondary confidence ≥ 50% — lower than that is noise, not signal */}
-                  {(result.secondary_vibe || useSecondaryVibe) && 
-                   result.dominant_vibe !== 'Direct Search' && 
+
+                  {(result.secondary_vibe || useSecondaryVibe) &&
+                   result.dominant_vibe !== 'Direct Search' &&
                    (useSecondaryVibe || (result.secondary_confidence || 0) >= 0.50) && (
                     <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
                       <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>
                         {useSecondaryVibe ? "Primary Signature Available" : "Secondary Signature Detected"}
                       </span>
-                      <button 
+                      <button
                         onClick={() => analyzeVibe({ isFilterClick: true, targetSecondary: !useSecondaryVibe })}
                         disabled={loading}
                         className="dial-btn"
@@ -1260,7 +1210,7 @@ export default function App() {
                 <div className="panel-card" style={{ ...S.resultCard, justifyContent: "flex-start", paddingTop: "28px" }}>
                   <span style={S.cardLabel}>Engine State</span>
                   <span style={{ fontSize: "9px", color: "rgba(180,140,80,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "-4px" }}>[ Click Genres to Hard-Filter ]</span>
-                  
+
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px", width: "100%", alignItems: "center" }}>
                     {result.detected_artist && !artistUnlocked && (
                       <span className="freq-tag" style={{ color: activeColor, borderColor: `${activeColor}44`, background: `${activeColor}11`, display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -1274,8 +1224,7 @@ export default function App() {
                     )}
                     {result.detected_song && <span className="freq-tag" style={{ color: "#fde68a", borderColor: "rgba(253,230,138,0.4)" }}>TRACK: {result.detected_song}</span>}
                     {overrideGenre && <span className="freq-tag" style={{ color: "#d97706", borderColor: "rgba(217,119,6,0.4)" }}>OVERRIDE: {overrideGenre}</span>}
-                    
-                    {/* GENRE FILTER TAGS — clicking re-runs immediately, doesn't pollute Pro Mode field */}
+
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", justifyContent: "center", marginTop: "4px" }}>
                         {result.genres.map((g, idx) => {
                             if (result.dominant_vibe === 'Direct Search') return null;
@@ -1284,9 +1233,7 @@ export default function App() {
                             return (
                                 <button
                                     key={idx}
-                                    onClick={() => {
-                                      analyzeVibe({ isFilterClick: true, targetGenre: isSelected ? "" : g });
-                                    }}
+                                    onClick={() => { analyzeVibe({ isFilterClick: true, targetGenre: isSelected ? "" : g }); }}
                                     disabled={loading}
                                     className="freq-tag dial-btn"
                                     title={isSelected ? "Click to remove filter — will re-run" : `Re-run filtered strictly by ${g}`}
@@ -1309,7 +1256,6 @@ export default function App() {
                             );
                         })}
                     </div>
-                    {/* Nudge label so users know clicking a genre tag re-runs analysis */}
                     {result.genres.length > 0 && result.dominant_vibe !== 'Direct Search' && !loading && (
                       <span style={{ fontSize: "8px", color: "rgba(180,140,80,0.3)", letterSpacing: "0.08em", marginTop: "2px" }}>
                         ↑ click any genre to re-run with that filter
@@ -1336,9 +1282,29 @@ export default function App() {
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>{result.tracks.length} TRACKS</span>
-                        {/* Copy playlist to clipboard */}
+
+                        {/* ── NEW: SAVE PLAYLIST BUTTON ── */}
+                        {token && (
+                          <button
+                            onClick={() => setShowPlaylistPanel(true)}
+                            className="dial-btn"
+                            title="Save this playlist"
+                            style={{
+                              display: "flex", alignItems: "center", gap: "5px",
+                              padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
+                              fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+                              textTransform: "uppercase", cursor: "pointer",
+                              background: "rgba(217,119,6,0.12)",
+                              border: "1px solid rgba(217,119,6,0.35)",
+                              color: "#d97706",
+                              transition: "all 0.2s",
+                            }}
+                          >
+                            <IconBookmark /> Save
+                          </button>
+                        )}
+
                         <CopyPlaylistButton tracks={result.tracks} activeColor={activeColor} />
-                        {/* Open first track in Spotify search — reasonable "export" without OAuth */}
                         <a
                           href={`https://open.spotify.com/search/${encodeURIComponent(
                             result.tracks.slice(0, 1).map(t => `${t.title} ${t.artist}`).join(" ")
@@ -1362,6 +1328,7 @@ export default function App() {
                         </a>
                       </div>
                     </div>
+
                     {/* Feedback micro-toast */}
                     {feedbackToast && (
                       <div className="animate-in" style={{
@@ -1373,21 +1340,11 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* ── LANGUAGE MISMATCH WARNING ──────────────────────────────────────
-                        Shown when user selected a non-English language but the vibe they
-                        described doesn't have enough tracks in that language pool on Last.fm.
-                        The engine falls through to the global pool (correct behavior) but
-                        users deserve to know why they're seeing English results.
-                        Trigger: language is set + dominant vibe is English-heavy + no detected_artist.
-                        We detect mismatch by checking if any returned tracks look non-English.
-                        Simple heuristic: if language ≠ Any/English and no detected_artist forced it,
-                        show the soft warning. The user can always switch language to Any. */}
+                    {/* ── LANGUAGE MISMATCH WARNING ── */}
                     {(() => {
                       const selectedLang = language;
                       const nonEnglishLangs = ["Hindi","Punjabi","Tamil","Telugu","Kannada","Malayalam","Bengali","Urdu","Korean","Japanese","Spanish","Portuguese","French","Arabic","Afrobeats"];
                       const isNonEnglish = nonEnglishLangs.includes(selectedLang);
-                      // Rough heuristic: if the genres returned are generic English-chill genres
-                      // and language is non-English, assume mismatch
                       const englishHeavyVibes = ["chill","calm","ambient","focus","dreamy","cinematic","indie_folk","heartbreak","dark","retro"];
                       const isEnglishHeavyVibe = englishHeavyVibes.includes(result.dominant_vibe);
                       const noArtistLock = !result.detected_artist;
@@ -1416,7 +1373,7 @@ export default function App() {
                     })()}
 
                     <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px" }} />
-                    
+
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                       {result.tracks.map((track, i) => {
                         const isPlaying = playingTrack === track.preview_url;
@@ -1424,7 +1381,7 @@ export default function App() {
                           <div key={i} className="app-track-row" style={{
                             display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "14px",
                             padding: "14px 18px", background: "rgba(8,5,2,0.6)",
-                            border: `1px solid ${isPlaying ? activeColor : 'rgba(120,80,20,0.25)'}`, 
+                            border: `1px solid ${isPlaying ? activeColor : 'rgba(120,80,20,0.25)'}`,
                             borderRadius: "10px", transition: "all 0.2s"
                           }}>
                             {/* Track Info & Cover Art */}
@@ -1439,11 +1396,9 @@ export default function App() {
                                 <span style={{ fontSize: "11px", color: "rgba(180,140,80,0.7)", letterSpacing: "0.05em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.artist}</span>
                               </div>
                             </div>
-                            
+
                             {/* Track Actions */}
                             <div className="app-track-actions" style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-
-                              {/* Feedback buttons — shown after result loads */}
                               {(() => {
                                 const fbKey = `${track.title}|${track.artist}`;
                                 const given = feedbackGiven[fbKey];
@@ -1485,41 +1440,40 @@ export default function App() {
                                 );
                               })()}
 
-                              <button 
+                              <button
                                 onClick={() => togglePlay(track.preview_url)}
                                 disabled={!track.preview_url}
                                 className="dial-btn app-track-preview"
-                                style={{ 
-                                  ...S.authBtn(false), 
-                                  padding: "8px 14px", 
+                                style={{
+                                  ...S.authBtn(false),
+                                  padding: "8px 14px",
                                   background: isPlaying ? "rgba(217,119,6,0.2)" : "rgba(120,80,20,0.15)",
                                   borderColor: isPlaying ? "#d97706" : "rgba(120,80,20,0.4)",
                                   color: isPlaying ? "#fde68a" : "rgba(180,140,80,0.8)",
                                   opacity: track.preview_url ? 1 : 0.4
                                 }}
                               >
-                                {isPlaying ? <IconPause /> : <IconPlay />} 
+                                {isPlaying ? <IconPause /> : <IconPlay />}
                                 {isPlaying ? "Playing" : "Preview"}
                               </button>
 
-                              <a 
-                                href={track.spotify_uri} 
-                                onClick={() => trackEngagement("spotify_click")}
+                              <a
+                                href={track.spotify_uri}
                                 className="dial-btn"
-                                style={{ 
-                                  ...S.authBtn(false), 
-                                  padding: "8px 14px", 
+                                style={{
+                                  ...S.authBtn(false),
+                                  padding: "8px 14px",
                                   textDecoration: "none",
                                   background: "rgba(29, 185, 84, 0.15)",
                                   borderColor: "rgba(29, 185, 84, 0.4)",
                                   color: "#1db954"
-                                }} 
+                                }}
                               >
                                 Spotify
                               </a>
                             </div>
                           </div>
-                        )
+                        );
                       })}
                     </div>
                   </div>
@@ -1537,27 +1491,25 @@ export default function App() {
                       </div>
                     </div>
                     <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px", width: "100%" }} />
-                    
+
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                       {result.matched_keywords.length > 0
-                        ? result.matched_keywords.map((kw, idx) => {
-                            return (
-                              <span 
-                                key={idx} 
-                                style={{ 
-                                  padding: "5px 12px", 
-                                  background: "rgba(16,10,4,0.80)", 
-                                  border: `1px solid ${activeColor}33`, 
-                                  borderRadius: "6px", 
-                                  fontSize: "11px", 
-                                  fontFamily: "'DM Mono', monospace", 
-                                  color: "rgba(180,140,80,0.75)", 
-                                  letterSpacing: "0.05em", 
-                                }}>
-                                  #{kw}
-                              </span>
-                            );
-                          })
+                        ? result.matched_keywords.map((kw, idx) => (
+                            <span
+                              key={idx}
+                              style={{
+                                padding: "5px 12px",
+                                background: "rgba(16,10,4,0.80)",
+                                border: `1px solid ${activeColor}33`,
+                                borderRadius: "6px",
+                                fontSize: "11px",
+                                fontFamily: "'DM Mono', monospace",
+                                color: "rgba(180,140,80,0.75)",
+                                letterSpacing: "0.05em",
+                              }}>
+                                #{kw}
+                            </span>
+                          ))
                         : <span style={{ fontSize: "12px", color: "rgba(120,80,20,0.5)", fontStyle: "italic" }}>Universal mood detected — falling back to ambient processing.</span>
                       }
                     </div>
@@ -1575,6 +1527,21 @@ export default function App() {
 
         </div>
       </div>
+
+      {/* ── PLAYLIST PANEL (slide-in drawer) ─────────────────────── */}
+      {showPlaylistPanel && (
+        <PlaylistPanel
+          token={token}
+          buildApiUrl={buildApiUrl}
+          onClose={() => setShowPlaylistPanel(false)}
+          currentResult={result}
+          currentPrompt={prompt}
+          onLoadPrompt={(p) => { setPrompt(p); setShowPlaylistPanel(false); }}
+          onPlaylistSaved={() => setPlaylistSaveCount(c => c + 1)}
+          saveCount={playlistSaveCount}
+          activeColor={activeColor}
+        />
+      )}
     </>
   );
 }

@@ -31,11 +31,27 @@ except ImportError:
 # Import our modularized vibe engine
 from core import vibe_engine
 
+# ── NEW: Playlist & Analytics route modules ──────────────────────────────────
+try:
+    from routes.playlist_routes import router as playlist_router, set_db as playlist_set_db
+    from routes.analytics_routes import router as analytics_router, set_db as analytics_set_db
+    _ROUTES_AVAILABLE = True
+except ImportError as _re:
+    _ROUTES_AVAILABLE = False
+    import logging as _log
+    _log.getLogger(__name__).warning(f"playlist/analytics routes not found: {_re}")
+
+# ── NEW: Gemini NLP enhancement (graceful — works without GEMINI_API_KEY) ────
+# gemini_vibe.py exports a singleton instance `gemini_enhancer`, not a bare fn.
+try:
+    from core.gemini_vibe import gemini_enhancer as _gemini_enhancer
+    _GEMINI_AVAILABLE = bool(_gemini_enhancer)
+except ImportError:
+    _GEMINI_AVAILABLE = False
+    _gemini_enhancer  = None
+
 # Import semantic fallback ranker (gracefully degrades if model not installed)
 from analyzers import semantic_search
-
-# Import Gemini vibe analyzer for fallback enhancement
-from core.gemini_vibe import GeminiVibeAnalyzer
 
 # Load environment variables
 load_dotenv()
@@ -77,19 +93,23 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Supabase (Prisma) connection...")
     await db.connect()
     logger.info("Database connected successfully. Engine online.")
+
+    # ── NEW: Wire playlist + analytics route modules to the shared DB ──────────
+    if _ROUTES_AVAILABLE:
+        playlist_set_db(db)
+        analytics_set_db(db)
+        logger.info("Playlist and analytics routes wired to DB.")
     
     # ── Load TrackFeatureCache into memory for fast O(1) scoring lookups ──────
     # The DB has 690+ tracks with real audio features (tempo, energy, valence,
     # moodHappy, moodSad, moodRelaxed, moodAggressive, moodParty).
-    # We load them all into multiple lookup dicts:
-    #   1. title_lower|artist_lower (primary key)
-    #   2. isrc (fallback key for spelling mismatches across APIs)
-    # filter_and_score_tracks tries primary first, then falls back to ISRC.
+    # We load them all into a dict keyed by "title_lower|artist_lower" so
+    # filter_and_score_tracks can enrich any matching track without a DB call.
     try:
         _cache_rows = await db.trackfeaturecache.find_many()
-        _isrc_index: dict[str, dict] = {}  # Fallback: ISRC → features
         for row in _cache_rows:
-            _feat = {
+            _key = f"{(row.title or '').strip().lower()}|{(row.artist or '').strip().lower()}"
+            TRACK_FEATURE_INDEX[_key] = {
                 "tempo":           float(row.tempo) if row.tempo else None,
                 "energy":          float(row.energy) if row.energy else None,
                 "valence":         float(row.valence) if row.valence else None,
@@ -99,18 +119,9 @@ async def lifespan(app: FastAPI):
                 "moodAggressive":  float(row.moodAggressive) if row.moodAggressive else None,
                 "moodParty":       float(row.moodParty) if row.moodParty else None,
             }
-            # Primary key: title|artist
-            _key = f"{(row.title or '').strip().lower()}|{(row.artist or '').strip().lower()}"
-            TRACK_FEATURE_INDEX[_key] = _feat
-            # Fallback key: ISRC code (for cross-database matching when title/artist mismatch)
-            if row.isrc:
-                _isrc_index[row.isrc.upper()] = _feat
-        # Store ISRC index as a secondary lookup in app state for use during scoring
-        app.state.isrc_feature_index = _isrc_index
-        logger.info(f"TrackFeatureCache loaded: {len(TRACK_FEATURE_INDEX)} tracks indexed, {len(_isrc_index)} with ISRC codes.")
+        logger.info(f"TrackFeatureCache loaded: {len(TRACK_FEATURE_INDEX)} tracks indexed.")
     except Exception as e:
         logger.warning(f"TrackFeatureCache load failed (scoring will use heuristics only): {e}")
-        app.state.isrc_feature_index = {}
 
     # ── Load ArtistDirectory niche→name index for DB-assisted pool building ───
     # Maps niche string → list of artist names, used to supplement Last.fm pools
@@ -168,8 +179,14 @@ _KNOWN_WORDS = [
 ]
 
 def normalize_input(text: str) -> str:
-    """Restore consonant-skeleton typos (e.g. 'pujabi dace hrad' → 'punjabi dance hard')."""
+    """Restore consonant-skeleton typos (e.g. 'pujabi dace hrad' → 'punjabi dance hard').
+    Also strips surrounding quotation marks so `"feeling lost"` → `feeling lost`.
+    """
     if not text or len(text.strip()) < 3:
+        return text
+    # Strip surrounding quote chars — users often paste quoted phrases
+    text = text.strip().strip('""\'"\'\'\' ')
+    if not text:
         return text
     words = text.strip().split()
     corrected, changed = [], False
@@ -206,9 +223,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Initialize Gemini fallback enhancer
-gemini_analyzer = GeminiVibeAnalyzer()
-
 # Wire rate limiter if available
 if _RATE_LIMIT_AVAILABLE:
     app.state.limiter = _limiter
@@ -243,6 +257,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── NEW: Register playlist + analytics routers ──────────────────────────────
+if _ROUTES_AVAILABLE:
+    app.include_router(playlist_router,  prefix="/api")
+    app.include_router(analytics_router, prefix="/api")
+    logger.info("Playlist and analytics routers registered at /api prefix.")
 
 # ---------------------------------------------------------
 # Auth & Security Configuration
@@ -1108,12 +1128,8 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
                 score += 20
 
         # 4+5. AUDIO FEATURE SCORING — real data from TrackFeatureCache if available
-        # Primary lookup by title|artist; fallback to ISRC code for cross-database matching
         feat_key = f"{title}|{artist}"
         feat = TRACK_FEATURE_INDEX.get(feat_key)
-        if not feat and t.get("isrc"):
-            # ISRC fallback: high-precision track matching when title/artist spelling differs across APIs
-            feat = app.state.isrc_feature_index.get(t["isrc"].upper())
 
         if feat:
             # ── REAL BPM SCORING ─────────────────────────────────────────────
@@ -1447,18 +1463,41 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         genre_focus=50,
         bpm_focus=request.bpm_focus
     )
-    
-    # 1.5 GEMINI FALLBACK ENHANCEMENT
-    # If confidence is low, try Gemini Flash to boost accuracy on novel vibes/slang
-    if gemini_analyzer.should_enhance(vibe_data, request.text):
-        logger.info(f"[Gemini] Vibe confidence low ({vibe_data.get('confidence')}). Requesting enhancement...")
-        vibe_data = await gemini_analyzer.enhance(
-            prompt=request.text,
-            language=request.language,
-            heuristic_result=vibe_data
-        )
-        logger.info(f"[Gemini] Enhancement complete. New confidence: {vibe_data.get('confidence')}")
-    
+
+    # ── NEW: GEMINI NLP ENHANCEMENT ─────────────────────────────────────────
+    # Fires ONLY when heuristic confidence < 0.40.
+    # Uses gemini_enhancer singleton (GeminiVibeAnalyzer instance).
+    # Graceful: on quota/timeout/error the original vibe_data is preserved.
+    if _GEMINI_AVAILABLE and _gemini_enhancer and _gemini_enhancer.should_enhance(vibe_data, request.text):
+        try:
+            logger.info(
+                f"[Gemini] Confidence {vibe_data.get('confidence', 0):.2f} < threshold "
+                f"— calling Gemini Flash..."
+            )
+            _enhanced = await _gemini_enhancer.enhance(
+                request.text,
+                request.language,
+                vibe_data,
+            )
+            if _enhanced:
+                vibe_data = _enhanced
+                logger.info(
+                    f"[Gemini] Enhanced: {vibe_data.get('dominant_vibe')} "
+                    f"conf={vibe_data.get('confidence', 0):.2f}"
+                )
+                # Language auto-detect: if user left language=Any, use Gemini's detection
+                if (not request.language or request.language == "Any"):
+                    if vibe_data.get("_gemini_detected_language"):
+                        request = request.model_copy(
+                            update={"language": vibe_data["_gemini_detected_language"]}
+                        )
+                        logger.info(
+                            f"[Gemini] Auto-detected language: {vibe_data['_gemini_detected_language']}"
+                        )
+        except Exception as _ge:
+            logger.warning(f"[Gemini] Enhancement skipped (non-fatal): {_ge}")
+    # ────────────────────────────────────────────────────────────────────────
+
     prompt_lower = request.text.lower()
     detected_artist = request.override_artist
     detected_song = None
@@ -1611,7 +1650,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     
     if vibe_data.get("confidence", 0.0) < 0.25 and not detected_artist and not request.override_genre:
         is_fallback = True
-        logger.warning(f"Engine Confidence Critical ({vibe_data.get('confidence')} < 0.25). Gemini enhancement was not enough or unavailable. Triggering Fallback Protocol to Direct Search!")
+        logger.warning(f"Engine Confidence Critical ({vibe_data.get('confidence')} < 0.25). Triggering Fallback Protocol!")
         vibe_data["dominant_vibe"] = "Direct Search" 
         vibe_data["secondary_vibe"] = "Fallback Mode"
         raw_pool = await fetch_lastfm_track_search(request.text, limit=100)
