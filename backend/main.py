@@ -50,6 +50,15 @@ except ImportError:
     _GEMINI_AVAILABLE = False
     _gemini_enhancer  = None
 
+# ── NEW: TextBlob sentiment boost (graceful — works without textblob) ─────────
+# File lives at: backend/analyzers/sentiment_boost.py
+try:
+    from analyzers.sentiment_boost import apply_sentiment_boost
+    _SENTIMENT_AVAILABLE = True
+except ImportError:
+    _SENTIMENT_AVAILABLE = False
+    def apply_sentiment_boost(text, vibe_data): return vibe_data
+
 # Import semantic fallback ranker (gracefully degrades if model not installed)
 from analyzers import semantic_search
 
@@ -83,6 +92,10 @@ db = Prisma()
 TRACK_FEATURE_INDEX: dict[str, dict] = {}
 # Keyed by niche string → list of artist dicts from ArtistDirectory
 ARTIST_NICHE_INDEX: dict[str, list[dict]] = {}
+# Keyed by artist_name_lower → list of {title, artist} from tadbTop10 (pre-fetched DB tracks)
+DB_TRACK_POOL: dict[str, list[dict]] = {}
+# Keyed by artist_name_lower → list of similar artist names from lbSimilarArtists
+DB_SIMILAR_ARTISTS: dict[str, list[str]] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -110,14 +123,26 @@ async def lifespan(app: FastAPI):
         for row in _cache_rows:
             _key = f"{(row.title or '').strip().lower()}|{(row.artist or '').strip().lower()}"
             TRACK_FEATURE_INDEX[_key] = {
-                "tempo":           float(row.tempo) if row.tempo else None,
-                "energy":          float(row.energy) if row.energy else None,
-                "valence":         float(row.valence) if row.valence else None,
-                "moodHappy":       float(row.moodHappy) if row.moodHappy else None,
-                "moodSad":         float(row.moodSad) if row.moodSad else None,
-                "moodRelaxed":     float(row.moodRelaxed) if row.moodRelaxed else None,
-                "moodAggressive":  float(row.moodAggressive) if row.moodAggressive else None,
-                "moodParty":       float(row.moodParty) if row.moodParty else None,
+                # ── Audio features (ReccoBeats) ───────────────────────────────
+                "tempo":             float(row.tempo)             if row.tempo             else None,
+                "energy":            float(row.energy)            if row.energy            else None,
+                "valence":           float(row.valence)           if row.valence           else None,
+                "danceability":      float(row.danceability)      if row.danceability      else None,
+                "acousticness":      float(row.acousticness)      if row.acousticness      else None,
+                "instrumentalness":  float(row.instrumentalness)  if row.instrumentalness  else None,
+                "speechiness":       float(row.speechiness)       if row.speechiness       else None,
+                # ── AcousticBrainz mood scores ────────────────────────────────
+                "moodHappy":         float(row.moodHappy)         if row.moodHappy         else None,
+                "moodSad":           float(row.moodSad)           if row.moodSad           else None,
+                "moodRelaxed":       float(row.moodRelaxed)       if row.moodRelaxed       else None,
+                "moodAggressive":    float(row.moodAggressive)    if row.moodAggressive    else None,
+                "moodParty":         float(row.moodParty)         if row.moodParty         else None,
+                "moodAcoustic":      float(row.moodAcoustic)      if row.moodAcoustic      else None,
+                "moodElectronic":    float(row.moodElectronic)    if row.moodElectronic    else None,
+                # ── Cross-reference IDs (skip iTunes scrape if present) ───────
+                "spotifyId":         row.spotifyId  or None,
+                "isrc":              row.isrc       or None,
+                "mbid":              row.mbid       or None,
             }
         logger.info(f"TrackFeatureCache loaded: {len(TRACK_FEATURE_INDEX)} tracks indexed.")
     except Exception as e:
@@ -143,6 +168,58 @@ async def lifespan(app: FastAPI):
                     f"{sum(len(v) for v in ARTIST_NICHE_INDEX.values())} total artists.")
     except Exception as e:
         logger.warning(f"ArtistDirectory index load failed (DB pool supplement disabled): {e}")
+
+    # ── Load tadbTop10 → DB_TRACK_POOL: direct track pool from DB ─────────────
+    # ArtistDirectory.tadbTop10 = JSON [{title, tadbTrackId}] pre-fetched by enrich_artists.py
+    # We index these as {artist_lower → [{title, artist}]} so pool building can
+    # use real DB tracks BEFORE making any Last.fm API calls.
+    try:
+        _all_artists = await db.artistdirectory.find_many(
+            where={"tadbTop10": {"not": None}}
+        )
+        _db_track_count = 0
+        for _ar in _all_artists:
+            if not _ar.tadbTop10:
+                continue
+            try:
+                _top10 = json.loads(_ar.tadbTop10)
+                _artist_key = _ar.name.strip().lower()
+                _tracks = []
+                for _t in _top10:
+                    if isinstance(_t, dict) and _t.get("title"):
+                        _tracks.append({"title": _t["title"], "artist": _ar.name})
+                if _tracks:
+                    DB_TRACK_POOL[_artist_key] = _tracks
+                    _db_track_count += len(_tracks)
+            except (json.JSONDecodeError, Exception):
+                continue
+        logger.info(f"DB_TRACK_POOL loaded: {len(DB_TRACK_POOL)} artists, {_db_track_count} total tracks.")
+    except Exception as e:
+        logger.warning(f"DB_TRACK_POOL load failed (will fall through to Last.fm): {e}")
+
+    # ── Load lbSimilarArtists → DB_SIMILAR_ARTISTS ────────────────────────────
+    # ArtistDirectory.lbSimilarArtists = JSON [{name, mbid, similarity}]
+    # Used for "Similar to X" pool building without a cold Last.fm API call.
+    try:
+        _similar_rows = await db.artistdirectory.find_many(
+            where={"lbSimilarArtists": {"not": None}}
+        )
+        for _sr in _similar_rows:
+            if not _sr.lbSimilarArtists:
+                continue
+            try:
+                _similars = json.loads(_sr.lbSimilarArtists)
+                _names = [
+                    s["name"] for s in _similars
+                    if isinstance(s, dict) and s.get("name")
+                ]
+                if _names:
+                    DB_SIMILAR_ARTISTS[_sr.name.strip().lower()] = _names[:10]
+            except (json.JSONDecodeError, Exception):
+                continue
+        logger.info(f"DB_SIMILAR_ARTISTS loaded: {len(DB_SIMILAR_ARTISTS)} artists indexed.")
+    except Exception as e:
+        logger.warning(f"DB_SIMILAR_ARTISTS load failed (will fall through to Last.fm): {e}")
 
     yield
     logger.info("Engine shutting down. Disconnecting database...")
@@ -1084,23 +1161,63 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
     slow_markers = ["acoustic", "slowed", "reverb", "chill", "lofi", "ambient", "slow"]
 
     # Vibe → target audio profile (used when TrackFeatureCache has real data)
+    # Now uses ALL available DB fields: danceability, acousticness, instrumentalness,
+    # moodAcoustic, moodElectronic in addition to the original set.
     _VIBE_AUDIO_PROFILE: dict[str, dict] = {
-        "heartbreak":    {"valence_max": 0.45, "moodSad_min": 0.45, "energy_max": 0.65},
-        "dark":          {"valence_max": 0.40, "energy_max": 0.70, "moodAggressive_min": 0.15},
-        "calm":          {"energy_max": 0.45, "moodRelaxed_min": 0.40},
-        "ambient":       {"energy_max": 0.35, "moodRelaxed_min": 0.50},
-        "focus":         {"energy_max": 0.60, "moodRelaxed_min": 0.30},
-        "chill":         {"energy_max": 0.65, "moodRelaxed_min": 0.25},
-        "party":         {"moodParty_min": 0.45, "energy_min": 0.55},
-        "euphoric":      {"moodParty_min": 0.40, "energy_min": 0.50, "valence_min": 0.45},
-        "hype":          {"energy_min": 0.65, "moodAggressive_min": 0.20},
-        "intense":       {"energy_min": 0.70, "moodAggressive_min": 0.35},
-        "soulful":       {"valence_min": 0.30, "moodHappy_min": 0.25},
-        "happy":         {"valence_min": 0.50, "moodHappy_min": 0.45},
-        "romantic":      {"valence_min": 0.35, "moodSad_max": 0.40},
-        "dreamy":        {"energy_max": 0.55, "moodRelaxed_min": 0.25},
+        "heartbreak":    {"valence_max": 0.45, "moodSad_min": 0.45, "energy_max": 0.65,
+                          "danceability_max": 0.55},
+        "dark":          {"valence_max": 0.40, "energy_max": 0.70, "moodAggressive_min": 0.15,
+                          "moodElectronic_min": 0.10},
+        "calm":          {"energy_max": 0.45, "moodRelaxed_min": 0.40,
+                          "acousticness_min": 0.25, "danceability_max": 0.50},
+        "ambient":       {"energy_max": 0.35, "moodRelaxed_min": 0.50,
+                          "instrumentalness_min": 0.40, "speechiness_max": 0.10},
+        "focus":         {"energy_max": 0.60, "moodRelaxed_min": 0.30,
+                          "instrumentalness_min": 0.30, "speechiness_max": 0.15,
+                          "danceability_max": 0.60},
+        "chill":         {"energy_max": 0.65, "moodRelaxed_min": 0.25,
+                          "danceability_max": 0.70},
+        "party":         {"moodParty_min": 0.45, "energy_min": 0.55,
+                          "danceability_min": 0.55},
+        "euphoric":      {"moodParty_min": 0.40, "energy_min": 0.50, "valence_min": 0.45,
+                          "danceability_min": 0.45},
+        "hype":          {"energy_min": 0.65, "moodAggressive_min": 0.20,
+                          "danceability_min": 0.40},
+        "intense":       {"energy_min": 0.70, "moodAggressive_min": 0.35,
+                          "acousticness_max": 0.30},
+        "soulful":       {"valence_min": 0.30, "moodHappy_min": 0.25,
+                          "acousticness_min": 0.20},
+        "happy":         {"valence_min": 0.50, "moodHappy_min": 0.45,
+                          "danceability_min": 0.35},
+        "romantic":      {"valence_min": 0.35, "moodSad_max": 0.40,
+                          "acousticness_min": 0.20, "danceability_max": 0.65},
+        "dreamy":        {"energy_max": 0.55, "moodRelaxed_min": 0.25,
+                          "instrumentalness_min": 0.10},
+        "indie_folk":    {"acousticness_min": 0.45, "moodAcoustic_min": 0.35,
+                          "energy_max": 0.65, "instrumentalness_max": 0.60},
+        "retro":         {"acousticness_min": 0.15, "energy_max": 0.80},
+        "cinematic":     {"instrumentalness_min": 0.50, "energy_min": 0.20,
+                          "speechiness_max": 0.10},
+        "industrial":    {"moodElectronic_min": 0.35, "moodAggressive_min": 0.30,
+                          "acousticness_max": 0.20},
+        "hyperpop":      {"moodElectronic_min": 0.40, "energy_min": 0.60,
+                          "danceability_min": 0.50},
+        "tropical":      {"danceability_min": 0.50, "valence_min": 0.40, "energy_min": 0.35},
     }
     vibe_profile = _VIBE_AUDIO_PROFILE.get(dominant_vibe, {})
+
+    # ── DB-BASED SPEECHINESS JUNK FILTER ───────────────────────────────────────
+    # Tracks with speechiness > 0.65 in TrackFeatureCache are spoken word / podcast
+    # content that snuck through Last.fm. Filter them out before scoring loop.
+    _speechiness_filtered = []
+    for _t in tracks:
+        _fk = f"{_t.get('title','').lower()}|{_t.get('artist','').lower()}"
+        _feat = TRACK_FEATURE_INDEX.get(_fk)
+        if _feat and _feat.get("speechiness") is not None:
+            if _feat["speechiness"] > 0.65:
+                continue  # drop spoken-word junk
+        _speechiness_filtered.append(_t)
+    tracks = _speechiness_filtered
 
     scored_tracks = []
     for i, t in enumerate(tracks):
@@ -1498,6 +1615,16 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             logger.warning(f"[Gemini] Enhancement skipped (non-fatal): {_ge}")
     # ────────────────────────────────────────────────────────────────────────
 
+    # ── SENTIMENT BOOST ─────────────────────────────────────────────────────
+    # TextBlob polarity/subjectivity layer — catches study/focus intent,
+    # disambiguates emotional prompts, boosts low-confidence results.
+    if _SENTIMENT_AVAILABLE:
+        try:
+            vibe_data = apply_sentiment_boost(request.text, vibe_data)
+        except Exception as _se:
+            logger.warning(f"[Sentiment] Boost skipped (non-fatal): {_se}")
+    # ────────────────────────────────────────────────────────────────────────
+
     prompt_lower = request.text.lower()
     detected_artist = request.override_artist
     detected_song = None
@@ -1758,41 +1885,131 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             logger.info(f"Unknown vibe — direct text search: '{request.text}'")
             genre_pool = await fetch_lastfm_track_search(request.text, limit=150)
         else:
+                # ── STAGE 0: DB-FIRST POOL ─────────────────────────────────
+                # Use pre-fetched tadbTop10 tracks from ArtistDirectory before
+                # making any Last.fm API calls. Pulls from artists whose niche
+                # matches the target vibe. Avoids cold API calls for known vibes.
+                _db_first_pool: list[dict] = []
+                _DB_VIBE_NICHES: dict[str, list[str]] = {
+                    "heartbreak":  ["sadboy", "sad", "heartbreak", "emo", "indie sad"],
+                    "chill":       ["chill", "lo-fi", "rnb chill", "chillhop"],
+                    "focus":       ["lo-fi", "chillhop", "ambient", "instrumental"],
+                    "ambient":     ["ambient", "neo-classical", "drone"],
+                    "hype":        ["trap", "hip-hop", "rap", "drill"],
+                    "party":       ["house", "techno", "dancehall", "party"],
+                    "euphoric":    ["trance", "house", "edm"],
+                    "dark":        ["darkwave", "shoegaze", "post-punk", "goth"],
+                    "intense":     ["metal", "metalcore", "hardcore"],
+                    "soulful":     ["neo-soul", "soul", "rnb"],
+                    "romantic":    ["soul", "rnb", "slow jams"],
+                    "dreamy":      ["dream pop", "shoegaze", "indie pop"],
+                    "retro":       ["classic rock", "oldies", "retro"],
+                    "indie_folk":  ["folk", "indie folk", "americana"],
+                    "cinematic":   ["film score", "neo-classical", "soundtrack"],
+                    "happy":       ["pop", "indie pop", "feel good"],
+                    "rock":        ["rock", "alternative", "indie rock"],
+                    "calm":        ["acoustic", "singer-songwriter", "folk"],
+                }
+                _target_niches_db = _DB_VIBE_NICHES.get(_dominant_vibe, [])
+                if _target_niches_db and ARTIST_NICHE_INDEX and DB_TRACK_POOL:
+                    _db_artist_candidates: list[str] = []
+                    for _niche in _target_niches_db:
+                        for _art_entry in ARTIST_NICHE_INDEX.get(_niche, []):
+                            _db_artist_candidates.append(_art_entry["name"].lower())
+                    # Also check mbTags for niche alignment
+                    for _niche in _target_niches_db:
+                        for _art_entry in ARTIST_NICHE_INDEX.get(_niche, []):
+                            _mb = _art_entry.get("mbTags", "").lower()
+                            if any(n in _mb for n in _target_niches_db):
+                                _db_artist_candidates.append(_art_entry["name"].lower())
+                    _seen_db: set[str] = set()
+                    for _ak in set(_db_artist_candidates):
+                        for _dt in DB_TRACK_POOL.get(_ak, []):
+                            _dk = f"{_dt['title'].lower()}|{_dt['artist'].lower()}"
+                            if _dk not in _seen_db:
+                                _seen_db.add(_dk)
+                                _db_first_pool.append(_dt)
+                    if _db_first_pool:
+                        logger.info(
+                            f"[DB-First] Stage 0 pool: {len(_db_first_pool)} tracks "
+                            f"from {len(set(_db_artist_candidates))} niche-matched DB artists "
+                            f"for vibe='{_dominant_vibe}'"
+                        )
+
                 # ── MULTI-TAG PARALLEL FETCH v6.0 ───────────────────────────
+                # Skip Last.fm entirely if DB pool is already rich enough
                 _secondary_vibe_hint = vibe_data.get("secondary_vibe") if not request.use_secondary_vibe else None
                 _vibe_tags = get_vibe_tags(active_vibe_for_tags, _lang, target_genre, secondary_vibe=_secondary_vibe_hint)
                 logger.info(f"Multi-tag fetch: lang={_lang} vibe={active_vibe_for_tags} tags={_vibe_tags}")
 
-                _per_tag_limit = max(60, 200 // len(_vibe_tags))
-                _tag_results = await asyncio.gather(
-                    *[fetch_lastfm_tracks(tag, limit=_per_tag_limit) for tag in _vibe_tags],
-                    return_exceptions=True
-                )
-                genre_pool: list[dict] = []
-                for _r in _tag_results:
-                    if isinstance(_r, list):
-                        genre_pool.extend(_r)
+                if len(_db_first_pool) >= 40:
+                    logger.info(
+                        f"[DB-First] Pool sufficient ({len(_db_first_pool)} tracks) — "
+                        f"skipping Last.fm tag fetch for vibe='{_dominant_vibe}'"
+                    )
+                    genre_pool: list[dict] = _db_first_pool
+                else:
+                    _per_tag_limit = max(60, 200 // len(_vibe_tags))
+                    _tag_results = await asyncio.gather(
+                        *[fetch_lastfm_tracks(tag, limit=_per_tag_limit) for tag in _vibe_tags],
+                        return_exceptions=True
+                    )
+                    genre_pool: list[dict] = list(_db_first_pool)  # seed with DB tracks
+                    for _r in _tag_results:
+                        if isinstance(_r, list):
+                            genre_pool.extend(_r)
 
-                # ── VIBE-ARTIST SEEDING ──────────────────────────────────────
+                # ── VIBE-ARTIST SEEDING (DB-assisted) ────────────────────────
+                # Pull pre-fetched tadbTop10 tracks from DB_TRACK_POOL before
+                # making any Last.fm API calls for VIBE_MAP seed artists.
                 _seed_artists: list[str] = (
                     vibe_engine.VIBE_MAP.get(active_vibe_for_tags, {}).get("artists", [])[:3]
                 )
                 _seed_pool: list[dict] = []
                 if _seed_artists:
                     logger.info(f"Seeding VIBE_MAP artists: {_seed_artists}")
-                    _seed_results = await asyncio.gather(
-                        *[fetch_lastfm_artist_tracks(a, limit=30) for a in _seed_artists],
-                        return_exceptions=True
-                    )
-                    for _r in _seed_results:
-                        if isinstance(_r, list):
-                            _seed_pool.extend(_r)
+                    _need_lastfm_seed: list[str] = []
+                    for _sa in _seed_artists:
+                        _sa_key = _sa.strip().lower()
+                        _db_seed_tracks = DB_TRACK_POOL.get(_sa_key, [])
+                        if _db_seed_tracks:
+                            _seed_pool.extend(_db_seed_tracks)
+                            logger.info(f"[DB-Seed] {_sa}: {len(_db_seed_tracks)} tracks from DB_TRACK_POOL (no API call)")
+                        else:
+                            _need_lastfm_seed.append(_sa)
+                    if _need_lastfm_seed:
+                        _seed_results = await asyncio.gather(
+                            *[fetch_lastfm_artist_tracks(a, limit=30) for a in _need_lastfm_seed],
+                            return_exceptions=True
+                        )
+                        for _r in _seed_results:
+                            if isinstance(_r, list):
+                                _seed_pool.extend(_r)
 
-                # ── DETECTED ARTIST BLEND ────────────────────────────────────
+                # ── DETECTED ARTIST BLEND (DB-assisted lbSimilarArtists) ───
                 artist_pool: list[dict] = []
                 if detected_artist and request.artist_focus > 25:
-                    logger.info(f"Injecting discography blend for detected artist: {detected_artist}")
-                    artist_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=50)
+                    _det_key = detected_artist.strip().lower()
+                    # Try DB_TRACK_POOL first for detected artist's discography
+                    _det_db_tracks = DB_TRACK_POOL.get(_det_key, [])
+                    if _det_db_tracks:
+                        artist_pool.extend(_det_db_tracks)
+                        logger.info(f"[DB-Artist] {detected_artist}: {len(_det_db_tracks)} from DB_TRACK_POOL")
+                    else:
+                        logger.info(f"Injecting discography blend for detected artist: {detected_artist}")
+                        artist_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=50)
+                    # Blend in lbSimilarArtists from DB if artist_focus is high
+                    if request.artist_focus > 50 and DB_SIMILAR_ARTISTS:
+                        _lb_similars = DB_SIMILAR_ARTISTS.get(_det_key, [])
+                        if _lb_similars:
+                            logger.info(f"[DB-LB] {detected_artist} similar artists from DB: {_lb_similars[:4]}")
+                            _sim_limit = min(3, len(_lb_similars))
+                            for _sim_name in _lb_similars[:_sim_limit]:
+                                _sim_key = _sim_name.strip().lower()
+                                _sim_db = DB_TRACK_POOL.get(_sim_key, [])
+                                if _sim_db:
+                                    artist_pool.extend(_sim_db[:8])
+                                    logger.info(f"[DB-LB] {_sim_name}: {len(_sim_db[:8])} tracks from DB_TRACK_POOL")
 
                 # ── DB ARTIST NICHE SUPPLEMENT ───────────────────────────────
                 # When ARTIST knob is high (>65), the user wants artist-centric
@@ -1840,13 +2057,23 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                                 f"sampling {sample_size} DB artists for vibe '{_dominant_vibe}': "
                                 f"{[a['name'] for a in sampled]}"
                             )
-                            _db_fetch_results = await asyncio.gather(
-                                *[fetch_lastfm_artist_tracks(a["name"], limit=25) for a in sampled],
-                                return_exceptions=True,
-                            )
-                            for _r in _db_fetch_results:
-                                if isinstance(_r, list):
-                                    db_artist_pool.extend(_r)
+                            _need_lastfm_supp: list[str] = []
+                            for _sa_entry in sampled:
+                                _sa_key = _sa_entry["name"].strip().lower()
+                                _db_supp_tracks = DB_TRACK_POOL.get(_sa_key, [])
+                                if _db_supp_tracks:
+                                    db_artist_pool.extend(_db_supp_tracks)
+                                    logger.info(f"[DB Supplement] {_sa_entry['name']}: {len(_db_supp_tracks)} from DB_TRACK_POOL")
+                                else:
+                                    _need_lastfm_supp.append(_sa_entry["name"])
+                            if _need_lastfm_supp:
+                                _db_fetch_results = await asyncio.gather(
+                                    *[fetch_lastfm_artist_tracks(a, limit=25) for a in _need_lastfm_supp],
+                                    return_exceptions=True,
+                                )
+                                for _r in _db_fetch_results:
+                                    if isinstance(_r, list):
+                                        db_artist_pool.extend(_r)
                             logger.info(f"[DB Supplement] Added {len(db_artist_pool)} tracks from DB artists.")
 
                 # ── MERGE + DEDUPLICATE ──────────────────────────────────────
@@ -2018,21 +2245,44 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             detail="Signal lost: No tracks passed the strict filters. Try lowering Nicheness or adjusting your prompt."
         )
     
-    # 6. PARALLEL PREVIEW SCRAPING
-    logger.info(f"Scraping Apple Music previews concurrently for top {len(best_tracks)} tracks...")
-    itunes_tasks = [fetch_itunes_preview(t["title"], t["artist"]) for t in best_tracks]
-    previews = await asyncio.gather(*itunes_tasks)
-    
+    # 6. PARALLEL PREVIEW SCRAPING (DB-assisted)
+    # For tracks already in TrackFeatureCache with a spotifyId, we can build a
+    # direct Spotify URI and skip iTunes. Only hit iTunes for unknown tracks.
+    logger.info(f"Assembling previews for top {len(best_tracks)} tracks (DB-first)...")
+
+    _itunes_needed: list[int] = []   # indices that need an iTunes call
+    _previews: list[dict] = [{"preview_url": None, "cover_art": None}] * len(best_tracks)
+
+    for _idx, _t in enumerate(best_tracks):
+        _fk = f"{_t.get('title','').strip().lower()}|{_t.get('artist','').strip().lower()}"
+        _feat = TRACK_FEATURE_INDEX.get(_fk)
+        if _feat and _feat.get("spotifyId"):
+            # DB hit — build direct Spotify URI, no iTunes call needed
+            _sid = _feat["spotifyId"]
+            _t["_spotify_id"] = _sid  # stamp for payload assembly
+            _previews[_idx] = {"preview_url": None, "cover_art": None}
+            logger.debug(f"[DB-Preview] {_t.get('title')} → spotify:{_sid} (no iTunes call)")
+        else:
+            _itunes_needed.append(_idx)
+
+    if _itunes_needed:
+        logger.info(f"Scraping iTunes previews for {len(_itunes_needed)} unmatched tracks...")
+        _itunes_tasks = [fetch_itunes_preview(best_tracks[i]["title"], best_tracks[i]["artist"]) for i in _itunes_needed]
+        _itunes_results = await asyncio.gather(*_itunes_tasks)
+        for _ii, _res in zip(_itunes_needed, _itunes_results):
+            _previews[_ii] = _res
+
     # 7. PAYLOAD ASSEMBLY
     final_tracks = []
     for i, t in enumerate(best_tracks):
         q = urllib.parse.quote(f"{t['title']} {t['artist']}")
+        _spotify_id = t.get("_spotify_id")
         final_tracks.append({
             "title": t["title"], "artist": t["artist"],
-            "spotify_uri": f"spotify:search:{q}",
+            "spotify_uri": f"spotify:track:{_spotify_id}" if _spotify_id else f"spotify:search:{q}",
             "apple_uri": f"music://search?term={q}",
-            "preview_url": previews[i]["preview_url"],
-            "cover_art": previews[i]["cover_art"]
+            "preview_url": _previews[i]["preview_url"],
+            "cover_art": _previews[i]["cover_art"]
         })
 
     # 8. LOG REQUEST TO DATABASE

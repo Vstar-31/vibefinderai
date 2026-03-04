@@ -606,6 +606,8 @@ export default function App() {
   const [showOverrides, setShowOverrides]     = useState(false);
   const [overrideArtist, setOverrideArtist]   = useState("");
   const [overrideGenre, setOverrideGenre]     = useState("");
+  const [similarArtist, setSimilarArtist]     = useState("");
+  const [lockArtist,    setLockArtist]        = useState(false);
   const [useSecondaryVibe, setUseSecondaryVibe] = useState(false);
 
   // Custom Audio Player State
@@ -749,6 +751,8 @@ export default function App() {
           use_secondary_vibe: finalSecondary,
           override_genre: finalGenre.trim() || null,
           override_artist: finalArtist.trim() || null,
+          similar_artist: similarArtist.trim() || null,
+          lock_artist: lockArtist && !!finalArtist.trim(),
           language: language !== "Any" ? language : null,
           dismiss_detected_artist: artistUnlocked,
         }),
@@ -1034,6 +1038,23 @@ export default function App() {
                     <div style={{ flex: 1, minWidth: "160px" }}>
                        <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Genre Filter</label>
                        <input type="text" value={overrideGenre} onChange={e => setOverrideGenre(e.target.value)} placeholder="e.g. shoegaze" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
+                    {/* ── SIMILAR TO ARTIST ── */}
+                    <div style={{ width: "100%" }}>
+                      <label style={{ fontSize: "10px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Similar To Artist</label>
+                      <input type="text" value={similarArtist} onChange={e => setSimilarArtist(e.target.value)} placeholder="e.g. Nujabes, Mac Miller" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s", boxSizing: "border-box" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
+                    </div>
+                    {/* ── LOCK ARTIST TOGGLE ── */}
+                    {overrideArtist.trim() && (
+                      <div style={{ width: "100%", display: "flex", alignItems: "center", gap: "10px" }}>
+                        <button onClick={() => setLockArtist(l => !l)} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "7px 14px", background: lockArtist ? "rgba(217,119,6,0.2)" : "rgba(0,0,0,0.3)", border: `1px solid ${lockArtist ? "rgba(217,119,6,0.6)" : "rgba(120,80,20,0.35)"}`, borderRadius: "6px", color: lockArtist ? "#d97706" : "rgba(180,140,80,0.5)", fontSize: "11px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em", cursor: "pointer", transition: "all 0.2s" }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">{lockArtist ? <><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> : <><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>}</svg>
+                          {lockArtist ? "ARTIST LOCKED" : "LOCK ARTIST"}
+                        </button>
+                        <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", fontStyle: "italic" }}>
+                          {lockArtist ? `Only tracks by ${overrideArtist}` : "Mix with similar pool"}
+                        </span>
+                      </div>
+                    )}
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "18px", cursor: "pointer", width: "100%" }} onClick={() => setUseSecondaryVibe(!useSecondaryVibe)}>
