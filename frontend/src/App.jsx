@@ -26,6 +26,10 @@ const IconThumbDown = () => <svg width="14" height="14" viewBox="0 0 24 24" fill
 /* NEW: Library icon for the playlist panel button */
 const IconLibrary = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-8 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>;
 const IconBookmark = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>;
+const IconBrain    = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.88A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.88A2.5 2.5 0 0 0 14.5 2Z"/></svg>;
+const IconHistory  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>;
+const IconStar     = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
+const IconHelpCircle = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>;
 
 /* ─── WAVEFORM VISUALISER ────────────────────────────────────── */
 function WaveformBars({ active, count = 28 }) {
@@ -513,9 +517,9 @@ function GlobalStyles() {
         .app-result-stat-grid { grid-template-columns: 1fr 1fr !important; }
 
         .app-track-row { flex-wrap: wrap !important; gap: 8px !important; padding: 12px 14px !important; }
-        .app-track-meta { flex: 1 1 100% !important; order: -1 !important; }
+        .app-track-meta { flex: 1 1 calc(100% - 60px) !important; order: -1 !important; min-width: 0 !important; overflow: hidden !important; }
         .app-track-art { width: 36px !important; height: 36px !important; flex-shrink: 0 !important; }
-        .app-track-actions { width: 100% !important; justify-content: flex-end !important; gap: 5px !important; flex-wrap: wrap !important; }
+        .app-track-actions { width: 100% !important; justify-content: flex-end !important; gap: 5px !important; flex-wrap: wrap !important; flex-shrink: 0 !important; }
         .app-track-actions button,
         .app-track-actions a { padding: 6px 10px !important; font-size: 9px !important; }
 
@@ -606,8 +610,6 @@ export default function App() {
   const [showOverrides, setShowOverrides]     = useState(false);
   const [overrideArtist, setOverrideArtist]   = useState("");
   const [overrideGenre, setOverrideGenre]     = useState("");
-  const [similarArtist, setSimilarArtist]     = useState("");
-  const [lockArtist,    setLockArtist]        = useState(false);
   const [useSecondaryVibe, setUseSecondaryVibe] = useState(false);
 
   // Custom Audio Player State
@@ -625,7 +627,20 @@ export default function App() {
 
   // ── NEW: Playlist Panel State ─────────────────────────────────
   const [showPlaylistPanel, setShowPlaylistPanel] = useState(false);
-  // (playlistSaveCount removed — PlaylistPanel manages its own refresh internally)
+  // Increments when a playlist is saved — triggers PlaylistPanel to refresh its list
+  const [playlistSaveCount, setPlaylistSaveCount] = useState(0);
+
+  // PHASE 8: Personalisation State
+  const [tasteProfile, setTasteProfile] = useState({
+    likedArtists: {},
+    dislikedArtists: {},
+    likedVibes: {},
+    suppressedTracks: {},
+    totalSignals: 0,
+  });
+  const [showTasteProfile, setShowTasteProfile] = useState(false);
+  const [vibeHistory, setVibeHistory] = useState([]);
+  const [hoveredTrackIdx, setHoveredTrackIdx] = useState(null);
 
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
@@ -751,8 +766,6 @@ export default function App() {
           use_secondary_vibe: finalSecondary,
           override_genre: finalGenre.trim() || null,
           override_artist: finalArtist.trim() || null,
-          similar_artist: similarArtist.trim() || null,
-          lock_artist: lockArtist && !!finalArtist.trim(),
           language: language !== "Any" ? language : null,
           dismiss_detected_artist: artistUnlocked,
         }),
@@ -768,6 +781,14 @@ export default function App() {
       const data = await res.json();
       setResult(data);
       setArtistUnlocked(false);
+      // PHASE 8: Record vibe history
+      if (data.dominant_vibe && data.dominant_vibe !== 'Direct Search') {
+        setVibeHistory(prev => {
+          const entry = { vibe: data.dominant_vibe, prompt: prompt.trim(), timestamp: Date.now() };
+          const filtered = prev.filter(h => h.vibe !== data.dominant_vibe);
+          return [entry, ...filtered].slice(0, 8);
+        });
+      }
       setIsSkeletonLoading(false);
       setTimeout(() => { document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }); }, 150);
     } catch (err) { setError(err.message); setIsSkeletonLoading(false); }
@@ -798,6 +819,25 @@ export default function App() {
       setFeedbackToast(true);
       clearTimeout(feedbackToastTimer.current);
       feedbackToastTimer.current = setTimeout(() => setFeedbackToast(false), 2200);
+
+      // PHASE 8: Update session taste profile
+      setTasteProfile(prev => {
+        const updated = { ...prev, totalSignals: prev.totalSignals + 1 };
+        const artist = track.artist;
+        if (newSignal === 1) {
+          updated.likedArtists = { ...prev.likedArtists, [artist]: (prev.likedArtists[artist] || 0) + 1 };
+          if (result?.dominant_vibe) {
+            updated.likedVibes = { ...prev.likedVibes, [result.dominant_vibe]: (prev.likedVibes[result.dominant_vibe] || 0) + 1 };
+          }
+        } else if (newSignal === -1) {
+          const dislikes = (prev.dislikedArtists[artist] || 0) + 1;
+          updated.dislikedArtists = { ...prev.dislikedArtists, [artist]: dislikes };
+          // Auto-suppress after 3 downvotes on same track
+          const trackDislikes = (prev.suppressedTracks[key] || 0) + 1;
+          updated.suppressedTracks = { ...prev.suppressedTracks, [key]: trackDislikes };
+        }
+        return updated;
+      });
     }
 
     try {
@@ -1038,23 +1078,6 @@ export default function App() {
                     <div style={{ flex: 1, minWidth: "160px" }}>
                        <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Genre Filter</label>
                        <input type="text" value={overrideGenre} onChange={e => setOverrideGenre(e.target.value)} placeholder="e.g. shoegaze" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
-                    {/* ── SIMILAR TO ARTIST ── */}
-                    <div style={{ width: "100%" }}>
-                      <label style={{ fontSize: "10px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Similar To Artist</label>
-                      <input type="text" value={similarArtist} onChange={e => setSimilarArtist(e.target.value)} placeholder="e.g. Nujabes, Mac Miller" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s", boxSizing: "border-box" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
-                    </div>
-                    {/* ── LOCK ARTIST TOGGLE ── */}
-                    {overrideArtist.trim() && (
-                      <div style={{ width: "100%", display: "flex", alignItems: "center", gap: "10px" }}>
-                        <button onClick={() => setLockArtist(l => !l)} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "7px 14px", background: lockArtist ? "rgba(217,119,6,0.2)" : "rgba(0,0,0,0.3)", border: `1px solid ${lockArtist ? "rgba(217,119,6,0.6)" : "rgba(120,80,20,0.35)"}`, borderRadius: "6px", color: lockArtist ? "#d97706" : "rgba(180,140,80,0.5)", fontSize: "11px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em", cursor: "pointer", transition: "all 0.2s" }}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">{lockArtist ? <><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> : <><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>}</svg>
-                          {lockArtist ? "ARTIST LOCKED" : "LOCK ARTIST"}
-                        </button>
-                        <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", fontStyle: "italic" }}>
-                          {lockArtist ? `Only tracks by ${overrideArtist}` : "Mix with similar pool"}
-                        </span>
-                      </div>
-                    )}
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "18px", cursor: "pointer", width: "100%" }} onClick={() => setUseSecondaryVibe(!useSecondaryVibe)}>
@@ -1148,6 +1171,11 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", paddingLeft: "4px" }}>
                 <div style={{ width: "24px", height: "1px", background: `${activeColor}88` }} />
                 <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)" }}>Analysis Complete</span>
+                {tasteProfile.totalSignals >= 2 && (
+                  <span style={{ fontSize: "9px", display: "flex", alignItems: "center", gap: "4px", padding: "2px 8px", background: `${activeColor}11`, border: `1px solid ${activeColor}33`, borderRadius: "20px", color: activeColor, fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em", flexShrink: 0 }}>
+                    <IconBrain /> PERSONALISED
+                  </span>
+                )}
                 <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg, ${activeColor}66, transparent)` }} />
               </div>
 
@@ -1397,28 +1425,73 @@ export default function App() {
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                       {result.tracks.map((track, i) => {
                         const isPlaying = playingTrack === track.preview_url;
+                        const isSuppressed = (tasteProfile.suppressedTracks[`${track.title}|${track.artist}`] || 0) >= 3;
+                        const isLikedArtist = (tasteProfile.likedArtists[track.artist] || 0) >= 2;
+                        const isHovered = hoveredTrackIdx === i;
+                        // Build "why this track" reason string
+                        const whyReasons = [];
+                        if (isLikedArtist) whyReasons.push(`You liked ${track.artist} before`);
+                        if (track.vibe_score) whyReasons.push(`Vibe match: ${Math.round(track.vibe_score * 100)}%`);
+                        if (result.detected_artist) whyReasons.push(`Artist locked: ${result.detected_artist}`);
+                        if (track.mood_match) whyReasons.push(track.mood_match);
                         return (
-                          <div key={i} className="app-track-row" style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "14px",
-                            padding: "14px 18px", background: "rgba(8,5,2,0.6)",
-                            border: `1px solid ${isPlaying ? activeColor : 'rgba(120,80,20,0.25)'}`,
-                            borderRadius: "10px", transition: "all 0.2s"
-                          }}>
+                          <div
+                            key={i}
+                            className="app-track-row"
+                            onMouseEnter={() => setHoveredTrackIdx(i)}
+                            onMouseLeave={() => setHoveredTrackIdx(null)}
+                            style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "nowrap", gap: "10px",
+                              padding: "12px 16px", background: isSuppressed ? "rgba(60,10,10,0.4)" : "rgba(8,5,2,0.6)",
+                              border: `1px solid ${isPlaying ? activeColor : isLikedArtist ? `${activeColor}55` : isSuppressed ? 'rgba(180,40,40,0.2)' : 'rgba(120,80,20,0.25)'}`,
+                              borderRadius: "10px", transition: "all 0.2s", minHeight: 0, position: "relative",
+                            }}>
+                            {/* PHASE 8: Personalisation badges */}
+                            {isLikedArtist && (
+                              <div style={{ position: "absolute", top: 6, right: 8, display: "flex", gap: "4px", alignItems: "center" }}>
+                                <span style={{ fontSize: "9px", color: activeColor, fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em", opacity: 0.8 }}>LIKED ARTIST</span>
+                                <span style={{ color: "#fbbf24" }}><IconStar /></span>
+                              </div>
+                            )}
+                            {isSuppressed && (
+                              <div style={{ position: "absolute", top: 6, right: 8 }}>
+                                <span style={{ fontSize: "9px", color: "#f87171", fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em" }}>AUTO-SUPPRESSED</span>
+                              </div>
+                            )}
+                            {/* PHASE 8: Why this track tooltip */}
+                            {isHovered && whyReasons.length > 0 && (
+                              <div style={{
+                                position: "absolute", bottom: "calc(100% + 6px)", left: "16px", zIndex: 50,
+                                background: "rgba(12,7,2,0.95)", border: `1px solid ${activeColor}44`,
+                                borderRadius: "8px", padding: "8px 12px", minWidth: "180px", maxWidth: "280px",
+                                boxShadow: `0 4px 20px rgba(0,0,0,0.8), 0 0 10px ${activeColor}22`,
+                                pointerEvents: "none",
+                              }}>
+                                <div style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "6px", display: "flex", alignItems: "center", gap: "5px" }}>
+                                  <IconHelpCircle /> Why this track?
+                                </div>
+                                {whyReasons.map((r, ri) => (
+                                  <div key={ri} style={{ fontSize: "11px", color: "rgba(220,190,140,0.85)", lineHeight: "1.5", display: "flex", alignItems: "center", gap: "5px" }}>
+                                    <span style={{ color: activeColor, fontSize: "8px" }}>▸</span> {r}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             {/* Track Info & Cover Art */}
-                            <div className="app-track-meta" style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                            <div className="app-track-meta" style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
                               {track.cover_art ? (
-                                <img src={track.cover_art} alt="Cover" className="app-track-art" style={{ width: 44, height: 44, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.5)', flexShrink: 0 }} />
+                                <img src={track.cover_art} alt="Cover" className="app-track-art" style={{ width: 44, height: 44, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.5)', flexShrink: 0, objectFit: "cover" }} />
                               ) : (
                                 <div className="app-track-art" style={{ width: 44, height: 44, borderRadius: 6, background: 'rgba(120,80,20,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IconDisc /></div>
                               )}
-                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
-                                <span style={{ fontSize: "15px", fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.title}</span>
-                                <span style={{ fontSize: "11px", color: "rgba(180,140,80,0.7)", letterSpacing: "0.05em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.artist}</span>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "3px", minWidth: 0, flex: 1, overflow: "hidden" }}>
+                                <span style={{ fontSize: "14px", fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{track.title}</span>
+                                <span style={{ fontSize: "11px", color: "rgba(180,140,80,0.7)", letterSpacing: "0.05em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{track.artist}</span>
                               </div>
                             </div>
 
                             {/* Track Actions */}
-                            <div className="app-track-actions" style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                            <div className="app-track-actions" style={{ display: "flex", gap: "6px", alignItems: "center", flexShrink: 0, flexWrap: "nowrap" }}>
                               {(() => {
                                 const fbKey = `${track.title}|${track.artist}`;
                                 const given = feedbackGiven[fbKey];
@@ -1513,8 +1586,8 @@ export default function App() {
                     <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px", width: "100%" }} />
 
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                      {result.matched_keywords.length > 0
-                        ? result.matched_keywords.map((kw, idx) => (
+                      {(result.matched_keywords || []).length > 0
+                        ? (result.matched_keywords || []).map((kw, idx) => (
                             <span
                               key={idx}
                               style={{
@@ -1537,6 +1610,101 @@ export default function App() {
                 </div>
               )}
 
+              {/* PHASE 8: TASTE PROFILE PANEL */}
+              {tasteProfile.totalSignals >= 2 && (
+                <div className="panel-card" style={{ padding: "20px", marginTop: "16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ color: activeColor }}><IconBrain /></span>
+                      <span style={{ fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.6)", fontFamily: "'DM Mono', monospace" }}>Session Taste Profile</span>
+                    </div>
+                    <button
+                      onClick={() => setShowTasteProfile(p => !p)}
+                      className="dial-btn"
+                      style={{ background: "none", border: `1px solid rgba(120,80,20,0.3)`, borderRadius: "4px", padding: "3px 8px", fontSize: "9px", color: "rgba(180,140,80,0.5)", fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em", cursor: "pointer" }}
+                    >
+                      {showTasteProfile ? "HIDE" : "SHOW"}
+                    </button>
+                  </div>
+                  <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "14px" }} />
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                    <span style={{ fontSize: "10px", color: "rgba(120,80,20,0.6)", fontFamily: "'DM Mono', monospace" }}>{tasteProfile.totalSignals} signal{tasteProfile.totalSignals !== 1 ? "s" : ""} logged</span>
+                    {Object.entries(tasteProfile.likedArtists).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([artist, count]) => (
+                      <span key={artist} style={{ padding: "3px 10px", background: `${activeColor}11`, border: `1px solid ${activeColor}33`, borderRadius: "20px", fontSize: "10px", color: activeColor, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "4px" }}>
+                        <IconStar /> {artist} ×{count}
+                      </span>
+                    ))}
+                    {Object.keys(tasteProfile.suppressedTracks).filter(k => tasteProfile.suppressedTracks[k] >= 3).length > 0 && (
+                      <span style={{ padding: "3px 10px", background: "rgba(180,40,40,0.1)", border: "1px solid rgba(180,40,40,0.25)", borderRadius: "20px", fontSize: "10px", color: "#f87171", fontFamily: "'DM Mono', monospace" }}>
+                        {Object.keys(tasteProfile.suppressedTracks).filter(k => tasteProfile.suppressedTracks[k] >= 3).length} suppressed
+                      </span>
+                    )}
+                  </div>
+                  {showTasteProfile && (
+                    <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {Object.keys(tasteProfile.likedVibes).length > 0 && (
+                        <div>
+                          <div style={{ fontSize: "9px", color: "rgba(120,80,20,0.5)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "6px" }}>Favoured Vibes</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                            {Object.entries(tasteProfile.likedVibes).sort((a,b)=>b[1]-a[1]).map(([vibe, count]) => (
+                              <span key={vibe} style={{ padding: "3px 10px", background: "rgba(120,80,20,0.12)", border: "1px solid rgba(180,140,80,0.2)", borderRadius: "20px", fontSize: "10px", color: "rgba(220,190,140,0.8)", fontFamily: "'DM Mono', monospace" }}>
+                                {vibe} ({count})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {Object.entries(tasteProfile.dislikedArtists).filter(([,v])=>v>=2).length > 0 && (
+                        <div>
+                          <div style={{ fontSize: "9px", color: "rgba(120,80,20,0.5)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "6px" }}>Low Signal Artists</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                            {Object.entries(tasteProfile.dislikedArtists).filter(([,v])=>v>=2).map(([artist, count]) => (
+                              <span key={artist} style={{ padding: "3px 10px", background: "rgba(60,10,10,0.2)", border: "1px solid rgba(180,40,40,0.2)", borderRadius: "20px", fontSize: "10px", color: "rgba(180,80,80,0.7)", fontFamily: "'DM Mono', monospace" }}>
+                                {artist} (−{count})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setTasteProfile({ likedArtists: {}, dislikedArtists: {}, likedVibes: {}, suppressedTracks: {}, totalSignals: 0 })}
+                        className="dial-btn"
+                        style={{ alignSelf: "flex-start", background: "none", border: "1px solid rgba(120,80,20,0.25)", borderRadius: "4px", padding: "4px 10px", fontSize: "9px", color: "rgba(120,80,20,0.6)", fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em", cursor: "pointer" }}
+                      >
+                        RESET PROFILE
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* PHASE 8: VIBE HISTORY CHIPS */}
+              {vibeHistory.length >= 2 && (
+                <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "9px", color: "rgba(120,80,20,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: "5px" }}>
+                    <IconHistory /> Recent
+                  </span>
+                  {vibeHistory.slice(0, 6).map((h, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => { setPrompt(h.prompt); }}
+                      className="dial-btn"
+                      title={`Re-run: "${h.prompt}"`}
+                      style={{
+                        padding: "3px 10px", background: "rgba(20,12,4,0.6)",
+                        border: `1px solid ${vibeColors[h.vibe] || 'rgba(120,80,20,0.3)'}44`,
+                        borderRadius: "20px", fontSize: "10px",
+                        color: vibeColors[h.vibe] || "rgba(180,140,80,0.6)",
+                        fontFamily: "'DM Mono', monospace", cursor: "pointer",
+                        opacity: idx === 0 ? 1 : 0.6 - idx * 0.05,
+                      }}
+                    >
+                      {h.vibe}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "28px", opacity: 0.4 }}>
                 <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: activeColor }} /></div>
                 <div style={{ flex: 1, height: "6px", borderRadius: "3px", background: "rgba(80,50,10,0.4)", overflow: "hidden" }}><div style={{ height: "100%", width: "100%", background: `repeating-linear-gradient(90deg, ${activeColor}33 0px, ${activeColor}33 2px, transparent 2px, transparent 10px)` }} /></div>
@@ -1556,11 +1724,10 @@ export default function App() {
           onClose={() => setShowPlaylistPanel(false)}
           currentResult={result}
           currentPrompt={prompt}
-          onLoadPlaylist={(tracks) => {
-            setResult(prev => prev ? { ...prev, tracks } : prev);
-            setShowPlaylistPanel(false);
-          }}
-          onReRunPrompt={(p) => { setPrompt(p); setShowPlaylistPanel(false); }}
+          onLoadPrompt={(p) => { setPrompt(p); setShowPlaylistPanel(false); }}
+          onPlaylistSaved={() => setPlaylistSaveCount(c => c + 1)}
+          saveCount={playlistSaveCount}
+          activeColor={activeColor}
         />
       )}
     </>
