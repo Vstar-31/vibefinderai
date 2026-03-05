@@ -84,8 +84,9 @@ const TOAST_DURATION = 2000;
 /* ═══════════════════════════════════════════════════════════════════
    SAVE MODAL
 ═══════════════════════════════════════════════════════════════════ */
-function SaveModal({ result, prompt, token, buildApiUrl, onSaved, onClose }) {
-  const [name, setName]         = useState(
+function SaveModal({ result, prompt, token, buildApiUrl, onSaved, onClose, filteredTracks }) {
+  const tracksToSave = filteredTracks || result?.tracks || [];
+  const [name, setName] = useState(
     result?.dominant_vibe
       ? `${result.dominant_vibe.charAt(0).toUpperCase() + result.dominant_vibe.slice(1)} Mix`
       : "My Playlist"
@@ -109,7 +110,7 @@ function SaveModal({ result, prompt, token, buildApiUrl, onSaved, onClose }) {
           prompt:       prompt || null,
           dominant_vibe: result?.dominant_vibe || null,
           language:     result?.language || null,
-          tracks:       result?.tracks || [],
+          tracks:       tracksToSave,
           is_public:    isPublic,
         }),
       });
@@ -132,7 +133,7 @@ function SaveModal({ result, prompt, token, buildApiUrl, onSaved, onClose }) {
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
           <div>
             <div style={S.modalTitle}>Save Playlist</div>
-            <div style={S.modalSub}>{result?.tracks?.length || 0} tracks • {result?.dominant_vibe || "vibe"}</div>
+            <div style={S.modalSub}>{tracksToSave.length} tracks • {result?.dominant_vibe || "vibe"}{filteredTracks ? " · custom selection" : ""}</div>
           </div>
           <button onClick={onClose} style={S.iconBtn}>{Ico.x}</button>
         </div>
@@ -378,6 +379,8 @@ export default function PlaylistPanel({
   onClose,
   onLoadPlaylist,
   onReRunPrompt,
+  selectedTracks,   // Set of "title|artist" keys — if non-empty, save only these
+  activeColor,
 }) {
   const [tab,         setTab]         = useState("playlists");   // "playlists" | "history"
   const [playlists,   setPlaylists]   = useState([]);
@@ -385,6 +388,11 @@ export default function PlaylistPanel({
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState("");
   const [showSave,    setShowSave]    = useState(false);
+
+  // If caller passed a selection set, filter currentResult down to only those tracks
+  const filteredTracks = (selectedTracks && selectedTracks.size > 0)
+    ? (currentResult?.tracks || []).filter(t => selectedTracks.has(`${t.title}|${t.artist}`))
+    : null;
   const [saveToast,   setSaveToast]   = useState(false);
   const saveToastRef                  = useRef(null);
 
@@ -519,9 +527,9 @@ export default function PlaylistPanel({
           <div style={{ padding:"0 20px 16px" }}>
             <button style={S.saveCurrentBtn} onClick={() => setShowSave(true)}>
               {Ico.save}
-              Save current playlist
+              {filteredTracks ? `Save ${filteredTracks.length} selected tracks` : "Save current playlist"}
               <span style={{ marginLeft:"auto", fontSize:10, opacity:0.5 }}>
-                {currentResult.tracks.length} tracks
+                {filteredTracks ? `${filteredTracks.length} / ${currentResult.tracks.length}` : `${currentResult.tracks.length} tracks`}
               </span>
             </button>
           </div>
@@ -614,6 +622,7 @@ export default function PlaylistPanel({
           buildApiUrl={buildApiUrl}
           onSaved={handleSaved}
           onClose={() => setShowSave(false)}
+          filteredTracks={filteredTracks}
         />
       )}
     </>

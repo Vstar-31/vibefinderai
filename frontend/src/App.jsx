@@ -642,6 +642,15 @@ export default function App() {
   const [vibeHistory, setVibeHistory] = useState([]);
   const [hoveredTrackIdx, setHoveredTrackIdx] = useState(null);
 
+  // ── Track checklist selection (manual playlist curation) ──────
+  const [selectedTracks, setSelectedTracks] = useState(new Set()); // "title|artist" keys
+  const [selectionMode, setSelectionMode]   = useState(false);
+
+  // ── Remove track + retry ──────────────────────────────────────
+  const [removedTracks, setRemovedTracks]   = useState([]);
+  const [retryingTrack, setRetryingTrack]   = useState(null);
+  const retryToastTimer = useRef(null);
+
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
     euphoric: '#e879f9', soulful: '#fbbf24', retro: '#818cf8', dreamy: '#c084fc', cinematic: '#fb923c',
@@ -768,6 +777,10 @@ export default function App() {
           override_artist: finalArtist.trim() || null,
           language: language !== "Any" ? language : null,
           dismiss_detected_artist: artistUnlocked,
+          excluded_tracks: removedTracks.length > 0 ? removedTracks : null,
+          liked_artists: Object.entries(tasteProfile.likedArtists)
+            .filter(([, count]) => count >= 2)
+            .map(([artist]) => artist),
         }),
       });
 
@@ -790,6 +803,8 @@ export default function App() {
         });
       }
       setIsSkeletonLoading(false);
+      setSelectedTracks(new Set());
+      setSelectionMode(false);
       setTimeout(() => { document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }); }, 150);
     } catch (err) { setError(err.message); setIsSkeletonLoading(false); }
     finally { setLoading(false); setLoadReason(null); }
@@ -806,6 +821,23 @@ export default function App() {
       setError("");
       setFeedbackGiven({});
       setArtistUnlocked(false);
+      setSelectedTracks(new Set());
+      setSelectionMode(false);
+      setRemovedTracks([]);
+  };
+
+  // REMOVE TRACK + PULL REPLACEMENT
+  const removeTrackAndRetry = async (track) => {
+    const key = `${track.title}|${track.artist}`;
+    setResult(prev => prev ? {
+      ...prev,
+      tracks: prev.tracks.filter(t => `${t.title}|${t.artist}` !== key)
+    } : prev);
+    setRemovedTracks(prev => [...prev, { title: track.title, artist: track.artist }]);
+    clearTimeout(retryToastTimer.current);
+    setRetryingTrack(track.title);
+    retryToastTimer.current = setTimeout(() => setRetryingTrack(null), 2800);
+    await submitFeedback(track, 0, -1);
   };
 
   // FEEDBACK SUBMISSION
@@ -1323,20 +1355,47 @@ export default function App() {
                 <div className="panel-card screws" style={{ padding: "24px", marginTop: "16px" }}>
                   <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(120,80,20,0.015) 10px, rgba(120,80,20,0.015) 11px)", pointerEvents: "none", borderRadius: "16px" }} />
                   <div style={{ position: "relative" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         <IconDisc />
                         <span style={S.cardLabel}>Generated Playlist</span>
+                        {tasteProfile.totalSignals >= 2 && (
+                          <span style={{ fontSize: "9px", padding: "2px 7px", borderRadius: "4px", background: `${activeColor}18`, border: `1px solid ${activeColor}44`, color: activeColor, fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em" }}>
+                            <IconBrain /> PERSONALISED
+                          </span>
+                        )}
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>{result.tracks.length} TRACKS</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>
+                          {selectionMode && selectedTracks.size > 0
+                            ? `${selectedTracks.size} / ${result.tracks.length} SELECTED`
+                            : `${result.tracks.length} TRACKS`}
+                        </span>
 
-                        {/* ── NEW: SAVE PLAYLIST BUTTON ── */}
+                        {/* Select mode toggle */}
+                        <button
+                          onClick={() => { setSelectionMode(m => !m); setSelectedTracks(new Set()); }}
+                          className="dial-btn"
+                          title={selectionMode ? "Exit selection mode" : "Select tracks to save"}
+                          style={{
+                            display: "flex", alignItems: "center", gap: "5px",
+                            padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
+                            fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+                            textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s",
+                            background: selectionMode ? `${activeColor}22` : "rgba(120,80,20,0.1)",
+                            border: `1px solid ${selectionMode ? activeColor : "rgba(120,80,20,0.3)"}`,
+                            color: selectionMode ? activeColor : "rgba(180,140,80,0.55)",
+                          }}
+                        >
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                          {selectionMode ? "Done" : "Select"}
+                        </button>
+
                         {token && (
                           <button
                             onClick={() => setShowPlaylistPanel(true)}
                             className="dial-btn"
-                            title="Save this playlist"
+                            title={selectionMode && selectedTracks.size > 0 ? `Save ${selectedTracks.size} selected` : "Save this playlist"}
                             style={{
                               display: "flex", alignItems: "center", gap: "5px",
                               padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
@@ -1344,15 +1403,20 @@ export default function App() {
                               textTransform: "uppercase", cursor: "pointer",
                               background: "rgba(217,119,6,0.12)",
                               border: "1px solid rgba(217,119,6,0.35)",
-                              color: "#d97706",
-                              transition: "all 0.2s",
+                              color: "#d97706", transition: "all 0.2s",
                             }}
                           >
-                            <IconBookmark /> Save
+                            <IconBookmark />
+                            {selectionMode && selectedTracks.size > 0 ? `Save (${selectedTracks.size})` : "Save"}
                           </button>
                         )}
 
-                        <CopyPlaylistButton tracks={result.tracks} activeColor={activeColor} />
+                        <CopyPlaylistButton
+                          tracks={selectionMode && selectedTracks.size > 0
+                            ? result.tracks.filter(t => selectedTracks.has(`${t.title}|${t.artist}`))
+                            : result.tracks}
+                          activeColor={activeColor}
+                        />
                         <a
                           href={`https://open.spotify.com/search/${encodeURIComponent(
                             result.tracks.slice(0, 1).map(t => `${t.title} ${t.artist}`).join(" ")
@@ -1385,6 +1449,32 @@ export default function App() {
                         display: "flex", alignItems: "center", gap: "6px",
                       }}>
                         <span style={{ fontSize: "12px" }}>✓</span> Noted — improving future results
+                      </div>
+                    )}
+
+                    {/* Remove + retry toast */}
+                    {retryingTrack && (
+                      <div className="animate-in" style={{
+                        fontSize: "10px", color: "#fb923c", fontFamily: "'DM Mono', monospace",
+                        letterSpacing: "0.08em", marginBottom: "10px", marginTop: "-6px",
+                        display: "flex", alignItems: "center", gap: "6px",
+                      }}>
+                        <span style={{ fontSize: "12px" }}>✕</span>
+                        Removed <strong style={{ color: "#fde68a" }}>{retryingTrack}</strong> — run again to pull a replacement
+                      </div>
+                    )}
+
+                    {/* Selection mode hint */}
+                    {selectionMode && (
+                      <div style={{
+                        fontSize: "10px", color: activeColor, fontFamily: "'DM Mono', monospace",
+                        letterSpacing: "0.08em", marginBottom: "10px", marginTop: "-4px",
+                        display: "flex", alignItems: "center", gap: "6px",
+                        padding: "6px 10px", background: `${activeColor}0d`,
+                        border: `1px solid ${activeColor}30`, borderRadius: "6px",
+                      }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        Tap tracks to select — only selected tracks will be saved
                       </div>
                     )}
 
@@ -1424,10 +1514,12 @@ export default function App() {
 
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                       {result.tracks.map((track, i) => {
-                        const isPlaying = playingTrack === track.preview_url;
-                        const isSuppressed = (tasteProfile.suppressedTracks[`${track.title}|${track.artist}`] || 0) >= 3;
+                        const trackKey    = `${track.title}|${track.artist}`;
+                        const isPlaying   = playingTrack === track.preview_url;
+                        const isSelected  = selectedTracks.has(trackKey);
+                        const isSuppressed  = (tasteProfile.suppressedTracks[trackKey] || 0) >= 3;
                         const isLikedArtist = (tasteProfile.likedArtists[track.artist] || 0) >= 2;
-                        const isHovered = hoveredTrackIdx === i;
+                        const isHovered   = hoveredTrackIdx === i;
                         // Build "why this track" reason string
                         const whyReasons = [];
                         if (isLikedArtist) whyReasons.push(`You liked ${track.artist} before`);
@@ -1436,16 +1528,37 @@ export default function App() {
                         if (track.mood_match) whyReasons.push(track.mood_match);
                         return (
                           <div
-                            key={i}
+                            key={trackKey}
                             className="app-track-row"
                             onMouseEnter={() => setHoveredTrackIdx(i)}
                             onMouseLeave={() => setHoveredTrackIdx(null)}
                             style={{
-                              display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "nowrap", gap: "10px",
-                              padding: "12px 16px", background: isSuppressed ? "rgba(60,10,10,0.4)" : "rgba(8,5,2,0.6)",
-                              border: `1px solid ${isPlaying ? activeColor : isLikedArtist ? `${activeColor}55` : isSuppressed ? 'rgba(180,40,40,0.2)' : 'rgba(120,80,20,0.25)'}`,
+                              display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap",
+                              padding: "12px 16px",
+                              background: isSelected ? `${activeColor}0d` : isSuppressed ? "rgba(60,10,10,0.4)" : "rgba(8,5,2,0.6)",
+                              border: `1px solid ${isPlaying ? activeColor : isSelected ? activeColor : isLikedArtist ? `${activeColor}55` : isSuppressed ? 'rgba(180,40,40,0.2)' : 'rgba(120,80,20,0.25)'}`,
                               borderRadius: "10px", transition: "all 0.2s", minHeight: 0, position: "relative",
                             }}>
+
+                            {/* ── CHECKBOX (selection mode only) ── */}
+                            {selectionMode && (
+                              <button
+                                onClick={() => setSelectedTracks(prev => {
+                                  const next = new Set(prev);
+                                  next.has(trackKey) ? next.delete(trackKey) : next.add(trackKey);
+                                  return next;
+                                })}
+                                style={{
+                                  flexShrink: 0, width: 20, height: 20, borderRadius: 5,
+                                  border: `2px solid ${isSelected ? activeColor : "rgba(160,110,30,0.4)"}`,
+                                  background: isSelected ? activeColor : "transparent",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  cursor: "pointer", transition: "all 0.15s",
+                                }}
+                              >
+                                {isSelected && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                              </button>
+                            )}
                             {/* PHASE 8: Personalisation badges */}
                             {isLikedArtist && (
                               <div style={{ position: "absolute", top: 6, right: 8, display: "flex", gap: "4px", alignItems: "center" }}>
@@ -1478,7 +1591,15 @@ export default function App() {
                               </div>
                             )}
                             {/* Track Info & Cover Art */}
-                            <div className="app-track-meta" style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
+                            <div
+                              className="app-track-meta"
+                              style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 0", minWidth: 0, overflow: "hidden", cursor: selectionMode ? "pointer" : "default" }}
+                              onClick={selectionMode ? () => setSelectedTracks(prev => {
+                                const next = new Set(prev);
+                                next.has(trackKey) ? next.delete(trackKey) : next.add(trackKey);
+                                return next;
+                              }) : undefined}
+                            >
                               {track.cover_art ? (
                                 <img src={track.cover_art} alt="Cover" className="app-track-art" style={{ width: 44, height: 44, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.5)', flexShrink: 0, objectFit: "cover" }} />
                               ) : (
@@ -1564,6 +1685,25 @@ export default function App() {
                               >
                                 Spotify
                               </a>
+
+                              {/* ── REMOVE BUTTON ── */}
+                              {!selectionMode && (
+                                <button
+                                  onClick={() => removeTrackAndRetry(track)}
+                                  className="dial-btn"
+                                  title="Remove this track — run again to get a replacement"
+                                  style={{
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                                    border: "1px solid rgba(248,113,113,0.25)",
+                                    background: "rgba(248,113,113,0.07)",
+                                    color: "rgba(248,113,113,0.55)",
+                                    cursor: "pointer", transition: "all 0.15s",
+                                  }}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
@@ -1728,6 +1868,7 @@ export default function App() {
           onPlaylistSaved={() => setPlaylistSaveCount(c => c + 1)}
           saveCount={playlistSaveCount}
           activeColor={activeColor}
+          selectedTracks={selectionMode && selectedTracks.size > 0 ? selectedTracks : null}
         />
       )}
     </>

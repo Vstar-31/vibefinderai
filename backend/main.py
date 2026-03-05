@@ -948,7 +948,9 @@ class VibeRequest(BaseModel):
     track_limit: int = 5
     use_secondary_vibe: bool = False
     override_genre: str | None = None
-    override_artist: str | None = None
+    override_artist:   str | None = None
+    excluded_tracks:   list[dict] | None = None  # tracks to exclude (remove + retry)
+    liked_artists:     list[str]  | None = None  # Phase 8: boost these artists in scoring
     dismiss_detected_artist: bool = False  # User dismissed the artist lock tag — skip entity injection
 
 class TrackInfo(BaseModel):
@@ -1282,6 +1284,17 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
     }
     vibe_profile = _VIBE_AUDIO_PROFILE.get(dominant_vibe, {})
 
+    # ── Phase 8: build exclusion + boost sets from request ────────────────
+    _excluded_keys: set[str] = set()
+    for et in (request.excluded_tracks or []):
+        _excluded_keys.add(
+            f"{(et.get('title','') or '').strip().lower()}|{(et.get('artist','') or '').strip().lower()}"
+        )
+
+    _liked_artist_set: set[str] = {
+        a.strip().lower() for a in (request.liked_artists or [])
+    }
+
     # ── DB-BASED SPEECHINESS JUNK FILTER ───────────────────────────────────────
     # Tracks with speechiness > 0.65 in TrackFeatureCache are spoken word / podcast
     # content that snuck through Last.fm. Filter them out before scoring loop.
@@ -1300,6 +1313,10 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
         title = t.get("title", "").lower()
         artist = t.get("artist", "").lower()
         score = 0.0
+
+        # ── Phase 8: skip explicitly removed tracks ───────────────────────
+        if _excluded_keys and f"{title}|{artist}" in _excluded_keys:
+            continue
 
         # Fallback mode baseline
         if is_fallback:
@@ -1419,6 +1436,11 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
             score -= 40
 
         score += random.uniform(0, 1.5)
+
+        # ── Phase 8: liked-artist boost (+8 pts) ─────────────────────────
+        if _liked_artist_set and artist in _liked_artist_set:
+            score += 8.0
+
         t["score"] = round(score, 4)   # ← stamp score onto the dict before stashing
         scored_tracks.append((score, t))
         
