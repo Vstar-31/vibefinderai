@@ -28,6 +28,29 @@ except ImportError:
     _AIOHTTP_AVAILABLE = False
     import urllib.request  # kept only for the legacy sync fallback
 
+# ── Singleton aiohttp session (reused across ALL requests) ────────────────
+# Creating a new TCPConnector + ClientSession per API call is extremely
+# expensive (TLS handshake per call). One shared session handles everything.
+_HTTP_SESSION: "_aiohttp.ClientSession | None" = None
+
+async def _get_http_session():
+    """Return the shared aiohttp session, creating it lazily."""
+    global _HTTP_SESSION
+    if _HTTP_SESSION is None or _HTTP_SESSION.closed:
+        if _AIOHTTP_AVAILABLE:
+            connector = _aiohttp.TCPConnector(
+                limit=50,
+                limit_per_host=10,
+                keepalive_timeout=30,
+                enable_cleanup_closed=True,
+            )
+            _HTTP_SESSION = _aiohttp.ClientSession(
+                connector=connector,
+                headers={"User-Agent": "VibeFinderAI/2.0"},
+                connector_owner=True,
+            )
+    return _HTTP_SESSION
+
 # Import our modularized vibe engine
 from core import vibe_engine
 
@@ -224,6 +247,10 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Engine shutting down. Disconnecting database...")
     await db.disconnect()
+    global _HTTP_SESSION
+    if _HTTP_SESSION and not _HTTP_SESSION.closed:
+        await _HTTP_SESSION.close()
+        logger.info("HTTP session closed.")
 
 # Initialize core app with lifespan hook
 import difflib as _difflib
@@ -982,36 +1009,37 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 # asyncio.sleep() so all concurrent requests continue while one backs off.
 # ---------------------------------------------------------
 
-async def _fetch_with_retry(url: str, label: str, timeout: int = 5, max_retries: int = 3) -> dict | None:
+async def _fetch_with_retry(url: str, label: str, timeout: int = 5, max_retries: int = 2) -> dict | None:
     """
-    Async GET with exponential backoff. Never blocks the event loop.
-    Delays between retries: 1s → 2s → 4s.
-    Returns parsed JSON dict, or None after all retries exhausted.
+    Async GET using the shared singleton session — no per-call TLS overhead.
+    Reduced max_retries to 2 (was 3) and backoff to 0.5s→1s (was 1s→2s→4s).
+    A single dead URL now costs max 6s instead of up to 14s.
     """
     if _AIOHTTP_AVAILABLE:
+        session = await _get_http_session()
+        timeout_cfg = _aiohttp.ClientTimeout(total=timeout)
         for attempt in range(max_retries):
             try:
-                connector = _aiohttp.TCPConnector(limit=100)
-                timeout_cfg = _aiohttp.ClientTimeout(total=timeout)
-                async with _aiohttp.ClientSession(
-                    connector=connector,
-                    headers={"User-Agent": "VibeFinderAI/2.0"},
-                    timeout=timeout_cfg,
-                ) as session:
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            return await resp.json(content_type=None)
+                async with session.get(url, timeout=timeout_cfg) as resp:
+                    if resp.status == 200:
+                        return await resp.json(content_type=None)
+                    if resp.status == 429:
+                        await asyncio.sleep(1.5)
+                    else:
                         logger.warning(f"[Retry {attempt+1}] {label} — HTTP {resp.status}")
-            except Exception as e:
-                wait = 2 ** attempt
+            except asyncio.TimeoutError:
+                logger.warning(f"[Retry {attempt+1}/{max_retries}] {label} — timeout after {timeout}s")
                 if attempt < max_retries - 1:
-                    logger.warning(f"[Retry {attempt+1}/{max_retries}] {label} — {e}. Backing off {wait}s...")
-                    await asyncio.sleep(wait)  # ← non-blocking!
+                    await asyncio.sleep(0.5)
+            except Exception as e:
+                wait = 0.5 * (2 ** attempt)
+                if attempt < max_retries - 1:
+                    logger.warning(f"[Retry {attempt+1}/{max_retries}] {label} — {e}. Backing off {wait:.1f}s...")
+                    await asyncio.sleep(wait)
                 else:
                     logger.error(f"{label} failed after {max_retries} attempts: {e}")
         return None
     else:
-        # Graceful degradation: run sync urllib in a thread so we don't block
         import urllib.request as _urllib_req
         def _sync_fetch():
             for attempt in range(max_retries):
@@ -1020,7 +1048,7 @@ async def _fetch_with_retry(url: str, label: str, timeout: int = 5, max_retries:
                     with _urllib_req.urlopen(req, timeout=timeout) as r:
                         return json.loads(r.read().decode())
                 except Exception as e:
-                    wait = 2 ** attempt
+                    wait = 0.5 * (2 ** attempt)
                     if attempt < max_retries - 1:
                         time.sleep(wait)
                     else:
@@ -1033,29 +1061,64 @@ async def _fetch_with_retry(url: str, label: str, timeout: int = 5, max_retries:
 # Free Music Fetchers (Last.fm + iTunes) — All Async
 # ---------------------------------------------------------
 
+# ── Last.fm response cache (in-process, TTL=10min) ───────────────────────
+# Same genre/artist tags get fetched repeatedly for popular vibes.
+# Caching eliminates redundant API round-trips for warm requests.
+import time as _time_module
+_LASTFM_CACHE: dict[str, tuple[list, float]] = {}
+_LASTFM_CACHE_TTL = 600  # 10 minutes
+
+def _lastfm_cache_get(key: str) -> list | None:
+    entry = _LASTFM_CACHE.get(key)
+    if entry and _time_module.time() < entry[1]:
+        return entry[0]
+    return None
+
+def _lastfm_cache_set(key: str, tracks: list) -> None:
+    if len(_LASTFM_CACHE) > 500:
+        now = _time_module.time()
+        expired = [k for k, (_, exp) in _LASTFM_CACHE.items() if now >= exp]
+        for k in expired:
+            del _LASTFM_CACHE[k]
+    _LASTFM_CACHE[key] = (tracks, _time_module.time() + _LASTFM_CACHE_TTL)
+
 async def fetch_lastfm_tracks_sync(genre: str, limit: int = 200):
-    """Hits the free Last.fm API to pull trending tracks by tag."""
+    """Hits the free Last.fm API to pull trending tracks by tag. Results cached 10min."""
+    cache_key = f"genre:{genre}:{limit}"
+    cached = _lastfm_cache_get(cache_key)
+    if cached is not None:
+        logger.info(f"[LFM Cache HIT] genre='{genre}' ({len(cached)} tracks)")
+        return cached
     api_key = os.getenv("LASTFM_API_KEY")
     if not api_key:
         logger.error("LASTFM_API_KEY not set in environment. Cannot fetch tracks.")
         return []
     url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
-    data = await _fetch_with_retry(url, label=f"Last.fm genre fetch for '{genre}'")
+    data = await _fetch_with_retry(url, label=f"Last.fm genre:'{genre}'")
     if data:
         tracks = data.get("tracks", {}).get("track", [])
-        return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
+        result = [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
+        _lastfm_cache_set(cache_key, result)
+        return result
     return []
 
 async def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 200):
-    """Hits the free Last.fm API to pull a SPECIFIC artist's discography."""
+    """Hits the free Last.fm API to pull a SPECIFIC artist's discography. Cached 10min."""
+    cache_key = f"artist:{artist.lower()}:{limit}"
+    cached = _lastfm_cache_get(cache_key)
+    if cached is not None:
+        logger.info(f"[LFM Cache HIT] artist='{artist}' ({len(cached)} tracks)")
+        return cached
     api_key = os.getenv("LASTFM_API_KEY")
     if not api_key:
         return []
     url = f"http://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist={urllib.parse.quote(artist)}&api_key={api_key}&format=json&limit={limit}"
-    data = await _fetch_with_retry(url, label=f"Last.fm artist fetch for '{artist}'")
+    data = await _fetch_with_retry(url, label=f"Last.fm artist:'{artist}'")
     if data:
         tracks = data.get("toptracks", {}).get("track", [])
-        return [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
+        result = [{"title": t.get("name"), "artist": t.get("artist", {}).get("name")} for t in tracks]
+        _lastfm_cache_set(cache_key, result)
+        return result
     return []
 
 async def fetch_lastfm_track_search_sync(query: str, limit: int = 100):
@@ -1070,15 +1133,28 @@ async def fetch_lastfm_track_search_sync(query: str, limit: int = 100):
         return [{"title": t.get("name"), "artist": t.get("artist")} for t in tracks]
     return []
 
+# ── iTunes in-memory cache (avoid re-fetching the same track) ────────────
+_ITUNES_CACHE: dict[str, dict] = {}
+_ITUNES_CACHE_MAX = 2000
+
 async def fetch_itunes_data_sync(title: str, artist: str):
-    """Silently hits the free iTunes API to grab the .m4a preview & cover art."""
+    """Hits iTunes API for preview + cover art. Results are cached in-memory."""
+    cache_key = f"{title.lower().strip()}|{artist.lower().strip()}"
+    if cache_key in _ITUNES_CACHE:
+        return _ITUNES_CACHE[cache_key]
     query = urllib.parse.quote(f"{title} {artist}")
     url = f"https://itunes.apple.com/search?term={query}&entity=song&limit=1"
-    data = await _fetch_with_retry(url, label=f"iTunes preview for '{title}' by '{artist}'", timeout=3, max_retries=2)
+    data = await _fetch_with_retry(url, label=f"iTunes:{title[:20]}", timeout=2, max_retries=1)
+    result = {"preview_url": None, "cover_art": None}
     if data and data.get("resultCount", 0) > 0:
         track = data["results"][0]
-        return {"preview_url": track.get("previewUrl"), "cover_art": track.get("artworkUrl100")}
-    return {"preview_url": None, "cover_art": None}
+        result = {"preview_url": track.get("previewUrl"), "cover_art": track.get("artworkUrl100")}
+    if len(_ITUNES_CACHE) >= _ITUNES_CACHE_MAX:
+        oldest = list(_ITUNES_CACHE.keys())[:100]
+        for k in oldest:
+            del _ITUNES_CACHE[k]
+    _ITUNES_CACHE[cache_key] = result
+    return result
 
 async def fetch_lastfm_tracks(genre: str, limit: int = 200):
     return await fetch_lastfm_tracks_sync(genre, limit)
@@ -1423,7 +1499,23 @@ async def health_check():
     except Exception as e:
         logger.warning(f"Health check DB ping failed: {e}")
         db_status = "degraded"
-    return {"status": "ok", "db": db_status, "service": "VibeFinderAI"}
+    import time as _t
+    now = _t.time()
+    lfm_live = sum(1 for _, exp in _LASTFM_CACHE.values() if now < exp)
+    return {
+        "status": "ok",
+        "db": db_status,
+        "service": "VibeFinderAI",
+        "cache": {
+            "lastfm_entries": lfm_live,
+            "itunes_entries": len(_ITUNES_CACHE),
+            "track_features": len(TRACK_FEATURE_INDEX),
+            "artist_niches":  len(ARTIST_NICHE_INDEX),
+            "db_track_pool":  len(DB_TRACK_POOL),
+            "db_similar_artists": len(DB_SIMILAR_ARTISTS),
+        },
+        "http_session": "active" if (_HTTP_SESSION and not _HTTP_SESSION.closed) else "none",
+    }
 
 # ---------------------------------------------------------
 # User Taste Profile — closes the feedback loop
