@@ -32,6 +32,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from urllib.parse import urlencode, quote
 import httpx
 import jwt as _jwt
 
@@ -160,8 +161,7 @@ async def spotify_authorize(token: str = Query(..., description="VibeFinder JWT"
         "redirect_uri":  SPOTIFY_REDIRECT_URI,
         "state":         state,
     }
-    query = "&".join(f"{k}={httpx.QueryParams({k: v})[k]}" for k, v in params.items())
-    url = f"https://accounts.spotify.com/authorize?{query}"
+    url = "https://accounts.spotify.com/authorize?" + urlencode(params)
     return {"url": url}
 
 
@@ -257,7 +257,7 @@ async def spotify_callback(
         logger.error(f"[Spotify] DB upsert error: {e}")
         return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason=db_error")
 
-    return RedirectResponse(f"{FRONTEND_URL}?spotify=connected&name={httpx.QueryParams({'n': display_name})['n']}")
+    return RedirectResponse(f"{FRONTEND_URL}?spotify=connected&name={quote(display_name, safe='')}")
 
 
 @router.get("/api/spotify/status")

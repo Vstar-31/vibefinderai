@@ -158,6 +158,9 @@ async def lifespan(app: FastAPI):
         playlist_set_db(db)
         analytics_set_db(db)
         logger.info("Playlist and analytics routes wired to DB.")
+    if _SPOTIFY_ROUTES_AVAILABLE and spotify_router:
+        spotify_set_db(db, os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this"))
+        logger.info("Spotify routes wired to DB.")
     
     # ── Load TrackFeatureCache into memory for fast O(1) scoring lookups ──────
     # The DB has 690+ tracks with real audio features (tempo, energy, valence,
@@ -390,6 +393,11 @@ if _ROUTES_AVAILABLE:
     app.include_router(playlist_router,  prefix="/api")
     app.include_router(analytics_router, prefix="/api")
     logger.info("Playlist and analytics routers registered at /api prefix.")
+
+# ── Register Spotify router ──────────────────────────────────────────────────
+if _SPOTIFY_ROUTES_AVAILABLE and spotify_router:
+    app.include_router(spotify_router)
+    logger.info("Spotify routes registered.")
 
 # ---------------------------------------------------------
 # Auth & Security Configuration
