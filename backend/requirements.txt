@@ -35,3 +35,5 @@ scikit-learn
 # Optional: sentiment boost (uncomment to enable)
 # textblob
 python-dotenv
+
+logger
