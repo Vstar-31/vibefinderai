@@ -331,103 +331,119 @@ async def export_to_spotify(body: ExportPlaylistRequest, authorization: str = Qu
     token   = authorization.replace("Bearer ", "")
     user_id = _get_user_id(token)
 
-    sp_token = await _get_valid_spotify_token(user_id)
-    if not sp_token:
-        raise HTTPException(status_code=403, detail="Spotify not connected")
-
     identity = await _db.oauthidentity.find_first(
         where={"userId": user_id, "providerName": "spotify"}
     )
+    if not identity:
+        raise HTTPException(status_code=403, detail="Spotify not connected")
+
+    sp_token = identity.accessToken
     spotify_user_id = identity.providerId
 
-    async def _spotify_request(method, url, **kwargs):
-        """Make Spotify API request, auto-refreshing token on 401."""
-        nonlocal sp_token
-        headers = kwargs.pop("headers", {})
-        headers["Authorization"] = f"Bearer {sp_token}"
-        async with httpx.AsyncClient() as client:
-            resp = await getattr(client, method)(url, headers=headers, timeout=15, **kwargs)
-            if resp.status_code == 401:
-                sp_token = await _refresh_spotify_token(identity)
-                if not sp_token:
-                    raise HTTPException(status_code=401, detail="Spotify token expired")
-                headers["Authorization"] = f"Bearer {sp_token}"
-                resp = await getattr(client, method)(url, headers=headers, timeout=15, **kwargs)
-            return resp
+    logger.info(f"[Spotify] Export requested: '{body.name}' ({len(body.tracks)} tracks) for user {user_id}")
 
     try:
-        # 1. Create playlist
-        create_resp = await _spotify_request(
-            "post",
-            f"https://api.spotify.com/v1/users/{spotify_user_id}/playlists",
-            json={
-                "name":        body.name[:100],
-                "description": body.description[:300] or f"Created by VibeFinderAI",
-                "public":      body.is_public,
-            }
-        )
-        if create_resp.status_code not in (200, 201):
-            raise HTTPException(status_code=502, detail=f"Spotify playlist create failed: {create_resp.text}")
+        # Single persistent client for the entire export operation
+        async with httpx.AsyncClient(timeout=20) as client:
 
-        playlist_id  = create_resp.json()["id"]
-        playlist_url = create_resp.json()["external_urls"]["spotify"]
+            async def _req(method: str, url: str, **kwargs):
+                """Make a Spotify API call, auto-refresh on 401."""
+                nonlocal sp_token
+                headers = kwargs.pop("headers", {})
+                headers["Authorization"] = f"Bearer {sp_token}"
+                resp = await getattr(client, method)(url, headers=headers, **kwargs)
+                if resp.status_code == 401:
+                    logger.info("[Spotify] Token expired during export — refreshing...")
+                    sp_token = await _refresh_spotify_token(identity)
+                    if not sp_token:
+                        raise HTTPException(status_code=401, detail="Spotify token expired, please reconnect")
+                    headers["Authorization"] = f"Bearer {sp_token}"
+                    resp = await getattr(client, method)(url, headers=headers, **kwargs)
+                return resp
 
-        # 2. Resolve track URIs — search for any that are spotify:search: style
-        track_uris = []
-        search_tasks = []
-
-        for t in body.tracks:
-            uri = t.get("spotify_uri", "")
-            if uri.startswith("spotify:track:"):
-                track_uris.append(uri)
-            else:
-                # Need to search
-                search_tasks.append((len(track_uris), t))
-                track_uris.append(None)  # placeholder
-
-        # Resolve search tasks
-        for idx, t in search_tasks:
-            try:
-                q = f"{t.get('title','')} {t.get('artist','')}".strip()
-                search_resp = await _spotify_request(
-                    "get",
-                    "https://api.spotify.com/v1/search",
-                    params={"q": q, "type": "track", "limit": 1}
-                )
-                if search_resp.status_code == 200:
-                    items = search_resp.json().get("tracks", {}).get("items", [])
-                    if items:
-                        track_uris[idx] = items[0]["uri"]
-            except Exception as e:
-                logger.warning(f"[Spotify] Search failed for {t}: {e}")
-
-        # Filter out unresolved
-        resolved = [u for u in track_uris if u]
-
-        # 3. Add tracks in batches of 100 (Spotify limit)
-        for i in range(0, len(resolved), 100):
-            batch = resolved[i:i+100]
-            add_resp = await _spotify_request(
+            # 1. Create the playlist
+            create_resp = await _req(
                 "post",
-                f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
-                json={"uris": batch}
+                f"https://api.spotify.com/v1/users/{spotify_user_id}/playlists",
+                json={
+                    "name":        body.name[:100],
+                    "description": body.description[:300] if body.description else "Created by VibeFinderAI",
+                    "public":      body.is_public,
+                },
             )
-            if add_resp.status_code not in (200, 201):
-                logger.warning(f"[Spotify] Add tracks batch failed: {add_resp.text}")
+            if create_resp.status_code not in (200, 201):
+                logger.error(f"[Spotify] Playlist create failed {create_resp.status_code}: {create_resp.text[:300]}")
+                raise HTTPException(status_code=502, detail=f"Spotify playlist create failed ({create_resp.status_code})")
 
-        logger.info(f"[Spotify] Exported playlist '{body.name}' ({len(resolved)} tracks) for user {user_id}")
-        return {
-            "playlist_id":  playlist_id,
-            "playlist_url": playlist_url,
-            "tracks_added": len(resolved),
-            "tracks_total": len(body.tracks),
-        }
+            playlist_data = create_resp.json()
+            playlist_id   = playlist_data["id"]
+            playlist_url  = playlist_data["external_urls"]["spotify"]
+            logger.info(f"[Spotify] Created playlist {playlist_id}")
+
+            # 2. Build track URI list — search for any without a real spotify:track: URI
+            # Correct index tracking: append None first, THEN record the index
+            track_uris: list = []
+            search_needed: list[tuple[int, dict]] = []
+
+            for t in body.tracks:
+                uri = t.get("spotify_uri", "")
+                if uri.startswith("spotify:track:"):
+                    track_uris.append(uri)
+                else:
+                    idx = len(track_uris)  # index of the placeholder we're about to append
+                    track_uris.append(None)
+                    search_needed.append((idx, t))
+
+            logger.info(f"[Spotify] {len(track_uris) - len(search_needed)} direct URIs, {len(search_needed)} need search")
+
+            # Resolve tracks that need searching
+            for idx, t in search_needed:
+                try:
+                    q = f"{t.get('title', '')} {t.get('artist', '')}".strip()
+                    search_resp = await _req(
+                        "get",
+                        "https://api.spotify.com/v1/search",
+                        params={"q": q, "type": "track", "limit": 1},
+                    )
+                    if search_resp.status_code == 200:
+                        items = search_resp.json().get("tracks", {}).get("items", [])
+                        if items:
+                            track_uris[idx] = items[0]["uri"]
+                            logger.info(f"[Spotify] Resolved '{t.get('title')}' → {items[0]['uri']}")
+                        else:
+                            logger.warning(f"[Spotify] No search result for '{q}'")
+                    else:
+                        logger.warning(f"[Spotify] Search returned {search_resp.status_code} for '{q}'")
+                except Exception as e:
+                    logger.warning(f"[Spotify] Search error for '{t}': {e}")
+
+            # 3. Filter out unresolved and add to playlist in batches of 100
+            resolved = [u for u in track_uris if u]
+            logger.info(f"[Spotify] Adding {len(resolved)}/{len(track_uris)} tracks to playlist")
+
+            for i in range(0, len(resolved), 100):
+                batch = resolved[i:i + 100]
+                add_resp = await _req(
+                    "post",
+                    f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+                    json={"uris": batch},
+                )
+                if add_resp.status_code not in (200, 201):
+                    logger.warning(f"[Spotify] Add batch {i//100 + 1} failed ({add_resp.status_code}): {add_resp.text[:200]}")
+
+            logger.info(f"[Spotify] ✓ Export complete: '{body.name}' — {len(resolved)} tracks for user {user_id}")
+            return {
+                "playlist_id":  playlist_id,
+                "playlist_url": playlist_url,
+                "tracks_added": len(resolved),
+                "tracks_total": len(body.tracks),
+            }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Spotify] Export error: {e}")
-        raise HTTPException(status_code=500, detail="Playlist export failed")
+        logger.error(f"[Spotify] Export error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Playlist export failed: {str(e)}")
 
 
 @router.get("/api/spotify/search")

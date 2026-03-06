@@ -121,7 +121,7 @@ file_handler = logging.FileHandler("vibefinder_engine.log", encoding="utf-8")
 file_handler.setLevel(logging.INFO) # Detailed data flows quietly into the text file
 
 stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setLevel(logging.WARNING) # Terminal ONLY shows warnings/errors to prevent clutter!
+stream_handler.setLevel(logging.INFO) # INFO+ goes to stdout → captured by Render logs
 
 file_handler.setFormatter(formatter)
 stream_handler.setFormatter(formatter)
