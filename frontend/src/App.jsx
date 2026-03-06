@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import LandingPage from "./LandingPage.jsx";
 import PlaylistPanel from "./PlaylistPanel.jsx";
+import MusicPlayer from "./MusicPlayer.jsx";
 
 /* ─── API CONFIGURATION ─────────────────────────────────────── */
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
@@ -584,6 +585,24 @@ function CopyPlaylistButton({ tracks, activeColor }) {
 /* ═══════════════════════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════════════════════ */
+/* ── ERROR BOUNDARY ───────────────────────────────────────────── */
+import { Component } from "react";
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e }; }
+  componentDidCatch(e, i) { console.error("[VibeFinder] Render error:", e, i); }
+  render() {
+    if (this.state.error) return (
+      <div style={{ padding: "16px 20px", background: "rgba(60,10,10,0.6)", border: "1px solid rgba(180,40,40,0.3)", borderRadius: 10, color: "#f87171", fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>⚠ Something crashed in this section.</div>
+        <div style={{ opacity: 0.6, fontSize: 10, marginBottom: 10 }}>{String(this.state.error).slice(0, 120)}</div>
+        <button onClick={() => this.setState({ error: null })} style={{ padding: "5px 12px", background: "rgba(180,40,40,0.2)", border: "1px solid rgba(180,40,40,0.4)", borderRadius: 6, color: "#f87171", cursor: "pointer", fontSize: 11 }}>Retry</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [showLanding, setShowLanding] = useState(true);
   const [token, setToken] = useState(() => {
@@ -650,6 +669,17 @@ export default function App() {
   const [removedTracks, setRemovedTracks]   = useState([]);
   const [retryingTrack, setRetryingTrack]   = useState(null);
   const retryToastTimer = useRef(null);
+
+  // ── Spotify OAuth ─────────────────────────────────────────
+  const [spotifyStatus, setSpotifyStatus]   = useState(null); // null | {connected, display_name}
+  const [spotifyLoading, setSpotifyLoading] = useState(false);
+  const [spotifyToast, setSpotifyToast]     = useState(null); // "connected"|"exported"|"error"
+  const spotifyToastTimer = useRef(null);
+
+  // ── Music Player ──────────────────────────────────────────
+  const [showPlayer, setShowPlayer]         = useState(false);
+  const [playerTracks, setPlayerTracks]     = useState([]);
+  const [playerStartIdx, setPlayerStartIdx] = useState(0);
 
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
@@ -926,6 +956,98 @@ export default function App() {
     submitBtn: { width: "100%", padding: "12px", marginTop: "24px", background: "linear-gradient(135deg, #92400e, #d97706)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "8px", color: "#fef3c7", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.18em", textTransform: "uppercase", cursor: "pointer", boxShadow: "0 4px 20px rgba(180,100,10,0.3)", transition: "opacity 0.2s" },
   };
 
+  // ── Spotify: handle OAuth callback + check status on mount ──
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sp = params.get("spotify");
+    if (sp === "connected") {
+      const name = params.get("name") || "";
+      setSpotifyStatus({ connected: true, display_name: name });
+      setSpotifyToast("connected");
+      clearTimeout(spotifyToastTimer.current);
+      spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 4000);
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (sp === "error") {
+      setSpotifyToast("error");
+      clearTimeout(spotifyToastTimer.current);
+      spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 4000);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    if (token) {
+      fetch(buildApiUrl(`/api/spotify/status?authorization=${encodeURIComponent("Bearer " + token)}`))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setSpotifyStatus(d); })
+        .catch(() => {});
+    }
+  }, [token]);
+
+  // ── Track click logging ────────────────────────────────────
+  const logTrackClick = async (track, type) => {
+    if (!token || !result?.request_id) return;
+    try {
+      await fetch(buildApiUrl("/api/feedback"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          request_id: result.request_id ?? "unlogged",
+          track_title: track.title, track_artist: track.artist,
+          signal: type === "spotify" ? 1 : 0, position: 0,
+          preview_seconds: type === "preview_click" ? 1 : null,
+        }),
+      });
+    } catch {}
+  };
+
+  // ── Spotify connect / disconnect ───────────────────────────
+  const connectSpotify = async () => {
+    if (!token) { setShowAuthModal(true); return; }
+    setSpotifyLoading(true);
+    try {
+      const res  = await fetch(buildApiUrl(`/api/spotify/authorize?token=${encodeURIComponent(token)}`));
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch { setSpotifyToast("error"); }
+    finally { setSpotifyLoading(false); }
+  };
+
+  const disconnectSpotify = async () => {
+    if (!token) return;
+    await fetch(
+      buildApiUrl(`/api/spotify/disconnect?authorization=${encodeURIComponent("Bearer " + token)}`),
+      { method: "DELETE" }
+    ).catch(() => {});
+    setSpotifyStatus({ connected: false });
+  };
+
+  // ── Export playlist to Spotify ─────────────────────────────
+  const exportToSpotify = async (tracks) => {
+    if (!token || !spotifyStatus?.connected) return;
+    const name = result?.dominant_vibe
+      ? `${result.dominant_vibe.charAt(0).toUpperCase() + result.dominant_vibe.slice(1)} Mix — VibeFinderAI`
+      : "VibeFinderAI Playlist";
+    const res = await fetch(
+      buildApiUrl(`/api/spotify/export-playlist?authorization=${encodeURIComponent("Bearer " + token)}`),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, tracks, is_public: false }),
+      }
+    );
+    if (!res.ok) throw new Error("Export failed");
+    const data = await res.json();
+    setSpotifyToast("exported");
+    clearTimeout(spotifyToastTimer.current);
+    spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 5000);
+    return { url: data.playlist_url };
+  };
+
+  // ── Launch music player ────────────────────────────────────
+  const launchPlayer = (tracks, startIdx = 0) => {
+    setPlayerTracks(tracks);
+    setPlayerStartIdx(startIdx);
+    setShowPlayer(true);
+  };
+
   // Browser back navigation
   useEffect(() => {
     if (!showLanding) window.history.pushState({ page: "engine" }, "");
@@ -993,7 +1115,33 @@ export default function App() {
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <div className="app-header-osc"><Oscilloscope active={loading || !!playingTrack} /></div>
 
-              {/* ── NEW: LIBRARY / PLAYLIST PANEL BUTTON ── */}
+              {/* ── SPOTIFY CONNECT / STATUS ── */}
+              {token && (
+                <button
+                  onClick={spotifyStatus?.connected ? disconnectSpotify : connectSpotify}
+                  disabled={spotifyLoading}
+                  className="dial-btn"
+                  title={spotifyStatus?.connected
+                    ? `Spotify: ${spotifyStatus.display_name || "Connected"} — click to disconnect`
+                    : "Connect your Spotify account"}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "6px",
+                    padding: "8px 14px", borderRadius: "8px",
+                    fontFamily: "'DM Mono', monospace", fontSize: "11px",
+                    letterSpacing: "0.06em", textTransform: "uppercase",
+                    cursor: spotifyLoading ? "not-allowed" : "pointer",
+                    transition: "all 0.2s", opacity: spotifyLoading ? 0.6 : 1,
+                    background: spotifyStatus?.connected ? "rgba(29,185,84,0.15)" : "rgba(120,80,20,0.1)",
+                    border: `1px solid ${spotifyStatus?.connected ? "rgba(29,185,84,0.5)" : "rgba(120,80,20,0.35)"}`,
+                    color: spotifyStatus?.connected ? "#1db954" : "rgba(180,140,80,0.55)",
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+                  {spotifyLoading ? "…" : spotifyStatus?.connected ? (spotifyStatus.display_name || "Spotify ✓") : "Spotify"}
+                </button>
+              )}
+
+              {/* ── LIBRARY / PLAYLIST PANEL BUTTON ── */}
               {token && (
                 <button
                   onClick={() => setShowPlaylistPanel(true)}
@@ -1417,29 +1565,81 @@ export default function App() {
                             : result.tracks}
                           activeColor={activeColor}
                         />
-                        <a
-                          href={`https://open.spotify.com/search/${encodeURIComponent(
-                            result.tracks.slice(0, 1).map(t => `${t.title} ${t.artist}`).join(" ")
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Search this playlist on Spotify"
+                        {/* ── Play All — launches floating player at track 0 ── */}
+                        <button
+                          onClick={() => launchPlayer(result.tracks, 0)}
                           className="dial-btn"
+                          title="Play all tracks in player"
                           style={{
                             display: "flex", alignItems: "center", gap: "5px",
                             padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
                             fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
-                            textDecoration: "none", textTransform: "uppercase",
-                            background: "rgba(29,185,84,0.12)",
-                            border: "1px solid rgba(29,185,84,0.35)",
-                            color: "#1db954",
+                            textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s",
+                            background: `${activeColor}18`, border: `1px solid ${activeColor}44`,
+                            color: activeColor,
                           }}
                         >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
-                          Spotify
-                        </a>
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                          Play All
+                        </button>
+
+                        {/* ── Export to Spotify (connected) or open:spotify fallback ── */}
+                        {spotifyStatus?.connected ? (
+                          <button
+                            onClick={() => exportToSpotify(
+                              selectionMode && selectedTracks.size > 0
+                                ? result.tracks.filter(t => selectedTracks.has(`${t.title}|${t.artist}`))
+                                : result.tracks
+                            )}
+                            className="dial-btn"
+                            title={selectionMode && selectedTracks.size > 0 ? `Export ${selectedTracks.size} selected to Spotify` : "Export playlist to your Spotify"}
+                            style={{
+                              display: "flex", alignItems: "center", gap: "5px",
+                              padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
+                              fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+                              textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s",
+                              background: "rgba(29,185,84,0.12)", border: "1px solid rgba(29,185,84,0.35)",
+                              color: "#1db954",
+                            }}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+                            Export
+                          </button>
+                        ) : (
+                          <a
+                            href={`https://open.spotify.com/search/${encodeURIComponent(result.tracks.slice(0,1).map(t=>`${t.title} ${t.artist}`).join(" "))}`}
+                            target="_blank" rel="noopener noreferrer"
+                            title="Search on Spotify (connect account to export directly)"
+                            className="dial-btn"
+                            style={{
+                              display: "flex", alignItems: "center", gap: "5px",
+                              padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
+                              fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+                              textDecoration: "none", textTransform: "uppercase",
+                              background: "rgba(29,185,84,0.12)", border: "1px solid rgba(29,185,84,0.35)",
+                              color: "#1db954",
+                            }}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+                            Spotify
+                          </a>
+                        )}
                       </div>
                     </div>
+
+                    {/* ── Spotify toast ── */}
+                    {spotifyToast && (
+                      <div className="animate-in" style={{
+                        fontSize: "10px", fontFamily: "'DM Mono', monospace",
+                        letterSpacing: "0.08em", marginBottom: "10px", marginTop: "-6px",
+                        display: "flex", alignItems: "center", gap: "6px",
+                        color: spotifyToast === "error" ? "#f87171" : "#1db954",
+                      }}>
+                        {spotifyToast === "connected" && "✓ Spotify connected — export playlists and use the player"}
+                        {spotifyToast === "exported"  && "✓ Exported to your Spotify!"}
+                        {spotifyToast === "error"     && "⚠ Spotify connection failed — try again"}
+                      </div>
+                    )}
 
                     {/* Feedback micro-toast */}
                     {feedbackToast && (
@@ -1671,16 +1871,34 @@ export default function App() {
                                 {isPlaying ? "Playing" : "Preview"}
                               </button>
 
+                              {/* Play in player (launches at this track) */}
+                              <button
+                                onClick={() => { launchPlayer(result.tracks, i); logTrackClick(track, "preview_click"); }}
+                                className="dial-btn app-track-preview"
+                                style={{
+                                  ...S.authBtn(false), padding: "8px 12px",
+                                  background: `${activeColor}15`,
+                                  borderColor: `${activeColor}44`,
+                                  color: activeColor,
+                                  display: "flex", alignItems: "center", gap: "5px",
+                                }}
+                              >
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                                Play
+                              </button>
+
+                              {/* Open in Spotify */}
                               <a
                                 href={track.spotify_uri}
+                                target="_blank" rel="noopener noreferrer"
+                                onClick={() => logTrackClick(track, "spotify")}
                                 className="dial-btn"
                                 style={{
-                                  ...S.authBtn(false),
-                                  padding: "8px 14px",
+                                  ...S.authBtn(false), padding: "8px 12px",
                                   textDecoration: "none",
-                                  background: "rgba(29, 185, 84, 0.15)",
-                                  borderColor: "rgba(29, 185, 84, 0.4)",
-                                  color: "#1db954"
+                                  background: "rgba(29,185,84,0.15)",
+                                  borderColor: "rgba(29,185,84,0.4)",
+                                  color: "#1db954",
                                 }}
                               >
                                 Spotify
@@ -1855,6 +2073,22 @@ export default function App() {
 
         </div>
       </div>
+
+      {/* ── MUSIC PLAYER (floating, bottom) ── */}
+      {showPlayer && playerTracks.length > 0 && (
+        <ErrorBoundary>
+          <MusicPlayer
+            tracks={playerTracks}
+            initialIndex={playerStartIdx}
+            activeColor={activeColor}
+            onClose={() => setShowPlayer(false)}
+            token={token}
+            buildApiUrl={buildApiUrl}
+            spotifyConnected={!!spotifyStatus?.connected}
+            onExportSpotify={exportToSpotify}
+          />
+        </ErrorBoundary>
+      )}
 
       {/* ── PLAYLIST PANEL (slide-in drawer) ─────────────────────── */}
       {showPlaylistPanel && (

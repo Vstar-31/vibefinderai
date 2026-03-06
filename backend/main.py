@@ -65,6 +65,14 @@ except ImportError as _re:
     import logging as _log
     _log.getLogger(__name__).warning(f"playlist/analytics routes not found: {_re}")
 
+try:
+    from routes.spotify_routes import router as spotify_router, set_db as spotify_set_db
+    _SPOTIFY_ROUTES_AVAILABLE = True
+except ImportError as _se:
+    _SPOTIFY_ROUTES_AVAILABLE = False
+    spotify_router = None
+    logging.getLogger(__name__).warning(f"Spotify routes not found: {_se}")
+
 # ── NEW: Gemini NLP enhancement (graceful — works without GEMINI_API_KEY) ────
 # gemini_vibe.py exports a singleton instance `gemini_enhancer`, not a bare fn.
 try:
