@@ -141,6 +141,7 @@ def _row_to_response(row) -> dict:
         "track_count":   len(tracks),
         "created_at":    row.createdAt.isoformat(),
         "updated_at":    row.updatedAt.isoformat(),
+        "view_count":    getattr(row, "viewCount", 0) or 0,
     }
 
 
@@ -418,3 +419,96 @@ async def delete_history_entry(
     except Exception as e:
         logger.error(f"[History] Delete failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete history entry")
+
+
+# ─── PUBLIC VIBE FEED ────────────────────────────────────────────────────────
+
+@router.post("/playlist/share/{share_token}/view", status_code=204)
+async def increment_view(share_token: str):
+    """
+    Silently increment the view count on a shared playlist.
+    Called by SharedPlaylist.jsx on every public page load.
+    Requires viewCount Int @default(0) on SavedPlaylist model.
+    """
+    db = get_db()
+    try:
+        row = await db.savedplaylist.find_unique(where={"shareToken": share_token})
+        if row and row.isPublic:
+            await db.savedplaylist.update(
+                where={"shareToken": share_token},
+                data={"viewCount": {"increment": 1}},
+            )
+    except Exception as e:
+        logger.debug(f"[Views] Increment failed (non-fatal): {e}")
+    return None
+
+
+@router.get("/vibes/feed")
+async def public_vibe_feed(limit: int = 8):
+    """
+    Public feed of recent shared vibes — no auth needed.
+    Returns the N most recently created public playlists with a prompt.
+    Powers the 'What people are vibing to' section in PlaylistPanel.
+    """
+    db = get_db()
+    try:
+        rows = await db.savedplaylist.find_many(
+            where={"isPublic": True, "prompt": {"not": None}},
+            order={"createdAt": "desc"},
+            take=min(limit, 20),
+        )
+        return {
+            "vibes": [
+                {
+                    "name":          r.name,
+                    "prompt":        r.prompt,
+                    "dominant_vibe": r.dominantVibe,
+                    "share_url":     _make_share_url(r.shareToken),
+                    "track_count":   len(json.loads(r.tracks)) if r.tracks else 0,
+                    "view_count":    getattr(r, "viewCount", 0) or 0,
+                }
+                for r in rows
+                if r.prompt
+            ]
+        }
+    except Exception as e:
+        logger.error(f"[Feed] Public vibe feed failed: {e}")
+        return {"vibes": []}
+
+
+@router.get("/vibes/today")
+async def vibe_of_day():
+    """
+    Returns one public playlist as the 'Vibe of the Day'.
+    Rotates daily by seeding random with today's date.
+    Prefers playlists with prompts and higher view counts.
+    No auth required.
+    """
+    import random
+    from datetime import date
+
+    db = get_db()
+    try:
+        rows = await db.savedplaylist.find_many(
+            where={"isPublic": True, "prompt": {"not": None}},
+            order={"createdAt": "desc"},
+            take=50,  # pool to pick from
+        )
+        if not rows:
+            return None
+
+        # Seed with today's date so it changes daily but stays consistent within a day
+        today_seed = int(date.today().strftime("%Y%m%d"))
+        rng = random.Random(today_seed)
+        pick = rng.choice(rows)
+
+        return {
+            "name":          pick.name,
+            "prompt":        pick.prompt,
+            "dominant_vibe": pick.dominantVibe,
+            "share_url":     _make_share_url(pick.shareToken),
+            "track_count":   len(json.loads(pick.tracks)) if pick.tracks else 0,
+        }
+    except Exception as e:
+        logger.error(f"[VibeOfDay] Failed: {e}")
+        return None

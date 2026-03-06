@@ -58,7 +58,8 @@ export default function SharedPlaylist() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
   const [playingUrl, setPlayingUrl] = useState(null);
-  const [copied, setCopied]       = useState(false);
+  const [copied, setCopied]         = useState(false);
+  const [views, setViews]           = useState(null);
   const audioRef = useRef(null);
 
   // Extract share token from URL path: /playlist/:token
@@ -69,7 +70,13 @@ export default function SharedPlaylist() {
     if (!token) { setError("Invalid playlist link."); setLoading(false); return; }
     fetch(buildApiUrl(`/api/playlist/share/${token}`))
       .then(r => { if (!r.ok) throw new Error(r.status === 404 ? "Playlist not found or is private." : "Failed to load playlist."); return r.json(); })
-      .then(data => { setPlaylist(data); setLoading(false); })
+      .then(data => {
+        setPlaylist(data);
+        setViews(data.view_count ?? null);
+        setLoading(false);
+        // Silently increment view count
+        fetch(buildApiUrl(`/api/playlist/share/${token}/view`), { method: "POST" }).catch(() => {});
+      })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [token]);
 
@@ -86,10 +93,19 @@ export default function SharedPlaylist() {
     else { audioRef.current.src = url; audioRef.current.play(); setPlayingUrl(url); }
   };
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 2000);
-    });
+  const shareLink = () => {
+    const shareData = {
+      title: playlist?.name || "VibeFinder Playlist",
+      text: playlist?.prompt ? `"${playlist.prompt}" — ${playlist.track_count} tracks on VibeFinder` : `Check out this playlist on VibeFinder`,
+      url: window.location.href,
+    };
+    if (navigator.share && navigator.canShare?.(shareData)) {
+      navigator.share(shareData).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        setCopied(true); setTimeout(() => setCopied(false), 2500);
+      });
+    }
   };
 
   return (
@@ -187,9 +203,16 @@ export default function SharedPlaylist() {
                   {/* Stats row */}
                   <div style={{ display: "flex", alignItems: "center", gap: "20px", marginTop: "20px", paddingTop: "16px", borderTop: "1px solid rgba(120,80,20,0.2)", flexWrap: "wrap" }}>
                     <WaveformBars active={!!playingUrl} count={16} />
-                    <div style={{ display: "flex", gap: "12px", marginLeft: "auto", flexWrap: "wrap" }}>
-                      <button onClick={copyLink} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 14px", background: copied ? "rgba(52,211,153,0.12)" : "rgba(120,80,20,0.15)", border: `1px solid ${copied ? "rgba(52,211,153,0.4)" : "rgba(160,110,30,0.35)"}`, borderRadius: "7px", color: copied ? "#34d399" : "rgba(180,140,80,0.7)", fontSize: "10px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s" }}>
-                        <IconShare /> {copied ? "Copied!" : "Copy Link"}
+                    <div style={{ display: "flex", gap: "12px", marginLeft: "auto", flexWrap: "wrap", alignItems: "center" }}>
+                      {/* View count */}
+                      {views !== null && (
+                        <span style={{ fontSize: "9px", color: "rgba(180,140,80,0.3)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                          {views} {views === 1 ? "view" : "views"}
+                        </span>
+                      )}
+                      {/* Native share / copy link */}
+                      <button onClick={shareLink} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 14px", background: copied ? "rgba(52,211,153,0.12)" : "rgba(120,80,20,0.15)", border: `1px solid ${copied ? "rgba(52,211,153,0.4)" : "rgba(160,110,30,0.35)"}`, borderRadius: "7px", color: copied ? "#34d399" : "rgba(180,140,80,0.7)", fontSize: "10px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s" }}>
+                        <IconShare /> {copied ? "Copied!" : "Share"}
                       </button>
                       <a href={`https://open.spotify.com/search/${encodeURIComponent(playlist.tracks?.[0] ? `${playlist.tracks[0].title} ${playlist.tracks[0].artist}` : playlist.name)}`}
                         target="_blank" rel="noopener noreferrer"
@@ -225,10 +248,15 @@ export default function SharedPlaylist() {
                           <div style={{ fontSize: "11px", color: "rgba(180,140,80,0.6)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.artist}</div>
                         </div>
                         <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-                          <button onClick={() => togglePlay(track.preview_url)} disabled={!track.preview_url} style={{ display: "flex", alignItems: "center", gap: "5px", padding: "7px 12px", background: isPlaying ? `${activeColor}22` : "rgba(120,80,20,0.15)", border: `1px solid ${isPlaying ? activeColor : "rgba(120,80,20,0.4)"}`, borderRadius: "7px", color: isPlaying ? activeColor : "rgba(180,140,80,0.7)", fontSize: "10px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em", textTransform: "uppercase", cursor: track.preview_url ? "pointer" : "default", opacity: track.preview_url ? 1 : 0.35, transition: "all 0.15s" }}>
-                            {isPlaying ? <IconPause /> : <IconPlay />}
-                            <span style={{ display: "none" }}>{isPlaying ? "Pause" : "Play"}</span>
-                          </button>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
+                            <button onClick={() => togglePlay(track.preview_url)} disabled={!track.preview_url} style={{ display: "flex", alignItems: "center", gap: "5px", padding: "7px 12px", background: isPlaying ? `${activeColor}22` : "rgba(120,80,20,0.15)", border: `1px solid ${isPlaying ? activeColor : "rgba(120,80,20,0.4)"}`, borderRadius: "7px", color: isPlaying ? activeColor : "rgba(180,140,80,0.7)", fontSize: "10px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em", textTransform: "uppercase", cursor: track.preview_url ? "pointer" : "default", opacity: track.preview_url ? 1 : 0.35, transition: "all 0.15s" }}>
+                              {isPlaying ? <IconPause /> : <IconPlay />}
+                            </button>
+                            {track.preview_url
+                              ? <span style={{ fontSize: "8px", color: "rgba(180,140,80,0.3)", letterSpacing: "0.06em" }}>30s</span>
+                              : <span style={{ fontSize: "8px", color: "rgba(180,140,80,0.2)", letterSpacing: "0.06em" }}>n/a</span>
+                            }
+                          </div>
                           <a href={track.spotify_uri} style={{ display: "flex", alignItems: "center", padding: "7px 12px", background: "rgba(29,185,84,0.12)", border: "1px solid rgba(29,185,84,0.35)", borderRadius: "7px", color: "#1db954", fontSize: "10px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em", textTransform: "uppercase", textDecoration: "none" }}>
                             Spotify
                           </a>
@@ -239,12 +267,31 @@ export default function SharedPlaylist() {
                 </div>
               </div>
 
+              {/* Preview notice */}
+              <div className="fade-in-3" style={{ background: "rgba(120,80,20,0.08)", border: "1px solid rgba(120,80,20,0.2)", borderRadius: "10px", padding: "12px 16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "16px" }}>🎧</span>
+                <div>
+                  <div style={{ fontSize: "11px", color: "rgba(180,140,80,0.7)", fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em" }}>
+                    Previews are 30 seconds — connect Spotify to hear the full tracks
+                  </div>
+                </div>
+              </div>
+
               {/* CTA */}
-              <div className="fade-in-3" style={{ textAlign: "center", padding: "24px 0" }}>
-                <div style={{ fontSize: "11px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em", marginBottom: "14px", textTransform: "uppercase" }}>Generated by VibeFinder AI</div>
-                <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "12px 28px", background: "linear-gradient(135deg, #92400e, #d97706)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: "10px", color: "#fef3c7", fontSize: "12px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.15em", textTransform: "uppercase", textDecoration: "none", boxShadow: "0 4px 20px rgba(180,100,10,0.3)" }}>
-                  <IconWave /> Create Your Own Playlist
+              <div className="fade-in-3" style={{ background: "linear-gradient(160deg, rgba(44,30,12,0.95), rgba(20,12,4,0.98))", border: `1px solid ${activeColor}22`, borderRadius: "16px", padding: "28px 24px", textAlign: "center", marginBottom: "8px" }}>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "20px", fontWeight: 900, color: "#fde68a", marginBottom: "8px", lineHeight: 1.2 }}>
+                  Spotify knows what you like.<br />
+                  <span style={{ color: activeColor }}>VibeFinder knows how you feel.</span>
+                </div>
+                <div style={{ fontSize: "11px", color: "rgba(180,140,80,0.45)", letterSpacing: "0.08em", marginBottom: "20px", lineHeight: 1.6 }}>
+                  Describe any feeling, mood, or moment — get a playlist that actually fits.
+                </div>
+                <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "13px 32px", background: "linear-gradient(135deg, #92400e, #d97706)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: "10px", color: "#fef3c7", fontSize: "12px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.15em", textTransform: "uppercase", textDecoration: "none", boxShadow: "0 4px 20px rgba(180,100,10,0.35)" }}>
+                  <IconWave /> Find Your Vibe
                 </a>
+                <div style={{ fontSize: "9px", color: "rgba(180,140,80,0.25)", marginTop: "14px", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                  Free · No account needed to start
+                </div>
               </div>
             </>
           )}

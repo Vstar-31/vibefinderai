@@ -396,6 +396,10 @@ export default function PlaylistPanel({
   const [saveToast,   setSaveToast]   = useState(false);
   const saveToastRef                  = useRef(null);
 
+  // ── Vibe of the Day ───────────────────────────────────────
+  const [vibeOfDay,   setVibeOfDay]   = useState(null);  // {prompt, dominant_vibe, share_url, name}
+  const [recentVibes, setRecentVibes] = useState([]);    // public feed — [{prompt, dominant_vibe, name, share_url}]
+
   // Scroll lock on mount
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -433,6 +437,15 @@ export default function PlaylistPanel({
     setError("");
     const load = async () => {
       await Promise.all([fetchPlaylists(), fetchHistory()]);
+      // Vibe of day + recent public feed — fire and forget, no loading gate
+      fetch(buildApiUrl("/api/vibes/today"))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setVibeOfDay(d); })
+        .catch(() => {});
+      fetch(buildApiUrl("/api/vibes/feed?limit=6"))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.vibes) setRecentVibes(d.vibes); })
+        .catch(() => {});
       setLoading(false);
     };
     load();
@@ -521,6 +534,48 @@ export default function PlaylistPanel({
             )
           )}
         </div>
+
+        {/* ── VIBE OF THE DAY ────────────────────────────────── */}
+        {tab === "playlists" && vibeOfDay && (
+          <div style={{ margin: "0 20px 12px", padding: "12px 14px", background: `${vibeColor(vibeOfDay.dominant_vibe)}0d`, border: `1px solid ${vibeColor(vibeOfDay.dominant_vibe)}33`, borderRadius: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: vibeColor(vibeOfDay.dominant_vibe), boxShadow: `0 0 6px ${vibeColor(vibeOfDay.dominant_vibe)}` }} />
+              <span style={{ fontSize: 9, color: "rgba(180,140,80,0.45)", letterSpacing: "0.2em", textTransform: "uppercase" }}>Vibe of the Day</span>
+            </div>
+            <div style={{ fontSize: 12, color: "#e8d5a3", fontFamily: "'DM Mono', monospace", lineHeight: 1.5, marginBottom: 8, fontStyle: "italic" }}>
+              "{vibeOfDay.prompt}"
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 10, color: vibeColor(vibeOfDay.dominant_vibe), letterSpacing: "0.08em" }}>{vibeOfDay.dominant_vibe}</span>
+              {vibeOfDay.share_url && (
+                <a href={vibeOfDay.share_url} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none", border: "1px solid rgba(120,80,20,0.3)", padding: "3px 8px", borderRadius: 4 }}>
+                  Listen →
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── WHAT PEOPLE ARE VIBING TO (public feed) ────────── */}
+        {tab === "playlists" && recentVibes.length > 0 && (
+          <div style={{ margin: "0 20px 12px" }}>
+            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 8 }}>
+              What people are vibing to
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {recentVibes.map((v, i) => (
+                <a key={i} href={v.share_url || "#"} target="_blank" rel="noopener noreferrer"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", background: `${vibeColor(v.dominant_vibe)}0d`, border: `1px solid ${vibeColor(v.dominant_vibe)}2a`, borderRadius: 20, textDecoration: "none", transition: "all 0.15s" }}>
+                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: vibeColor(v.dominant_vibe), flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: "rgba(180,140,80,0.6)", fontFamily: "'DM Mono', monospace", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {v.prompt?.length > 35 ? v.prompt.slice(0, 35) + "…" : v.prompt}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Save current button — only on playlists tab and when we have results */}
         {tab === "playlists" && currentResult?.tracks?.length > 0 && (
