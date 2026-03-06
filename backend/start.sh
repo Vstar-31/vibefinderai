@@ -25,25 +25,10 @@ else
     echo "[Prisma] Generate complete."
 fi
 
-# ── Pre-warm sentence-transformers model in background ─────────────────────
-# The semantic fallback path lazy-loads a 80MB model on first use.
-# Pre-warming it during startup avoids a 2-4s spike on the first fallback query.
-python3 -c "
-import sys
-try:
-    from sentence_transformers import SentenceTransformer
-    import os
-    # Only pre-warm if model is already cached (don't download during startup)
-    cache_dir = os.path.expanduser('~/.cache/huggingface/hub')
-    model_cached = any('MiniLM' in d for d in os.listdir(cache_dir)) if os.path.exists(cache_dir) else False
-    if model_cached:
-        m = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-        print('[Warmup] Sentence-transformer model pre-loaded.')
-    else:
-        print('[Warmup] Model not cached yet — will lazy-load on first fallback query.')
-except Exception as e:
-    print(f'[Warmup] Skipped: {e}')
-" &
+# ── NOTE: sentence-transformers / torch intentionally NOT loaded ───────────
+# These packages exceed Render free tier RAM (512 MB).
+# The semantic fallback in semantic_search.py degrades gracefully when the
+# model is absent — all NLP heuristic + audio feature scoring still works.
 
 echo "Starting uvicorn server..."
 exec uvicorn main:app \

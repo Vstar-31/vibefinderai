@@ -18,6 +18,7 @@ import logging
 import sys
 import time
 import hashlib
+import logger
 from core.vibe_engine import LANGUAGE_TAG_MAP
 # aiohttp is the async-safe HTTP client (replaces urllib in hot paths)
 # Falls back gracefully to the sync urllib path if not installed.
@@ -82,8 +83,22 @@ except ImportError:
     _SENTIMENT_AVAILABLE = False
     def apply_sentiment_boost(text, vibe_data): return vibe_data
 
-# Import semantic fallback ranker (gracefully degrades if model not installed)
-from analyzers import semantic_search
+# Import semantic fallback ranker — fully optional, degrades if torch not installed
+# sentence-transformers + torch are excluded from requirements on free-tier Render
+# (they exceed 512 MB RAM). All other scoring paths remain fully active.
+try:
+    from analyzers import semantic_search
+    _SEMANTIC_MODULE_AVAILABLE = True
+except Exception as _sem_err:
+    _SEMANTIC_MODULE_AVAILABLE = False
+    logger.warning(f"[Semantic] Module unavailable: {_sem_err} — semantic fallback disabled")
+    # Create a no-op stub so callers don't need to check
+    class _SemanticStub:
+        def semantic_ready(self): return False
+        def rank_tracks_by_prompt(self, prompt, tracks, **kw): return tracks
+        def blend_semantic_scores(self, tracks, **kw): return tracks
+        def get_thin_pool_supplement(self, *a, **kw): return []
+    semantic_search = _SemanticStub()
 
 # Load environment variables
 load_dotenv()
@@ -1980,7 +1995,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         # v1.3 NEW: Semantic reranking — when Last.fm keyword search gives us a
         # noisy pool, run sentence-transformer similarity to promote the tracks
         # whose identity most closely matches the user's prompt.
-        if semantic_search.semantic_ready() and raw_pool:
+        if _SEMANTIC_MODULE_AVAILABLE and semantic_search.semantic_ready() and raw_pool:
             logger.info(f"[Semantic] Reranking {len(raw_pool)} fallback tracks by prompt similarity...")
             raw_pool = await asyncio.to_thread(
                 semantic_search.rank_tracks_by_prompt, request.text, raw_pool
@@ -2348,7 +2363,8 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     # blend them with the heuristic scores for a final reranking pass.
     if used_semantic and best_tracks and any("semantic_score" in t for t in best_tracks):
         logger.info("[Semantic] Blending semantic + heuristic scores for final ranking...")
-        best_tracks = semantic_search.blend_semantic_scores(best_tracks, semantic_weight=0.35)
+        if _SEMANTIC_MODULE_AVAILABLE:
+            best_tracks = semantic_search.blend_semantic_scores(best_tracks, semantic_weight=0.35)
         # Re-trim to track limit after blending
         best_tracks = best_tracks[:request.track_limit]
     

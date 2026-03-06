@@ -1,23 +1,37 @@
 # Core Web Framework
 fastapi>=0.103.0
 
-# ASGI Server for running FastAPI
+# ASGI Server
 uvicorn[standard]>=0.23.2
 
 # JWT Authentication
 PyJWT>=2.8.0
 
-# Database ORM (Supabase/PostgreSQL)
+# Database ORM
 prisma>=0.11.0
 
-#Password Hashing & Security
+# Password Hashing & Security
 bcrypt==3.2.2
 passlib[bcrypt]>=1.7.4
-#Form Data Parsing (Required for OAuth2 Login)
+
+# Form Data Parsing (Required for OAuth2 Login)
 python-multipart>=0.0.9
 
+# HTTP clients
 aiohttp
-slowapi
 requests
-sentence-transformers
+
+# Rate limiting
+slowapi
+
+# ML — lightweight only
+# sentence-transformers is intentionally removed.
+# It pulls in torch (~600MB) which exceeds Render free tier RAM (512MB).
+# The semantic fallback in semantic_search.py degrades gracefully when absent.
+# Uncomment only on a paid instance with 1GB+ RAM:
+# sentence-transformers
 scikit-learn
+
+# Optional: sentiment boost (uncomment to enable)
+# textblob
+python-dotenv
