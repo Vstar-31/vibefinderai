@@ -965,19 +965,32 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sp = params.get("spotify");
+
     if (sp === "connected") {
+      // Trust the callback — do NOT run the status fetch here.
+      // If the status fetch ran immediately after, a race condition could cause
+      // it to return {connected:false} and overwrite the connected state.
       const name = params.get("name") || "";
       setSpotifyStatus({ connected: true, display_name: name });
       setSpotifyToast("connected");
       clearTimeout(spotifyToastTimer.current);
       spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 4000);
       window.history.replaceState({}, "", window.location.pathname);
-    } else if (sp === "error") {
+      return; // ← skip the status fetch below; we already know we're connected
+    }
+
+    if (sp === "error") {
+      const reason = params.get("reason") || "";
       setSpotifyToast("error");
+      // Surface the specific error reason in console for debugging
+      if (reason) console.warn("[Spotify] OAuth error reason:", reason);
       clearTimeout(spotifyToastTimer.current);
       spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 4000);
       window.history.replaceState({}, "", window.location.pathname);
+      return;
     }
+
+    // Normal page load (no callback params) — check DB for existing connection
     if (token) {
       fetch(buildApiUrl(`/api/spotify/status?authorization=${encodeURIComponent("Bearer " + token)}`))
         .then(r => r.ok ? r.json() : null)

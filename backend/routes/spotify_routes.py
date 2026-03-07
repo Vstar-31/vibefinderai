@@ -163,6 +163,7 @@ async def spotify_authorize(token: str = Query(..., description="VibeFinder JWT"
         "scope":         SPOTIFY_SCOPES,
         "redirect_uri":  SPOTIFY_REDIRECT_URI,
         "state":         state,
+        "show_dialog":   "true",  # Force account picker — avoids stale session bugs
     }
     url = "https://accounts.spotify.com/authorize?" + urlencode(params)
     return {"url": url}
@@ -227,7 +228,14 @@ async def spotify_callback(
                 timeout=10,
             )
             if profile_resp.status_code != 200:
-                return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason=profile_fetch")
+                # Log the full response — critical for debugging Dev Mode 5-user limit issues
+                # 403 = user not added to app's authorized test users in Spotify Dashboard
+                logger.error(
+                    f"[Spotify] Profile fetch failed {profile_resp.status_code}: {profile_resp.text[:400]}"
+                )
+                return RedirectResponse(
+                    f"{FRONTEND_URL}?spotify=error&reason=profile_fetch_{profile_resp.status_code}"
+                )
 
             profile = profile_resp.json()
             spotify_user_id = profile["id"]
@@ -269,7 +277,12 @@ async def spotify_callback(
 
 @router.get("/api/spotify/status")
 async def spotify_status(authorization: str = Query(...)):
-    """Returns whether the current user has Spotify connected."""
+    """
+    Returns whether the current user has Spotify connected.
+    Checks DB only — does NOT call Spotify live on every page load.
+    Token validity is checked lazily when the user exports/saves.
+    This keeps status checks fast and avoids false negatives from expired tokens.
+    """
     token   = authorization.replace("Bearer ", "")
     user_id = _get_user_id(token)
 
@@ -277,36 +290,15 @@ async def spotify_status(authorization: str = Query(...)):
         where={"userId": user_id, "providerName": "spotify"}
     )
     if not identity:
+        logger.info(f"[Spotify] Status: user {user_id[:8]}... has no Spotify connection")
         return {"connected": False}
 
-    # Fetch display name from Spotify
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                "https://api.spotify.com/v1/me",
-                headers={"Authorization": f"Bearer {identity.accessToken}"},
-                timeout=8,
-            )
-            if resp.status_code == 401:
-                new_token = await _refresh_spotify_token(identity)
-                if new_token:
-                    resp = await client.get(
-                        "https://api.spotify.com/v1/me",
-                        headers={"Authorization": f"Bearer {new_token}"},
-                        timeout=8,
-                    )
-            if resp.status_code == 200:
-                profile = resp.json()
-                return {
-                    "connected":    True,
-                    "display_name": profile.get("display_name", ""),
-                    "spotify_id":   profile.get("id", ""),
-                    "image":        (profile.get("images") or [{}])[0].get("url"),
-                }
-    except Exception as e:
-        logger.warning(f"[Spotify] Status check error: {e}")
-
-    return {"connected": True, "display_name": "", "spotify_id": identity.providerId}
+    logger.info(f"[Spotify] Status: user {user_id[:8]}... connected (spotify_id={identity.providerId})")
+    return {
+        "connected":    True,
+        "display_name": identity.providerId or "",  # name stored in callback redirect; providerId = spotify user ID
+        "spotify_id":   identity.providerId,
+    }
 
 
 @router.delete("/api/spotify/disconnect")
@@ -433,7 +425,7 @@ async def export_to_spotify(body: ExportPlaylistRequest, authorization: str = Qu
                 batch = resolved[i:i + 100]
                 add_resp = await _req(
                     "post",
-                    f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+                    f"https://api.spotify.com/v1/playlists/{playlist_id}/items",
                     json={"uris": batch},
                 )
                 if add_resp.status_code not in (200, 201):
