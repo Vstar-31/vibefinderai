@@ -604,10 +604,10 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
-  // Skip landing page if returning from Spotify OAuth callback
+  // If returning from Spotify OAuth callback, skip landing page immediately
   const [showLanding, setShowLanding] = useState(() => {
     const p = new URLSearchParams(window.location.search);
-    return !p.get("spotify"); // if ?spotify= is present, skip landing
+    return !p.get("spotify"); // skip landing when ?spotify=connected/error is present
   });
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem("vf_token") || null; }
@@ -677,7 +677,8 @@ export default function App() {
   // ── Spotify OAuth ─────────────────────────────────────────
   const [spotifyStatus, setSpotifyStatus]   = useState(null); // null | {connected, display_name}
   const [spotifyLoading, setSpotifyLoading] = useState(false);
-  const [spotifyToast, setSpotifyToast]     = useState(null); // "connected"|"exported"|"error"
+  const [exportingSpotify, setExportingSpotify] = useState(false);
+  const [spotifyToast, setSpotifyToast]     = useState(null); // "connected"|"exported"|"exportError"|"trackSaved"|"trackError"|"error"
   const spotifyToastTimer = useRef(null);
 
   // ── Music Player ──────────────────────────────────────────
@@ -1024,8 +1025,6 @@ export default function App() {
   };
 
   // ── Export playlist to Spotify ─────────────────────────────
-  const [exportingSpotify, setExportingSpotify] = useState(false);
-
   const exportToSpotify = async (tracks) => {
     if (!token || !spotifyStatus?.connected || exportingSpotify) return;
     setExportingSpotify(true);
@@ -1049,7 +1048,7 @@ export default function App() {
       setSpotifyToast("exported");
       clearTimeout(spotifyToastTimer.current);
       spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 5000);
-      // Open the created playlist in Spotify
+      // Open the created playlist directly in Spotify
       if (data.playlist_url) window.open(data.playlist_url, "_blank", "noopener");
       return { url: data.playlist_url };
     } catch (e) {
@@ -1067,7 +1066,7 @@ export default function App() {
     if (!token || !spotifyStatus?.connected) return;
     const uri = track.spotify_uri;
     if (!uri || !uri.startsWith("spotify:track:")) {
-      // No real URI — fall back to opening search
+      // No real URI — open search fallback
       window.open(`https://open.spotify.com/search/${encodeURIComponent(`${track.title} ${track.artist}`)}`, "_blank", "noopener");
       return;
     }
@@ -1090,7 +1089,7 @@ export default function App() {
       clearTimeout(spotifyToastTimer.current);
       spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 4000);
     }
-    // Always open Spotify to the track (deep link / web fallback)
+    // Always open Spotify to the track after saving
     window.open(uri.replace("spotify:track:", "https://open.spotify.com/track/"), "_blank", "noopener");
   };
 
@@ -1651,8 +1650,9 @@ export default function App() {
                               display: "flex", alignItems: "center", gap: "5px",
                               padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
                               fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
-                              textTransform: "uppercase", cursor: exportingSpotify ? "not-allowed" : "pointer",
-                              transition: "all 0.2s", opacity: exportingSpotify ? 0.6 : 1,
+                              textTransform: "uppercase", transition: "all 0.2s",
+                              cursor: exportingSpotify ? "not-allowed" : "pointer",
+                              opacity: exportingSpotify ? 0.6 : 1,
                               background: "rgba(29,185,84,0.12)", border: "1px solid rgba(29,185,84,0.35)",
                               color: "#1db954",
                             }}
@@ -1945,18 +1945,17 @@ export default function App() {
                                 Play
                               </button>
 
-                              {/* Open in Spotify / Save to Liked Songs */}
+                              {/* Save to Liked Songs + open in Spotify */}
                               {spotifyStatus?.connected ? (
                                 <button
                                   onClick={() => { logTrackClick(track, "spotify"); saveTrackToSpotify(track); }}
                                   className="dial-btn"
-                                  title="Save to Liked Songs + open in Spotify"
+                                  title="Save to Liked Songs &amp; open in Spotify"
                                   style={{
                                     ...S.authBtn(false), padding: "8px 12px",
                                     background: "rgba(29,185,84,0.15)",
                                     borderColor: "rgba(29,185,84,0.4)",
-                                    color: "#1db954",
-                                    cursor: "pointer",
+                                    color: "#1db954", cursor: "pointer",
                                     display: "flex", alignItems: "center", gap: "4px",
                                   }}
                                 >
