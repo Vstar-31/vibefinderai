@@ -604,7 +604,11 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
-  const [showLanding, setShowLanding] = useState(true);
+  // Skip landing page if returning from Spotify OAuth callback
+  const [showLanding, setShowLanding] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return !p.get("spotify"); // if ?spotify= is present, skip landing
+  });
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem("vf_token") || null; }
     catch { return null; }
@@ -1020,25 +1024,74 @@ export default function App() {
   };
 
   // ── Export playlist to Spotify ─────────────────────────────
+  const [exportingSpotify, setExportingSpotify] = useState(false);
+
   const exportToSpotify = async (tracks) => {
-    if (!token || !spotifyStatus?.connected) return;
-    const name = result?.dominant_vibe
-      ? `${result.dominant_vibe.charAt(0).toUpperCase() + result.dominant_vibe.slice(1)} Mix — VibeFinderAI`
-      : "VibeFinderAI Playlist";
-    const res = await fetch(
-      buildApiUrl(`/api/spotify/export-playlist?authorization=${encodeURIComponent("Bearer " + token)}`),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, tracks, is_public: false }),
+    if (!token || !spotifyStatus?.connected || exportingSpotify) return;
+    setExportingSpotify(true);
+    try {
+      const name = result?.dominant_vibe
+        ? `${result.dominant_vibe.charAt(0).toUpperCase() + result.dominant_vibe.slice(1)} Mix — VibeFinderAI`
+        : "VibeFinderAI Playlist";
+      const res = await fetch(
+        buildApiUrl(`/api/spotify/export-playlist?authorization=${encodeURIComponent("Bearer " + token)}`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, tracks, is_public: false }),
+        }
+      );
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `Export failed (${res.status})`);
       }
-    );
-    if (!res.ok) throw new Error("Export failed");
-    const data = await res.json();
-    setSpotifyToast("exported");
-    clearTimeout(spotifyToastTimer.current);
-    spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 5000);
-    return { url: data.playlist_url };
+      const data = await res.json();
+      setSpotifyToast("exported");
+      clearTimeout(spotifyToastTimer.current);
+      spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 5000);
+      // Open the created playlist in Spotify
+      if (data.playlist_url) window.open(data.playlist_url, "_blank", "noopener");
+      return { url: data.playlist_url };
+    } catch (e) {
+      console.error("[Spotify] Export failed:", e);
+      setSpotifyToast("exportError");
+      clearTimeout(spotifyToastTimer.current);
+      spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 5000);
+    } finally {
+      setExportingSpotify(false);
+    }
+  };
+
+  // ── Save individual track to Spotify Liked Songs ──────────
+  const saveTrackToSpotify = async (track) => {
+    if (!token || !spotifyStatus?.connected) return;
+    const uri = track.spotify_uri;
+    if (!uri || !uri.startsWith("spotify:track:")) {
+      // No real URI — fall back to opening search
+      window.open(`https://open.spotify.com/search/${encodeURIComponent(`${track.title} ${track.artist}`)}`, "_blank", "noopener");
+      return;
+    }
+    try {
+      const res = await fetch(
+        buildApiUrl(`/api/spotify/save-track?authorization=${encodeURIComponent("Bearer " + token)}`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spotify_uri: uri }),
+        }
+      );
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      setSpotifyToast("trackSaved");
+      clearTimeout(spotifyToastTimer.current);
+      spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 3000);
+    } catch (e) {
+      console.error("[Spotify] Save track failed:", e);
+      setSpotifyToast("trackError");
+      clearTimeout(spotifyToastTimer.current);
+      spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 4000);
+    }
+    // Always open Spotify to the track (deep link / web fallback)
+    window.open(uri.replace("spotify:track:", "https://open.spotify.com/track/"), "_blank", "noopener");
   };
 
   // ── Launch music player ────────────────────────────────────
@@ -1592,18 +1645,20 @@ export default function App() {
                                 : result.tracks
                             )}
                             className="dial-btn"
+                            disabled={exportingSpotify}
                             title={selectionMode && selectedTracks.size > 0 ? `Export ${selectedTracks.size} selected to Spotify` : "Export playlist to your Spotify"}
                             style={{
                               display: "flex", alignItems: "center", gap: "5px",
                               padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
                               fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
-                              textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s",
+                              textTransform: "uppercase", cursor: exportingSpotify ? "not-allowed" : "pointer",
+                              transition: "all 0.2s", opacity: exportingSpotify ? 0.6 : 1,
                               background: "rgba(29,185,84,0.12)", border: "1px solid rgba(29,185,84,0.35)",
                               color: "#1db954",
                             }}
                           >
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
-                            Export
+                            {exportingSpotify ? "Exporting…" : "Export"}
                           </button>
                         ) : (
                           <a
@@ -1635,9 +1690,12 @@ export default function App() {
                         display: "flex", alignItems: "center", gap: "6px",
                         color: spotifyToast === "error" ? "#f87171" : "#1db954",
                       }}>
-                        {spotifyToast === "connected" && "✓ Spotify connected — export playlists and use the player"}
-                        {spotifyToast === "exported"  && "✓ Exported to your Spotify!"}
-                        {spotifyToast === "error"     && "⚠ Spotify connection failed — try again"}
+                        {spotifyToast === "connected"   && "✓ Spotify connected — export playlists and use the player"}
+                        {spotifyToast === "exported"    && "✓ Exported! Opening in Spotify…"}
+                        {spotifyToast === "error"       && "⚠ Spotify connection failed — try again"}
+                        {spotifyToast === "exportError" && "⚠ Export failed — check Spotify is connected"}
+                        {spotifyToast === "trackSaved"  && "♥ Saved to your Liked Songs"}
+                        {spotifyToast === "trackError"  && "⚠ Couldn't save track — try reconnecting Spotify"}
                       </div>
                     )}
 
@@ -1887,22 +1945,42 @@ export default function App() {
                                 Play
                               </button>
 
-                              {/* Open in Spotify */}
-                              <a
-                                href={track.spotify_uri}
-                                target="_blank" rel="noopener noreferrer"
-                                onClick={() => logTrackClick(track, "spotify")}
-                                className="dial-btn"
-                                style={{
-                                  ...S.authBtn(false), padding: "8px 12px",
-                                  textDecoration: "none",
-                                  background: "rgba(29,185,84,0.15)",
-                                  borderColor: "rgba(29,185,84,0.4)",
-                                  color: "#1db954",
-                                }}
-                              >
-                                Spotify
-                              </a>
+                              {/* Open in Spotify / Save to Liked Songs */}
+                              {spotifyStatus?.connected ? (
+                                <button
+                                  onClick={() => { logTrackClick(track, "spotify"); saveTrackToSpotify(track); }}
+                                  className="dial-btn"
+                                  title="Save to Liked Songs + open in Spotify"
+                                  style={{
+                                    ...S.authBtn(false), padding: "8px 12px",
+                                    background: "rgba(29,185,84,0.15)",
+                                    borderColor: "rgba(29,185,84,0.4)",
+                                    color: "#1db954",
+                                    cursor: "pointer",
+                                    display: "flex", alignItems: "center", gap: "4px",
+                                  }}
+                                >
+                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                  Save
+                                </button>
+                              ) : (
+                                <a
+                                  href={`https://open.spotify.com/search/${encodeURIComponent(`${track.title} ${track.artist}`)}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  onClick={() => logTrackClick(track, "spotify")}
+                                  className="dial-btn"
+                                  title="Search on Spotify (connect account to save to library)"
+                                  style={{
+                                    ...S.authBtn(false), padding: "8px 12px",
+                                    textDecoration: "none",
+                                    background: "rgba(29,185,84,0.15)",
+                                    borderColor: "rgba(29,185,84,0.4)",
+                                    color: "#1db954",
+                                  }}
+                                >
+                                  Spotify
+                                </a>
+                              )}
 
                               {/* ── REMOVE BUTTON ── */}
                               {!selectionMode && (

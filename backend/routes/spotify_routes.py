@@ -62,6 +62,8 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://vibefinderai.netlify.app")
 SPOTIFY_SCOPES = " ".join([
     "playlist-modify-public",
     "playlist-modify-private",
+    "user-library-modify",        # PUT /me/library — save tracks (Feb 2026 API)
+    "user-library-read",          # GET /me/tracks/contains
     "streaming",
     "user-read-playback-state",
     "user-modify-playback-state",
@@ -151,6 +153,7 @@ async def spotify_authorize(token: str = Query(..., description="VibeFinder JWT"
     if not SPOTIFY_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Spotify not configured — add SPOTIFY_CLIENT_ID to env")
 
+    logger.info(f"[Spotify] OAuth authorize requested (client_id={SPOTIFY_CLIENT_ID[:8]}...)")
     # Encode VibeFinder token in state so we know who to store tokens for
     state = base64.urlsafe_b64encode(token.encode()).decode()
 
@@ -175,10 +178,14 @@ async def spotify_callback(
     Spotify OAuth callback. Exchanges code for tokens, stores in OAuthIdentity.
     Redirects to frontend with ?spotify=connected or ?spotify=error.
     """
+    logger.info(f"[Spotify] OAuth callback received — code={'present' if code else 'MISSING'} error={error or 'none'}")
+
     if error:
+        logger.warning(f"[Spotify] OAuth error from Spotify: {error}")
         return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason={error}")
 
     if not code or not state:
+        logger.warning("[Spotify] Missing code or state in callback")
         return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason=missing_params")
 
     # Decode VibeFinder user token from state
@@ -361,10 +368,11 @@ async def export_to_spotify(body: ExportPlaylistRequest, authorization: str = Qu
                     resp = await getattr(client, method)(url, headers=headers, **kwargs)
                 return resp
 
-            # 1. Create the playlist
+            # 1. Create the playlist — Feb 2026: POST /me/playlists
+            #    (POST /users/{id}/playlists was REMOVED in Feb 2026)
             create_resp = await _req(
                 "post",
-                f"https://api.spotify.com/v1/users/{spotify_user_id}/playlists",
+                "https://api.spotify.com/v1/me/playlists",
                 json={
                     "name":        body.name[:100],
                     "description": body.description[:300] if body.description else "Created by VibeFinderAI",
@@ -444,6 +452,71 @@ async def export_to_spotify(body: ExportPlaylistRequest, authorization: str = Qu
     except Exception as e:
         logger.error(f"[Spotify] Export error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Playlist export failed: {str(e)}")
+
+
+class SaveTrackRequest(BaseModel):
+    spotify_uri: str   # e.g. "spotify:track:4iV5W9uYEdYUVa79Axb7Rh"
+
+
+@router.post("/api/spotify/save-track")
+async def save_track_to_library(body: SaveTrackRequest, authorization: str = Query(...)):
+    """
+    Save a single track to the user's Spotify library (Liked Songs).
+    Uses PUT /me/library — the Feb 2026 replacement for the removed PUT /me/tracks.
+    Requires user-library-modify scope.
+    """
+    token   = authorization.replace("Bearer ", "")
+    user_id = _get_user_id(token)
+
+    identity = await _db.oauthidentity.find_first(
+        where={"userId": user_id, "providerName": "spotify"}
+    )
+    if not identity:
+        raise HTTPException(status_code=403, detail="Spotify not connected")
+
+    sp_token = identity.accessToken
+
+    # Only accept real track URIs
+    if not body.spotify_uri.startswith("spotify:track:"):
+        raise HTTPException(status_code=422, detail="Invalid Spotify track URI")
+
+    track_id = body.spotify_uri.split("spotify:track:")[-1]
+    logger.info(f"[Spotify] Saving track {track_id} to library for user {user_id[:8]}...")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            async def _req(method, url, **kwargs):
+                nonlocal sp_token
+                headers = kwargs.pop("headers", {})
+                headers["Authorization"] = f"Bearer {sp_token}"
+                resp = await getattr(client, method)(url, headers=headers, **kwargs)
+                if resp.status_code == 401:
+                    sp_token = await _refresh_spotify_token(identity)
+                    if not sp_token:
+                        raise HTTPException(status_code=401, detail="Spotify token expired — reconnect")
+                    headers["Authorization"] = f"Bearer {sp_token}"
+                    resp = await getattr(client, method)(url, headers=headers, **kwargs)
+                return resp
+
+            # Feb 2026: PUT /me/library replaces PUT /me/tracks
+            resp = await _req(
+                "put",
+                "https://api.spotify.com/v1/me/library",
+                json={"uris": [body.spotify_uri]},
+            )
+
+            if resp.status_code in (200, 201):
+                logger.info(f"[Spotify] ✓ Track {track_id} saved to library for user {user_id[:8]}")
+                return {"saved": True, "track_id": track_id}
+            else:
+                logger.error(f"[Spotify] Save track failed {resp.status_code}: {resp.text[:200]}")
+                raise HTTPException(status_code=502, detail=f"Spotify save failed ({resp.status_code})")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Spotify] Save track error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Save track failed: {str(e)}")
 
 
 @router.get("/api/spotify/search")
