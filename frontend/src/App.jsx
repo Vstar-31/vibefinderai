@@ -684,12 +684,13 @@ export default function App() {
   const spotifyToastTimer = useRef(null);
 
   // ── Services (Last.fm, Deezer, SoundCloud, YouTube) ─────────
-  const [servicesStatus,  setServicesStatus]  = useState({});
+  const [servicesStatus,   setServicesStatus]   = useState({});
+  const [servicePlaylistToast, setServicePlaylistToast] = useState(null); // {msg, url, isError}
+  const [creatingPlaylist,     setCreatingPlaylist]     = useState(false);
   const [visibleServices, setVisibleServices] = useState(() => {
     try { return JSON.parse(localStorage.getItem("vf_visible_services") || "{}"); }
     catch { return {}; }
   });
-  // Helper: a service is visible if it has never been explicitly toggled off
   const isServiceVisible = (svc) => visibleServices[svc] !== false;
 
   // ── Music Player ──────────────────────────────────────────
@@ -1059,24 +1060,40 @@ export default function App() {
   };
 
   const createServicePlaylist = async (service, tracks) => {
-    if (!token) return;
-    const auth  = encodeURIComponent("Bearer " + token);
-    const name  = result?.dominant_vibe
+    if (!token || creatingPlaylist) return;
+    setCreatingPlaylist(true);
+    setServicePlaylistToast({ msg: "Creating YouTube playlist… (~15s)", url: null, isError: false });
+    const auth = encodeURIComponent("Bearer " + token);
+    const name = result?.dominant_vibe
       ? `${result.dominant_vibe.charAt(0).toUpperCase() + result.dominant_vibe.slice(1)} Mix — VibeFinderAI`
       : "VibeFinderAI Playlist";
-    const endpoint = service === "deezer"     ? `/api/services/deezer/playlist?authorization=${auth}`
-      : service === "youtube"    ? `/api/services/youtube/playlist?authorization=${auth}`
-      : service === "soundcloud" ? `/api/services/soundcloud/playlist?authorization=${auth}`
+    const endpoint = service === "youtube"
+      ? `/api/services/youtube/playlist?authorization=${auth}`
       : null;
-    if (!endpoint) return;
-    const res = await fetch(buildApiUrl(endpoint), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, tracks }),
-    });
-    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || "Failed"); }
-    const data = await res.json();
-    if (data.playlist_url) window.open(data.playlist_url, "_blank", "noopener");
-    return data;
+    if (!endpoint) { setCreatingPlaylist(false); return; }
+    try {
+      const res = await fetch(buildApiUrl(endpoint), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, tracks }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "Playlist creation failed");
+      }
+      const data = await res.json();
+      // Success — show persistent toast with Open link (no auto-dismiss)
+      setServicePlaylistToast({
+        msg: `✓ Playlist created — ${data.tracks_added || 0} tracks added`,
+        url: data.playlist_url,
+        isError: false,
+      });
+      return data;
+    } catch (e) {
+      setServicePlaylistToast({ msg: `⚠ ${e.message}`, url: null, isError: true });
+      setTimeout(() => setServicePlaylistToast(null), 6000);
+    } finally {
+      setCreatingPlaylist(false);
+    }
   };
 
   // ── Track click logging ────────────────────────────────────
@@ -1736,28 +1753,63 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* ── YouTube playlist export button ── */}
+                    {/* ── YouTube playlist export ── */}
                     {servicesStatus?.youtube?.connected && isServiceVisible("youtube") && (
-                      <button
-                        onClick={() => createServicePlaylist("youtube",
-                          selectionMode && selectedTracks.size > 0
-                            ? result.tracks.filter(t => selectedTracks.has(`${t.title}|${t.artist}`))
-                            : result.tracks
-                        ).catch(() => {})}
-                        className="dial-btn"
-                        title="Create YouTube playlist from these tracks"
-                        style={{
-                          display:"flex", alignItems:"center", gap:"5px",
-                          padding:"5px 10px", borderRadius:"6px", fontSize:"10px",
-                          fontFamily:"'DM Mono',monospace", letterSpacing:"0.06em",
-                          textTransform:"uppercase", cursor:"pointer", transition:"all 0.2s",
-                          background:"rgba(255,0,0,0.08)", border:"1px solid rgba(255,0,0,0.3)",
-                          color:"#ff4444",
-                        }}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-                        + YouTube Playlist
-                      </button>
+                      <div style={{ display:"flex", flexDirection:"column", gap:"6px", marginBottom:"4px" }}>
+                        <button
+                          onClick={() => createServicePlaylist("youtube",
+                            selectionMode && selectedTracks.size > 0
+                              ? result.tracks.filter(t => selectedTracks.has(`${t.title}|${t.artist}`))
+                              : result.tracks
+                          )}
+                          disabled={creatingPlaylist}
+                          className="dial-btn"
+                          title="Create a YouTube playlist from these tracks"
+                          style={{
+                            display:"flex", alignItems:"center", gap:"5px",
+                            padding:"5px 10px", borderRadius:"6px", fontSize:"10px",
+                            fontFamily:"'DM Mono',monospace", letterSpacing:"0.06em",
+                            textTransform:"uppercase", transition:"all 0.2s",
+                            cursor: creatingPlaylist ? "not-allowed" : "pointer",
+                            opacity: creatingPlaylist ? 0.7 : 1,
+                            background:"rgba(255,0,0,0.08)", border:"1px solid rgba(255,0,0,0.3)",
+                            color:"#ff4444",
+                          }}
+                        >
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                          {creatingPlaylist ? "Creating playlist…" : "+ YouTube Playlist"}
+                        </button>
+                        {servicePlaylistToast && (
+                          <div style={{
+                            fontSize: 10, fontFamily:"'DM Mono',monospace", letterSpacing:"0.05em",
+                            padding:"8px 12px", borderRadius:6,
+                            background: servicePlaylistToast.isError ? "rgba(248,113,113,0.1)" : "rgba(30,20,5,0.9)",
+                            border:`1px solid ${servicePlaylistToast.isError ? "rgba(248,113,113,0.3)" : "rgba(255,80,80,0.35)"}`,
+                            color: servicePlaylistToast.isError ? "#f87171" : "#ff9999",
+                            display:"flex", alignItems:"center", gap:8,
+                          }}>
+                            <span style={{ flex:1 }}>{servicePlaylistToast.msg}</span>
+                            {servicePlaylistToast.url && (
+                              <a
+                                href={servicePlaylistToast.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={() => setServicePlaylistToast(null)}
+                                style={{
+                                  color:"#fff", textDecoration:"none", fontWeight:600, flexShrink:0,
+                                  background:"#cc0000", padding:"4px 10px", borderRadius:5,
+                                }}
+                              >
+                                Open ↗
+                              </a>
+                            )}
+                            <button
+                              onClick={() => setServicePlaylistToast(null)}
+                              style={{ background:"none", border:"none", color:"rgba(255,100,100,0.5)", cursor:"pointer", fontSize:16, lineHeight:1, padding:0, flexShrink:0 }}
+                            >✕</button>
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {/* ── Spotify toast ── */}
@@ -2007,21 +2059,7 @@ export default function App() {
                                 {isPlaying ? "Playing" : "Preview"}
                               </button>
 
-                              {/* Play in player (launches at this track) */}
-                              <button
-                                onClick={() => { launchPlayer(result.tracks, i); logTrackClick(track, "preview_click"); }}
-                                className="dial-btn app-track-preview"
-                                style={{
-                                  ...S.authBtn(false), padding: "8px 12px",
-                                  background: `${activeColor}15`,
-                                  borderColor: `${activeColor}44`,
-                                  color: activeColor,
-                                  display: "flex", alignItems: "center", gap: "5px",
-                                }}
-                              >
-                                <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                                Play
-                              </button>
+
 
                               {/* Save to Liked Songs + open in Spotify */}
                               {spotifyStatus?.connected ? (
@@ -2080,7 +2118,7 @@ export default function App() {
                               </a>
 
                               {/* ── Dynamic service buttons ── */}
-                              {servicesStatus?.lastfm?.connected && isServiceVisible("lastfm") && (
+                              {visibleServices?.lastfm && servicesStatus?.lastfm?.connected && (
                                 <button
                                   onClick={() => handleServiceAction("lastfm", "love", track).catch(() => {})}
                                   className="dial-btn"
@@ -2092,7 +2130,7 @@ export default function App() {
                                   }}
                                 >♥ Last.fm</button>
                               )}
-                              {servicesStatus?.deezer?.connected && isServiceVisible("deezer") && (
+                              {visibleServices?.deezer && servicesStatus?.deezer?.connected && (
                                 <button
                                   onClick={() => handleServiceAction("deezer", "love", track).catch(() => {})}
                                   className="dial-btn"
@@ -2104,7 +2142,7 @@ export default function App() {
                                   }}
                                 >♥ Deezer</button>
                               )}
-                              {servicesStatus?.soundcloud?.connected && isServiceVisible("soundcloud") && (
+                              {visibleServices?.soundcloud && servicesStatus?.soundcloud?.connected && (
                                 <button
                                   onClick={() => handleServiceAction("soundcloud", "like", track).catch(() => {})}
                                   className="dial-btn"
@@ -2300,7 +2338,7 @@ export default function App() {
             spotifyConnected={!!spotifyStatus?.connected}
             onExportSpotify={exportToSpotify}
             servicesConnected={Object.fromEntries(Object.entries(servicesStatus).map(([k,v]) => [k, !!v?.connected]))}
-            visibleServices={Object.fromEntries(["lastfm","youtube","deezer","soundcloud"].map(s => [s, isServiceVisible(s)]))}
+            visibleServices={Object.fromEntries(["lastfm","youtube"].map(s => [s, isServiceVisible(s)]))}
             onServiceAction={handleServiceAction}
           />
         </ErrorBoundary>
