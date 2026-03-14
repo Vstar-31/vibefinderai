@@ -45,7 +45,6 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import ServicesPanel from "./ServicesPanel.jsx";
 
 /* ─── ICONS (self-contained SVG — no lucide needed) ─────────────── */
 const Ico = {
@@ -384,11 +383,9 @@ export default function PlaylistPanel({
   selectedTracks,   // Set of "title|artist" keys — if non-empty, save only these
   activeColor,
   servicesStatus,
-  visibleServices,
-  onServicesStatusChange,
   onVisibilityChange,
 }) {
-  const [tab,         setTab]         = useState("playlists");   // "playlists" | "history" | "services"
+  const [tab,         setTab]         = useState("playlists");   // "playlists" | "history"
   const [playlists,   setPlaylists]   = useState([]);
   const [history,     setHistory]     = useState([]);
   const [loading,     setLoading]     = useState(true);
@@ -528,7 +525,7 @@ export default function PlaylistPanel({
 
         {/* Tab bar */}
         <div style={S.tabBar}>
-          {[["playlists", Ico.playlist, "Playlists"], ["history", Ico.history, "History"], ["services", Ico.services, "Services"]].map(
+          {[["playlists", Ico.playlist, "Playlists"], ["history", Ico.history, "History"]].map(
             ([key, icon, label]) => (
               <button
                 key={key}
@@ -659,26 +656,12 @@ export default function PlaylistPanel({
           )}
         </div>
 
-        {/* ── SERVICES TAB ── */}
-        {tab === "services" && (
-          <ServicesPanel
-            token={token}
-            buildApiUrl={buildApiUrl}
-            servicesStatus={servicesStatus || {}}
-            visibleServices={visibleServices || {}}
-            onStatusChange={onServicesStatusChange}
-            onVisibilityChange={onVisibilityChange}
-          />
-        )}
-
         {/* Footer */}
         <div style={S.footer}>
           <span>
             {tab === "playlists"
               ? `${playlists.length}/50 playlists used`
-              : tab === "history"
-              ? `${history.length} past analyses`
-              : "Manage your music services"}
+              : `${history.length} past analyses`}
           </span>
           {tab === "playlists" && playlists.length > 0 && (
             <span style={{ opacity:0.4 }}>

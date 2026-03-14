@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import LandingPage from "./LandingPage.jsx";
 import PlaylistPanel from "./PlaylistPanel.jsx";
+import ServicesPanel from "./ServicesPanel.jsx";
 import MusicPlayer from "./MusicPlayer.jsx";
 
 /* ─── API CONFIGURATION ─────────────────────────────────────── */
@@ -649,7 +650,8 @@ export default function App() {
   const feedbackToastTimer = useRef(null);
 
   // ── NEW: Playlist Panel State ─────────────────────────────────
-  const [showPlaylistPanel, setShowPlaylistPanel] = useState(false);
+  const [showPlaylistPanel,  setShowPlaylistPanel]  = useState(false);
+  const [showServicesPanel,  setShowServicesPanel]  = useState(false);
   // Increments when a playlist is saved — triggers PlaylistPanel to refresh its list
   const [playlistSaveCount, setPlaylistSaveCount] = useState(0);
 
@@ -1256,31 +1258,7 @@ export default function App() {
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <div className="app-header-osc"><Oscilloscope active={loading || !!playingTrack} /></div>
 
-              {/* ── SPOTIFY CONNECT / STATUS ── */}
-              {token && (
-                <button
-                  onClick={spotifyStatus?.connected ? disconnectSpotify : connectSpotify}
-                  disabled={spotifyLoading}
-                  className="dial-btn"
-                  title={spotifyStatus?.connected
-                    ? `Spotify: ${spotifyStatus.display_name || "Connected"} — click to disconnect`
-                    : "Connect your Spotify account"}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "6px",
-                    padding: "8px 14px", borderRadius: "8px",
-                    fontFamily: "'DM Mono', monospace", fontSize: "11px",
-                    letterSpacing: "0.06em", textTransform: "uppercase",
-                    cursor: spotifyLoading ? "not-allowed" : "pointer",
-                    transition: "all 0.2s", opacity: spotifyLoading ? 0.6 : 1,
-                    background: spotifyStatus?.connected ? "rgba(29,185,84,0.15)" : "rgba(120,80,20,0.1)",
-                    border: `1px solid ${spotifyStatus?.connected ? "rgba(29,185,84,0.5)" : "rgba(120,80,20,0.35)"}`,
-                    color: spotifyStatus?.connected ? "#1db954" : "rgba(180,140,80,0.55)",
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
-                  {spotifyLoading ? "…" : spotifyStatus?.connected ? (spotifyStatus.display_name || "Spotify ✓") : "Spotify"}
-                </button>
-              )}
+
 
               {/* ── LIBRARY / PLAYLIST PANEL BUTTON ── */}
               {token && (
@@ -1300,6 +1278,34 @@ export default function App() {
                   }}
                 >
                   <IconLibrary /> Library
+                </button>
+              )}
+
+              {/* ── SERVICES BUTTON ── */}
+              {token && (
+                <button
+                  onClick={() => setShowServicesPanel(true)}
+                  className="dial-btn"
+                  title="Connect music services"
+                  style={{
+                    display: "flex", alignItems: "center", gap: "6px",
+                    padding: "8px 14px", borderRadius: "8px",
+                    fontFamily: "'DM Mono', monospace", fontSize: "11px",
+                    fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase",
+                    cursor: "pointer", transition: "all 0.2s",
+                    background: Object.values(servicesStatus).some(s => s?.connected)
+                      ? "rgba(255,0,0,0.08)"
+                      : "rgba(40,20,5,0.8)",
+                    color: Object.values(servicesStatus).some(s => s?.connected)
+                      ? "#ff6666"
+                      : "rgba(180,140,80,0.7)",
+                    border: `1px solid ${Object.values(servicesStatus).some(s => s?.connected)
+                      ? "rgba(255,80,80,0.35)"
+                      : "rgba(120,80,20,0.4)"}`,
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+                  Services
                 </button>
               )}
 
@@ -2366,11 +2372,58 @@ export default function App() {
           saveCount={playlistSaveCount}
           activeColor={activeColor}
           selectedTracks={selectionMode && selectedTracks.size > 0 ? selectedTracks : null}
-          servicesStatus={servicesStatus}
-          visibleServices={visibleServices}
-          onServicesStatusChange={refreshServicesStatus}
-          onVisibilityChange={updateVisibleServices}
         />
+      )}
+
+      {/* ── SERVICES PANEL (standalone drawer) ──────────────────────── */}
+      {showServicesPanel && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 300,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+        }} onClick={() => setShowServicesPanel(false)}>
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: "absolute", top: 0, right: 0, bottom: 0,
+              width: "min(400px, 100vw)",
+              background: "linear-gradient(180deg, #120900 0%, #0a0500 100%)",
+              borderLeft: "1px solid rgba(155,105,28,0.3)",
+              display: "flex", flexDirection: "column",
+              boxShadow: "-8px 0 40px rgba(0,0,0,0.6)",
+              overflowY: "auto",
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "18px 20px 14px",
+              borderBottom: "1px solid rgba(155,105,28,0.2)",
+              flexShrink: 0,
+            }}>
+              <div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600, color: "#ead9a8", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Music Services
+                </div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 2 }}>
+                  Connect to love tracks · build playlists
+                </div>
+              </div>
+              <button onClick={() => setShowServicesPanel(false)} style={{ background: "none", border: "none", color: "rgba(180,140,80,0.4)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 4 }}>✕</button>
+            </div>
+
+            {/* ServicesPanel content */}
+            <div style={{ flex: 1, overflowY: "auto", paddingTop: 16 }}>
+              <ServicesPanel
+                token={token}
+                buildApiUrl={buildApiUrl}
+                servicesStatus={servicesStatus}
+                visibleServices={visibleServices}
+                onStatusChange={refreshServicesStatus}
+                onVisibilityChange={updateVisibleServices}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
