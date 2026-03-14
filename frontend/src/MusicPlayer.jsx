@@ -78,10 +78,9 @@ export default function MusicPlayer({
   spotifyConnected = false,
   onExportSpotify,
   // Services integration
-  servicesConnected = {},   // {lastfm, deezer, soundcloud, youtube}
+  servicesConnected = {},   // {lastfm, youtube}
   visibleServices   = {},   // which to show buttons for
   onServiceAction,          // fn(service, action, track) → Promise
-  buildApiUrl: _bau,        // already have buildApiUrl above
 }) {
   const audioRef    = useRef(null);
   const progressRef = useRef(null);
@@ -498,21 +497,7 @@ export default function MusicPlayer({
               </button>
             )}
 
-            {/* Deezer love */}
-            {visibleServices?.deezer && servicesConnected?.deezer && (
-              <button
-                onClick={() => serviceAction("deezer", "love")}
-                style={{
-                  ...S.ctrl, padding: "4px 8px", borderRadius: 6,
-                  background: "rgba(239,84,102,0.12)", border: "1px solid rgba(239,84,102,0.3)",
-                  color: "#ef5466", fontSize: 10, fontFamily: "'DM Mono', monospace",
-                  letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 4,
-                }}
-                title="Add to Deezer favorites"
-              >
-                ♥ Deezer
-              </button>
-            )}
+
 
             {/* Service toast */}
             {serviceToast && (
