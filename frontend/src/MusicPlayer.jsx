@@ -77,6 +77,11 @@ export default function MusicPlayer({
   buildApiUrl,
   spotifyConnected = false,
   onExportSpotify,
+  // Services integration
+  servicesConnected = {},   // {lastfm, deezer, soundcloud, youtube}
+  visibleServices   = {},   // which to show buttons for
+  onServiceAction,          // fn(service, action, track) → Promise
+  buildApiUrl: _bau,        // already have buildApiUrl above
 }) {
   const audioRef    = useRef(null);
   const progressRef = useRef(null);
@@ -95,6 +100,9 @@ export default function MusicPlayer({
   const [minimised, setMinimised]   = useState(false);
   const [exporting, setExporting]   = useState(false);
   const [exportDone, setExportDone] = useState(null);    // {url} | null
+  const [ytVideoId,  setYtVideoId]  = useState(null);    // YouTube video ID for full-length mode
+  const [ytLoading,  setYtLoading]  = useState(false);   // searching YouTube
+  const [serviceToast, setServiceToast] = useState(null);
 
   const track = queue[queueIdx] || queue[0];
 
@@ -213,6 +221,42 @@ export default function MusicPlayer({
       setExportDone({ error: e.message });
     } finally {
       setExporting(false);
+    }
+  };
+
+  // ── YouTube full-length playback ────────────────────────────────
+  const loadYouTube = async (t) => {
+    if (!buildApiUrl || ytLoading) return;
+    setYtLoading(true);
+    setYtVideoId(null);
+    try {
+      const q = encodeURIComponent(`${t.title} ${t.artist} official audio`);
+      const res = await fetch(buildApiUrl(`/api/services/youtube/search?q=${q}`));
+      const data = await res.json();
+      if (data.found) setYtVideoId(data.video_id);
+    } catch {}
+    setYtLoading(false);
+  };
+
+  // Load YouTube when track changes if YouTube is visible
+  useEffect(() => {
+    if (visibleServices?.youtube && track) {
+      loadYouTube(track);
+    } else {
+      setYtVideoId(null);
+    }
+  }, [queueIdx]); // eslint-disable-line
+
+  // ── Service quick actions (love, like, scrobble) ──────────────
+  const serviceAction = async (service, action) => {
+    if (!onServiceAction) return;
+    try {
+      await onServiceAction(service, action, track);
+      setServiceToast(`♥ ${action === "love" ? "Loved" : action === "scrobble" ? "Scrobbled" : "Saved"} on ${service}`);
+      setTimeout(() => setServiceToast(null), 2500);
+    } catch (e) {
+      setServiceToast(`⚠ ${service} action failed`);
+      setTimeout(() => setServiceToast(null), 3000);
     }
   };
 
@@ -384,9 +428,9 @@ export default function MusicPlayer({
             </div>
 
             {/* No preview notice */}
-            {!hasPreview && (
+            {!hasPreview && !ytVideoId && (
               <div style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", letterSpacing: "0.06em" }}>
-                No preview — open in Spotify to play
+                {ytLoading ? "Finding on YouTube…" : "No preview available"}
               </div>
             )}
           </div>
@@ -436,6 +480,45 @@ export default function MusicPlayer({
                 {Ic.spotify}
                 {exporting ? "Exporting…" : exportDone?.url ? "Exported!" : "Export"}
               </button>
+            )}
+
+            {/* Last.fm love */}
+            {visibleServices?.lastfm && servicesConnected?.lastfm && (
+              <button
+                onClick={() => serviceAction("lastfm", "love")}
+                style={{
+                  ...S.ctrl, padding: "4px 8px", borderRadius: 6,
+                  background: "rgba(213,16,7,0.12)", border: "1px solid rgba(213,16,7,0.3)",
+                  color: "#d51007", fontSize: 10, fontFamily: "'DM Mono', monospace",
+                  letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 4,
+                }}
+                title="Love on Last.fm"
+              >
+                ♥ Last.fm
+              </button>
+            )}
+
+            {/* Deezer love */}
+            {visibleServices?.deezer && servicesConnected?.deezer && (
+              <button
+                onClick={() => serviceAction("deezer", "love")}
+                style={{
+                  ...S.ctrl, padding: "4px 8px", borderRadius: 6,
+                  background: "rgba(239,84,102,0.12)", border: "1px solid rgba(239,84,102,0.3)",
+                  color: "#ef5466", fontSize: 10, fontFamily: "'DM Mono', monospace",
+                  letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 4,
+                }}
+                title="Add to Deezer favorites"
+              >
+                ♥ Deezer
+              </button>
+            )}
+
+            {/* Service toast */}
+            {serviceToast && (
+              <span style={{ fontSize: 9, color: serviceToast.startsWith("⚠") ? "#f87171" : "#34d399", fontFamily: "'DM Mono', monospace" }}>
+                {serviceToast}
+              </span>
             )}
 
             {/* Minimise */}
@@ -497,6 +580,31 @@ export default function MusicPlayer({
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── YouTube full-length embed ── */}
+        {ytVideoId && (
+          <div style={{ marginTop: 10, borderRadius: 8, overflow: "hidden", position: "relative" }}>
+            <div style={{
+              fontSize: 9, color: "rgba(180,140,80,0.3)", fontFamily: "'DM Mono', monospace",
+              letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4,
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <span>▶ Full track via YouTube</span>
+              <button
+                onClick={() => setYtVideoId(null)}
+                style={{ background: "none", border: "none", color: "rgba(180,140,80,0.3)", cursor: "pointer", fontSize: 12, padding: 0 }}
+              >✕</button>
+            </div>
+            <iframe
+              width="100%"
+              height="80"
+              src={`https://www.youtube.com/embed/${ytVideoId}?autoplay=1&controls=1`}
+              style={{ border: "none", borderRadius: 6, display: "block" }}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"
+              allowFullScreen
+            />
           </div>
         )}
 

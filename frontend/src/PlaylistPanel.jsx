@@ -45,6 +45,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import ServicesPanel from "./ServicesPanel.jsx";
 
 /* ─── ICONS (self-contained SVG — no lucide needed) ─────────────── */
 const Ico = {
@@ -58,6 +59,7 @@ const Ico = {
   playlist:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
   copy:    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
   x:       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
+  services: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>,
   check:   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
 };
 
@@ -381,8 +383,12 @@ export default function PlaylistPanel({
   onReRunPrompt,
   selectedTracks,   // Set of "title|artist" keys — if non-empty, save only these
   activeColor,
+  servicesStatus,
+  visibleServices,
+  onServicesStatusChange,
+  onVisibilityChange,
 }) {
-  const [tab,         setTab]         = useState("playlists");   // "playlists" | "history"
+  const [tab,         setTab]         = useState("playlists");   // "playlists" | "history" | "services"
   const [playlists,   setPlaylists]   = useState([]);
   const [history,     setHistory]     = useState([]);
   const [loading,     setLoading]     = useState(true);
@@ -522,7 +528,7 @@ export default function PlaylistPanel({
 
         {/* Tab bar */}
         <div style={S.tabBar}>
-          {[["playlists", Ico.playlist, "Playlists"], ["history", Ico.history, "History"]].map(
+          {[["playlists", Ico.playlist, "Playlists"], ["history", Ico.history, "History"], ["services", Ico.services, "Services"]].map(
             ([key, icon, label]) => (
               <button
                 key={key}
@@ -653,12 +659,26 @@ export default function PlaylistPanel({
           )}
         </div>
 
+        {/* ── SERVICES TAB ── */}
+        {tab === "services" && (
+          <ServicesPanel
+            token={token}
+            buildApiUrl={buildApiUrl}
+            servicesStatus={servicesStatus || {}}
+            visibleServices={visibleServices || {}}
+            onStatusChange={onServicesStatusChange}
+            onVisibilityChange={onVisibilityChange}
+          />
+        )}
+
         {/* Footer */}
         <div style={S.footer}>
           <span>
             {tab === "playlists"
               ? `${playlists.length}/50 playlists used`
-              : `${history.length} past analyses`}
+              : tab === "history"
+              ? `${history.length} past analyses`
+              : "Manage your music services"}
           </span>
           {tab === "playlists" && playlists.length > 0 && (
             <span style={{ opacity:0.4 }}>
