@@ -72,6 +72,14 @@ except ImportError as _se:
     spotify_router = None
     logging.getLogger(__name__).warning(f"Spotify routes not found: {_se}")
 
+try:
+    from routes.apple_routes import router as apple_router
+    _APPLE_ROUTES_AVAILABLE = True
+except ImportError as _ae:
+    _APPLE_ROUTES_AVAILABLE = False
+    apple_router = None
+    logging.getLogger(__name__).warning(f"Apple routes not found: {_ae}")
+
 # ── NEW: Gemini NLP enhancement (graceful — works without GEMINI_API_KEY) ────
 # gemini_vibe.py exports a singleton instance `gemini_enhancer`, not a bare fn.
 try:
@@ -397,6 +405,10 @@ if _ROUTES_AVAILABLE:
 if _SPOTIFY_ROUTES_AVAILABLE and spotify_router:
     app.include_router(spotify_router)
     logger.info("Spotify routes registered.")
+
+if _APPLE_ROUTES_AVAILABLE and apple_router:
+    app.include_router(apple_router)
+    logger.info("Apple Music routes registered.")
 
 # ---------------------------------------------------------
 # Auth & Security Configuration

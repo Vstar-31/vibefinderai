@@ -681,6 +681,14 @@ export default function App() {
   const [spotifyToast, setSpotifyToast]     = useState(null); // "connected"|"exported"|"exportError"|"trackSaved"|"trackError"|"error"
   const spotifyToastTimer = useRef(null);
 
+  // ── Apple Music state ────────────────────────────────────────────
+  const [appleMusicConnected, setAppleMusicConnected] = useState(false);
+  const [appleMusicLoading, setAppleMusicLoading]   = useState(false);
+  const [exportingApple, setExportingApple]         = useState(false);
+  const [appleToast, setAppleToast]                 = useState(null); // "connected"|"exported"|"exportError"|"trackSaved"|"trackError"
+  const appleToastTimer = useRef(null);
+  const appleMusicKitRef = useRef(null); // MusicKit instance
+
   // ── Music Player ──────────────────────────────────────────
   const [showPlayer, setShowPlayer]         = useState(false);
   const [playerTracks, setPlayerTracks]     = useState([]);
@@ -965,32 +973,26 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sp = params.get("spotify");
-
     if (sp === "connected") {
-      // Trust the callback — do NOT run the status fetch here.
-      // If the status fetch ran immediately after, a race condition could cause
-      // it to return {connected:false} and overwrite the connected state.
+      // Trust the callback — do NOT run the status fetch after this.
+      // Race condition: status fetch could return {connected:false} before DB write is readable.
       const name = params.get("name") || "";
       setSpotifyStatus({ connected: true, display_name: name });
       setSpotifyToast("connected");
       clearTimeout(spotifyToastTimer.current);
       spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 4000);
       window.history.replaceState({}, "", window.location.pathname);
-      return; // ← skip the status fetch below; we already know we're connected
+      return; // ← skip the status fetch below
     }
-
     if (sp === "error") {
       const reason = params.get("reason") || "";
       setSpotifyToast("error");
-      // Surface the specific error reason in console for debugging
       if (reason) console.warn("[Spotify] OAuth error reason:", reason);
       clearTimeout(spotifyToastTimer.current);
       spotifyToastTimer.current = setTimeout(() => setSpotifyToast(null), 4000);
       window.history.replaceState({}, "", window.location.pathname);
       return;
     }
-
-    // Normal page load (no callback params) — check DB for existing connection
     if (token) {
       fetch(buildApiUrl(`/api/spotify/status?authorization=${encodeURIComponent("Bearer " + token)}`))
         .then(r => r.ok ? r.json() : null)
@@ -998,6 +1000,156 @@ export default function App() {
         .catch(() => {});
     }
   }, [token]);
+
+  // ── Apple Music: load MusicKit JS + configure on mount ──────────
+  useEffect(() => {
+    // Only load if not already loaded
+    if (window.MusicKit) {
+      appleMusicKitRef.current = window.MusicKit.getInstance();
+      setAppleMusicConnected(appleMusicKitRef.current?.isAuthorized || false);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://js-cdn.music.apple.com/musickit/v3/musickit.js";
+    script.async = true;
+    script.onload = async () => {
+      try {
+        // Fetch developer token from our backend
+        const res = await fetch(buildApiUrl("/api/apple/developer-token"));
+        if (!res.ok) return; // Apple Music not configured — silently skip
+        const { token: devToken } = await res.json();
+        await window.MusicKit.configure({
+          developerToken: devToken,
+          app: { name: "VibeFinderAI", build: "1.0" },
+        });
+        const music = window.MusicKit.getInstance();
+        appleMusicKitRef.current = music;
+        // Restore session if user previously authorized
+        setAppleMusicConnected(music.isAuthorized || false);
+        console.log("[Apple] MusicKit configured. Authorized:", music.isAuthorized);
+      } catch (e) {
+        console.warn("[Apple] MusicKit config error:", e);
+      }
+    };
+    document.head.appendChild(script);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const connectAppleMusic = async () => {
+    const music = appleMusicKitRef.current;
+    if (!music) return;
+    setAppleMusicLoading(true);
+    try {
+      await music.authorize();
+      setAppleMusicConnected(true);
+      setAppleToast("connected");
+      clearTimeout(appleToastTimer.current);
+      appleToastTimer.current = setTimeout(() => setAppleToast(null), 4000);
+    } catch (e) {
+      console.error("[Apple] Authorization failed:", e);
+      setAppleToast("exportError");
+      clearTimeout(appleToastTimer.current);
+      appleToastTimer.current = setTimeout(() => setAppleToast(null), 4000);
+    } finally {
+      setAppleMusicLoading(false);
+    }
+  };
+
+  const disconnectAppleMusic = async () => {
+    const music = appleMusicKitRef.current;
+    if (!music) return;
+    try { await music.unauthorize(); } catch {}
+    setAppleMusicConnected(false);
+  };
+
+  // Search Apple Music catalog for a track, return its catalog ID
+  const _searchAppleCatalogId = async (music, title, artist) => {
+    try {
+      const term = `${title} ${artist}`;
+      const res = await music.api.music(
+        "/v1/catalog/us/search",
+        { term, types: "songs", limit: 1 }
+      );
+      const items = res?.data?.results?.songs?.data;
+      return items?.[0]?.id || null;
+    } catch { return null; }
+  };
+
+  const exportToAppleMusic = async (tracks) => {
+    const music = appleMusicKitRef.current;
+    if (!music?.isAuthorized || exportingApple) return;
+    setExportingApple(true);
+    try {
+      // 1. Create playlist
+      const playlistName = result?.dominant_vibe
+        ? `${result.dominant_vibe.charAt(0).toUpperCase() + result.dominant_vibe.slice(1)} Mix — VibeFinderAI`
+        : "VibeFinderAI Playlist";
+
+      const createRes = await music.api.music("/v1/me/library/playlists", {
+        fetchOptions: { method: "POST" },
+        fetchBody: JSON.stringify({
+          attributes: {
+            name: playlistName,
+            description: `Created by VibeFinderAI • ${new Date().toLocaleDateString()}`,
+          },
+        }),
+      });
+      const playlistId = createRes?.data?.data?.[0]?.id;
+      if (!playlistId) throw new Error("Failed to create playlist");
+
+      // 2. Resolve catalog IDs for each track
+      const catalogIds = await Promise.all(
+        tracks.map(t => _searchAppleCatalogId(music, t.title, t.artist))
+      );
+      const resolvedIds = catalogIds.filter(Boolean);
+
+      // 3. Add tracks to playlist
+      if (resolvedIds.length > 0) {
+        await music.api.music(`/v1/me/library/playlists/${playlistId}/tracks`, {
+          fetchOptions: { method: "POST" },
+          fetchBody: JSON.stringify({
+            data: resolvedIds.map(id => ({ id, type: "songs" })),
+          }),
+        });
+      }
+
+      setAppleToast("exported");
+      clearTimeout(appleToastTimer.current);
+      appleToastTimer.current = setTimeout(() => setAppleToast(null), 5000);
+      console.log(`[Apple] Exported ${resolvedIds.length}/${tracks.length} tracks`);
+    } catch (e) {
+      console.error("[Apple] Export failed:", e);
+      setAppleToast("exportError");
+      clearTimeout(appleToastTimer.current);
+      appleToastTimer.current = setTimeout(() => setAppleToast(null), 5000);
+    } finally {
+      setExportingApple(false);
+    }
+  };
+
+  const saveTrackToAppleMusic = async (track) => {
+    const music = appleMusicKitRef.current;
+    if (!music?.isAuthorized) return;
+    try {
+      const catalogId = await _searchAppleCatalogId(music, track.title, track.artist);
+      if (!catalogId) {
+        // Fallback: open Apple Music search
+        window.open(`https://music.apple.com/search?term=${encodeURIComponent(`${track.title} ${track.artist}`)}`, "_blank", "noopener");
+        return;
+      }
+      await music.api.music("/v1/me/library", {
+        fetchOptions: { method: "POST" },
+        fetchBody: JSON.stringify({ ids: { songs: [catalogId] } }),
+      });
+      setAppleToast("trackSaved");
+      clearTimeout(appleToastTimer.current);
+      appleToastTimer.current = setTimeout(() => setAppleToast(null), 3000);
+    } catch (e) {
+      console.error("[Apple] Save track failed:", e);
+      setAppleToast("trackError");
+      clearTimeout(appleToastTimer.current);
+      appleToastTimer.current = setTimeout(() => setAppleToast(null), 4000);
+    }
+  };
 
   // ── Track click logging ────────────────────────────────────
   const logTrackClick = async (track, type) => {
@@ -1203,6 +1355,32 @@ export default function App() {
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
                   {spotifyLoading ? "…" : spotifyStatus?.connected ? (spotifyStatus.display_name || "Spotify ✓") : "Spotify"}
+                </button>
+              )}
+
+              {/* ── APPLE MUSIC CONNECT / STATUS ── */}
+              {token && appleMusicKitRef.current && (
+                <button
+                  onClick={appleMusicConnected ? disconnectAppleMusic : connectAppleMusic}
+                  disabled={appleMusicLoading}
+                  className="dial-btn"
+                  title={appleMusicConnected
+                    ? "Apple Music connected — click to disconnect"
+                    : "Connect Apple Music to export playlists"}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "6px",
+                    padding: "8px 14px", borderRadius: "8px",
+                    fontFamily: "'DM Mono', monospace", fontSize: "11px",
+                    letterSpacing: "0.06em", textTransform: "uppercase",
+                    cursor: appleMusicLoading ? "not-allowed" : "pointer",
+                    transition: "all 0.2s", opacity: appleMusicLoading ? 0.6 : 1,
+                    background: appleMusicConnected ? "rgba(252,60,60,0.12)" : "rgba(120,80,20,0.1)",
+                    border: `1px solid ${appleMusicConnected ? "rgba(252,60,60,0.45)" : "rgba(120,80,20,0.35)"}`,
+                    color: appleMusicConnected ? "#fc3c3c" : "rgba(180,140,80,0.55)",
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                  {appleMusicLoading ? "…" : appleMusicConnected ? "Apple ✓" : "Apple Music"}
                 </button>
               )}
 
@@ -1648,6 +1826,33 @@ export default function App() {
                           Play All
                         </button>
 
+                        {/* ── Export to Apple Music ── */}
+                        {appleMusicConnected && (
+                          <button
+                            onClick={() => exportToAppleMusic(
+                              selectionMode && selectedTracks.size > 0
+                                ? result.tracks.filter(t => selectedTracks.has(`${t.title}|${t.artist}`))
+                                : result.tracks
+                            )}
+                            className="dial-btn"
+                            disabled={exportingApple}
+                            title="Export to Apple Music library"
+                            style={{
+                              display: "flex", alignItems: "center", gap: "5px",
+                              padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
+                              fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+                              textTransform: "uppercase",
+                              cursor: exportingApple ? "not-allowed" : "pointer",
+                              opacity: exportingApple ? 0.6 : 1,
+                              background: "rgba(252,60,60,0.1)", border: "1px solid rgba(252,60,60,0.35)",
+                              color: "#fc3c3c", transition: "all 0.2s",
+                            }}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                            {exportingApple ? "Exporting…" : "Apple Music"}
+                          </button>
+                        )}
+
                         {/* ── Export to Spotify (connected) or open:spotify fallback ── */}
                         {spotifyStatus?.connected ? (
                           <button
@@ -1701,7 +1906,7 @@ export default function App() {
                         fontSize: "10px", fontFamily: "'DM Mono', monospace",
                         letterSpacing: "0.08em", marginBottom: "10px", marginTop: "-6px",
                         display: "flex", alignItems: "center", gap: "6px",
-                        color: spotifyToast === "error" ? "#f87171" : "#1db954",
+                        color: (spotifyToast === "error" || spotifyToast === "exportError" || spotifyToast === "trackError") ? "#f87171" : "#1db954",
                       }}>
                         {spotifyToast === "connected"   && "✓ Spotify connected — export playlists and use the player"}
                         {spotifyToast === "exported"    && "✓ Exported! Opening in Spotify…"}
@@ -1709,6 +1914,22 @@ export default function App() {
                         {spotifyToast === "exportError" && "⚠ Export failed — check Spotify is connected"}
                         {spotifyToast === "trackSaved"  && "♥ Saved to your Liked Songs"}
                         {spotifyToast === "trackError"  && "⚠ Couldn't save track — try reconnecting Spotify"}
+                      </div>
+                    )}
+
+                    {/* ── Apple Music toast ── */}
+                    {appleToast && (
+                      <div className="animate-in" style={{
+                        fontSize: "10px", fontFamily: "'DM Mono', monospace",
+                        letterSpacing: "0.08em", marginBottom: "10px", marginTop: "-6px",
+                        display: "flex", alignItems: "center", gap: "6px",
+                        color: (appleToast === "exportError" || appleToast === "trackError") ? "#f87171" : "#fc3c3c",
+                      }}>
+                        {appleToast === "connected"   && "✓ Apple Music connected"}
+                        {appleToast === "exported"    && "✓ Exported to your Apple Music library"}
+                        {appleToast === "exportError" && "⚠ Apple Music export failed"}
+                        {appleToast === "trackSaved"  && "♥ Saved to Apple Music library"}
+                        {appleToast === "trackError"  && "⚠ Couldn't save to Apple Music"}
                       </div>
                     )}
 
@@ -1959,6 +2180,24 @@ export default function App() {
                               </button>
 
                               {/* Save to Liked Songs + open in Spotify */}
+                              {appleMusicConnected && (
+                                <button
+                                  onClick={() => saveTrackToAppleMusic(track)}
+                                  className="dial-btn"
+                                  title="Save to Apple Music library"
+                                  style={{
+                                    ...S.authBtn(false), padding: "8px 12px",
+                                    background: "rgba(252,60,60,0.1)",
+                                    borderColor: "rgba(252,60,60,0.35)",
+                                    color: "#fc3c3c", cursor: "pointer",
+                                    display: "flex", alignItems: "center", gap: "4px",
+                                  }}
+                                >
+                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                                  Apple
+                                </button>
+                              )}
+
                               {spotifyStatus?.connected ? (
                                 <button
                                   onClick={() => { logTrackClick(track, "spotify"); saveTrackToSpotify(track); }}
