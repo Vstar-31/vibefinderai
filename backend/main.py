@@ -19,6 +19,29 @@ import sys
 import time
 import hashlib
 from core.vibe_engine import LANGUAGE_TAG_MAP
+
+# ---------------------------------------------------------
+# Logging Configuration (must be early for import error handling)
+# ---------------------------------------------------------
+logger = logging.getLogger("VibeFinderEngine")
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+file_handler = logging.FileHandler("vibefinder_engine.log", encoding="utf-8")
+file_handler.setLevel(logging.INFO)
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setLevel(logging.INFO)
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
+
+# Load environment variables EARLY, before any route imports
+# This must happen before services_routes, spotify_routes, etc. read os.getenv()
+dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(dotenv_path=dotenv_path)
+logger.info(f"Environment variables loaded from: {dotenv_path}")
+
 # aiohttp is the async-safe HTTP client (replaces urllib in hot paths)
 # Falls back gracefully to the sync urllib path if not installed.
 try:
@@ -114,26 +137,6 @@ except Exception as _sem_err:
         def get_thin_pool_supplement(self, *a, **kw): return []
     semantic_search = _SemanticStub()
 
-# Load environment variables
-load_dotenv()
-
-# ---------------------------------------------------------
-# Logging Configuration
-# ---------------------------------------------------------
-logger = logging.getLogger("VibeFinderEngine")
-logger.setLevel(logging.INFO)
-formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-
-file_handler = logging.FileHandler("vibefinder_engine.log", encoding="utf-8")
-file_handler.setLevel(logging.INFO) # Detailed data flows quietly into the text file
-
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setLevel(logging.INFO) # INFO+ goes to stdout → captured by Render logs
-
-file_handler.setFormatter(formatter)
-stream_handler.setFormatter(formatter)
-logger.handlers = [file_handler, stream_handler]
-
 # ---------------------------------------------------------
 # Database Initialization (Prisma)
 # ---------------------------------------------------------
@@ -167,6 +170,9 @@ async def lifespan(app: FastAPI):
     if _SPOTIFY_ROUTES_AVAILABLE and spotify_router:
         spotify_set_db(db, os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this"))
         logger.info("Spotify routes wired to DB.")
+    if _SERVICES_ROUTES_AVAILABLE and services_router:
+        services_set_db(db, os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this"))
+        logger.info("Services routes wired to DB (Last.fm, Deezer, SoundCloud, YouTube).")
     
     # ── Load TrackFeatureCache into memory for fast O(1) scoring lookups ──────
     # The DB has 690+ tracks with real audio features (tempo, energy, valence,
@@ -404,6 +410,11 @@ if _ROUTES_AVAILABLE:
 if _SPOTIFY_ROUTES_AVAILABLE and spotify_router:
     app.include_router(spotify_router)
     logger.info("Spotify routes registered.")
+
+# ── Register Services router (Last.fm, Deezer, SoundCloud, YouTube) ──────────
+if _SERVICES_ROUTES_AVAILABLE and services_router:
+    app.include_router(services_router)
+    logger.info("Services routes registered (Last.fm, Deezer, SoundCloud, YouTube).")
 
 # ---------------------------------------------------------
 # Auth & Security Configuration
