@@ -22,11 +22,7 @@ ENDPOINTS
   POST /api/services/lastfm/love                   → love a track
   POST /api/services/lastfm/scrobble               → scrobble a track
 
-  POST /api/services/deezer/love                   → add track to Deezer favorites
-  POST /api/services/deezer/playlist               → create Deezer playlist + add tracks
 
-  POST /api/services/soundcloud/like               → like a track
-  POST /api/services/soundcloud/playlist           → create SoundCloud playlist
 
   GET  /api/services/youtube/search                → search YouTube (no user auth needed)
   POST /api/services/youtube/playlist              → create YouTube playlist + add videos
@@ -36,14 +32,6 @@ ENV VARS NEEDED (add to Render)
   # Last.fm
   LASTFM_API_KEY          — from last.fm/api/account
   LASTFM_SHARED_SECRET    — from last.fm/api/account
-
-  # Deezer
-  DEEZER_APP_ID           — from developers.deezer.com
-  DEEZER_APP_SECRET       — from developers.deezer.com
-
-  # SoundCloud (only if you have an existing SC developer app)
-  SOUNDCLOUD_CLIENT_ID    — from soundcloud.com/you/apps
-  SOUNDCLOUD_CLIENT_SECRET
 
   # YouTube / Google
   YOUTUBE_API_KEY         — from console.cloud.google.com (for search, no auth needed)
@@ -90,17 +78,11 @@ BACKEND_URL   = os.getenv("BACKEND_URL",  "https://vibefinderai.onrender.com")
 LASTFM_API_KEY       = os.getenv("LASTFM_API_KEY", "")
 LASTFM_SHARED_SECRET = os.getenv("LASTFM_SHARED_SECRET", "")
 
-DEEZER_APP_ID     = os.getenv("DEEZER_APP_ID", "")
-DEEZER_APP_SECRET = os.getenv("DEEZER_APP_SECRET", "")
-
-SOUNDCLOUD_CLIENT_ID     = os.getenv("SOUNDCLOUD_CLIENT_ID", "")
-SOUNDCLOUD_CLIENT_SECRET = os.getenv("SOUNDCLOUD_CLIENT_SECRET", "")
-
 YOUTUBE_API_KEY      = os.getenv("YOUTUBE_API_KEY", "")
 GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
-SUPPORTED_SERVICES = ["lastfm", "deezer", "soundcloud", "youtube"]
+SUPPORTED_SERVICES = ["lastfm", "youtube"]
 
 # ── auth helper ───────────────────────────────────────────────────────────────
 def _get_user_id(token: str) -> str:
@@ -160,28 +142,13 @@ async def service_authorize(service: str, token: str = Query(...)):
 
     if service == "lastfm":
         if not LASTFM_API_KEY:
-            raise HTTPException(status_code=503, detail="Last.fm not configured")
-        url = f"https://www.last.fm/api/auth/?api_key={LASTFM_API_KEY}&cb={quote(cb + '?state=' + state, safe='')}"
+            raise HTTPException(status_code=503, detail="Last.fm not configured — add LASTFM_API_KEY to Render env vars")
+        # Last.fm doesn't support OAuth state param — embed vf_token directly in cb URL
+        # Last.fm will redirect to: {cb_with_token}?token={lastfm_token}
+        cb_with_token = f"{cb}?vf_token={quote(state, safe='')}"
+        url = f"https://www.last.fm/api/auth/?api_key={LASTFM_API_KEY}&cb={quote(cb_with_token, safe='')}"
         return {"url": url}
 
-    if service == "deezer":
-        if not DEEZER_APP_ID:
-            raise HTTPException(status_code=503, detail="Deezer not configured")
-        perms = "basic_access,email,offline_access,manage_library,manage_playlist,listening_history"
-        params = {"app_id": DEEZER_APP_ID, "redirect_uri": cb, "perms": perms, "state": state}
-        return {"url": "https://connect.deezer.com/oauth/auth.php?" + urlencode(params)}
-
-    if service == "soundcloud":
-        if not SOUNDCLOUD_CLIENT_ID:
-            raise HTTPException(status_code=503, detail="SoundCloud not configured")
-        params = {
-            "client_id":     SOUNDCLOUD_CLIENT_ID,
-            "redirect_uri":  cb,
-            "response_type": "code",
-            "scope":         "non-expiring",
-            "state":         state,
-        }
-        return {"url": "https://soundcloud.com/connect?" + urlencode(params)}
 
     if service == "youtube":
         if not GOOGLE_CLIENT_ID:
@@ -204,11 +171,12 @@ async def service_authorize(service: str, token: str = Query(...)):
 
 @router.get("/api/services/{service}/callback")
 async def service_callback(
-    service: str,
-    code:    str = Query(None),
-    token:   str = Query(None),  # Last.fm sends 'token' not 'code'
-    state:   str = Query(None),
-    error:   str = Query(None),
+    service:  str,
+    code:     str = Query(None),
+    token:    str = Query(None),     # Last.fm sends 'token', not 'code'
+    vf_token: str = Query(None),     # Last.fm: our VibeFinder JWT embedded in cb URL
+    state:    str = Query(None),     # YouTube/Google OAuth standard state param
+    error:    str = Query(None),
 ):
     if service not in SUPPORTED_SERVICES:
         return RedirectResponse(f"{FRONTEND_URL}?service_error={service}&reason=unknown_service")
@@ -216,10 +184,13 @@ async def service_callback(
     if error:
         return RedirectResponse(f"{FRONTEND_URL}?service_error={service}&reason={error}")
 
-    # Decode VibeFinder user from state
+    # Decode VibeFinder user — Last.fm uses vf_token param, others use state
+    raw_state = vf_token or state
+    if not raw_state:
+        return RedirectResponse(f"{FRONTEND_URL}?service_error={service}&reason=bad_state")
     try:
-        vf_token = base64.urlsafe_b64decode(state.encode()).decode()
-        user_id  = _get_user_id(vf_token)
+        decoded_token = base64.urlsafe_b64decode(raw_state.encode()).decode()
+        user_id       = _get_user_id(decoded_token)
     except Exception:
         return RedirectResponse(f"{FRONTEND_URL}?service_error={service}&reason=bad_state")
 
@@ -252,74 +223,6 @@ async def service_callback(
         except Exception as e:
             logger.error(f"[Services] Last.fm callback error: {e}")
             return RedirectResponse(f"{FRONTEND_URL}?service_error=lastfm&reason=server_error")
-
-    # ── Deezer ────────────────────────────────────────────────────
-    elif service == "deezer":
-        if not code:
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=deezer&reason=no_code")
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    "https://connect.deezer.com/oauth/access_token.php",
-                    params={"app_id": DEEZER_APP_ID, "secret": DEEZER_APP_SECRET, "code": code, "output": "json"},
-                    timeout=10,
-                )
-            # Deezer returns form-encoded or JSON depending on output param
-            try:
-                data = resp.json()
-            except Exception:
-                # fallback: parse as query string
-                from urllib.parse import parse_qs
-                data = {k: v[0] for k, v in parse_qs(resp.text).items()}
-            if "access_token" not in data:
-                logger.error(f"[Services] Deezer token exchange failed: {resp.text[:200]}")
-                return RedirectResponse(f"{FRONTEND_URL}?service_error=deezer&reason=token_exchange")
-            access_token  = data["access_token"]
-            # Get Deezer user ID
-            me_resp = await httpx.AsyncClient().get(
-                "https://api.deezer.com/user/me",
-                params={"access_token": access_token},
-                timeout=8,
-            )
-            me = me_resp.json()
-            provider_id = str(me.get("id", ""))
-        except Exception as e:
-            logger.error(f"[Services] Deezer callback error: {e}")
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=deezer&reason=server_error")
-
-    # ── SoundCloud ────────────────────────────────────────────────
-    elif service == "soundcloud":
-        if not code:
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=soundcloud&reason=no_code")
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.soundcloud.com/oauth2/token",
-                    data={
-                        "client_id":     SOUNDCLOUD_CLIENT_ID,
-                        "client_secret": SOUNDCLOUD_CLIENT_SECRET,
-                        "grant_type":    "authorization_code",
-                        "code":          code,
-                        "redirect_uri":  _callback_url(service),
-                    },
-                    timeout=10,
-                )
-            data = resp.json()
-            if "access_token" not in data:
-                return RedirectResponse(f"{FRONTEND_URL}?service_error=soundcloud&reason=token_exchange")
-            access_token  = data["access_token"]
-            refresh_token = data.get("refresh_token")
-            # Get SC user ID
-            me_resp = await httpx.AsyncClient().get(
-                "https://api.soundcloud.com/me",
-                headers={"Authorization": f"OAuth {access_token}"},
-                timeout=8,
-            )
-            me = me_resp.json()
-            provider_id = str(me.get("id", ""))
-        except Exception as e:
-            logger.error(f"[Services] SoundCloud callback error: {e}")
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=soundcloud&reason=server_error")
 
     # ── YouTube / Google ─────────────────────────────────────────
     elif service == "youtube":
@@ -466,182 +369,6 @@ async def lastfm_scrobble(body: LastfmTrackRequest, authorization: str = Query(.
         raise HTTPException(status_code=502, detail=f"Last.fm error: {data.get('message')}")
     logger.info(f"[Services] Last.fm scrobbled '{body.title}' for user {user_id[:8]}...")
     return {"scrobbled": True}
-
-
-# ═══════════════════════════════════════════════════════════════════
-# DEEZER ACTIONS
-# ═══════════════════════════════════════════════════════════════════
-
-class DeezerTrackRequest(BaseModel):
-    title:  str
-    artist: str
-
-class DeezerPlaylistRequest(BaseModel):
-    name:   str
-    tracks: list[dict]  # [{title, artist}, ...]
-
-async def _deezer_search_track(access_token: str, title: str, artist: str) -> Optional[str]:
-    """Search Deezer for a track, return track ID."""
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                "https://api.deezer.com/search",
-                params={"q": f'track:"{title}" artist:"{artist}"', "limit": 1, "access_token": access_token},
-                timeout=8,
-            )
-        data = resp.json()
-        items = data.get("data", [])
-        return str(items[0]["id"]) if items else None
-    except Exception:
-        return None
-
-@router.post("/api/services/deezer/love")
-async def deezer_love_track(body: DeezerTrackRequest, authorization: str = Query(...)):
-    """Add a track to the user's Deezer favorites."""
-    token   = authorization.replace("Bearer ", "")
-    user_id = _get_user_id(token)
-    identity = await _db.oauthidentity.find_first(
-        where={"userId": user_id, "providerName": "deezer"}
-    )
-    if not identity:
-        raise HTTPException(status_code=403, detail="Deezer not connected")
-
-    track_id = await _deezer_search_track(identity.accessToken, body.title, body.artist)
-    if not track_id:
-        raise HTTPException(status_code=404, detail=f"Track not found on Deezer: {body.title}")
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"https://api.deezer.com/user/me/tracks",
-            params={"access_token": identity.accessToken, "track_id": track_id},
-            timeout=10,
-        )
-    if resp.status_code not in (200, 201):
-        raise HTTPException(status_code=502, detail=f"Deezer add failed ({resp.status_code})")
-    logger.info(f"[Services] Deezer loved '{body.title}' for user {user_id[:8]}...")
-    return {"loved": True, "deezer_id": track_id}
-
-@router.post("/api/services/deezer/playlist")
-async def deezer_create_playlist(body: DeezerPlaylistRequest, authorization: str = Query(...)):
-    """Create a Deezer playlist and add tracks."""
-    token   = authorization.replace("Bearer ", "")
-    user_id = _get_user_id(token)
-    identity = await _db.oauthidentity.find_first(
-        where={"userId": user_id, "providerName": "deezer"}
-    )
-    if not identity:
-        raise HTTPException(status_code=403, detail="Deezer not connected")
-
-    sp = identity.accessToken
-    async with httpx.AsyncClient() as client:
-        # 1. Create playlist
-        create_resp = await client.post(
-            "https://api.deezer.com/user/me/playlists",
-            params={"access_token": sp, "title": body.name[:255]},
-            timeout=10,
-        )
-        if create_resp.status_code not in (200, 201):
-            raise HTTPException(status_code=502, detail=f"Deezer playlist create failed")
-        playlist_id = create_resp.json().get("id")
-
-        # 2. Resolve track IDs
-        track_ids = []
-        for t in body.tracks[:50]:  # cap at 50
-            tid = await _deezer_search_track(sp, t.get("title", ""), t.get("artist", ""))
-            if tid:
-                track_ids.append(tid)
-
-        # 3. Add tracks
-        if track_ids:
-            songs = ",".join(track_ids)
-            await client.post(
-                f"https://api.deezer.com/playlist/{playlist_id}/tracks",
-                params={"access_token": sp, "songs": songs},
-                timeout=15,
-            )
-
-    playlist_url = f"https://www.deezer.com/playlist/{playlist_id}"
-    logger.info(f"[Services] Deezer playlist '{body.name}' created ({len(track_ids)} tracks) for user {user_id[:8]}...")
-    return {"playlist_id": playlist_id, "playlist_url": playlist_url, "tracks_added": len(track_ids)}
-
-
-# ═══════════════════════════════════════════════════════════════════
-# SOUNDCLOUD ACTIONS
-# ═══════════════════════════════════════════════════════════════════
-
-class SCTrackRequest(BaseModel):
-    title:  str
-    artist: str
-
-class SCPlaylistRequest(BaseModel):
-    name:   str
-    tracks: list[dict]
-
-async def _sc_search_track(access_token: str, title: str, artist: str) -> Optional[str]:
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                "https://api.soundcloud.com/tracks",
-                headers={"Authorization": f"OAuth {access_token}"},
-                params={"q": f"{title} {artist}", "limit": 1},
-                timeout=8,
-            )
-        items = resp.json() if resp.status_code == 200 else []
-        return str(items[0]["id"]) if items else None
-    except Exception:
-        return None
-
-@router.post("/api/services/soundcloud/like")
-async def soundcloud_like_track(body: SCTrackRequest, authorization: str = Query(...)):
-    token   = authorization.replace("Bearer ", "")
-    user_id = _get_user_id(token)
-    identity = await _db.oauthidentity.find_first(
-        where={"userId": user_id, "providerName": "soundcloud"}
-    )
-    if not identity:
-        raise HTTPException(status_code=403, detail="SoundCloud not connected")
-
-    track_id = await _sc_search_track(identity.accessToken, body.title, body.artist)
-    if not track_id:
-        raise HTTPException(status_code=404, detail="Track not found on SoundCloud")
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.put(
-            f"https://api.soundcloud.com/me/likes/tracks/{track_id}",
-            headers={"Authorization": f"OAuth {identity.accessToken}"},
-            timeout=10,
-        )
-    if resp.status_code not in (200, 201):
-        raise HTTPException(status_code=502, detail=f"SoundCloud like failed ({resp.status_code})")
-    return {"liked": True, "sc_track_id": track_id}
-
-@router.post("/api/services/soundcloud/playlist")
-async def soundcloud_create_playlist(body: SCPlaylistRequest, authorization: str = Query(...)):
-    token   = authorization.replace("Bearer ", "")
-    user_id = _get_user_id(token)
-    identity = await _db.oauthidentity.find_first(
-        where={"userId": user_id, "providerName": "soundcloud"}
-    )
-    if not identity:
-        raise HTTPException(status_code=403, detail="SoundCloud not connected")
-
-    track_ids = []
-    for t in body.tracks[:50]:
-        tid = await _sc_search_track(identity.accessToken, t.get("title",""), t.get("artist",""))
-        if tid:
-            track_ids.append({"id": int(tid)})
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "https://api.soundcloud.com/playlists",
-            headers={"Authorization": f"OAuth {identity.accessToken}", "Content-Type": "application/json"},
-            json={"playlist": {"title": body.name, "sharing": "public", "tracks": track_ids}},
-            timeout=15,
-        )
-    if resp.status_code not in (200, 201):
-        raise HTTPException(status_code=502, detail=f"SoundCloud playlist create failed ({resp.status_code})")
-    data = resp.json()
-    return {"playlist_id": data.get("id"), "playlist_url": data.get("permalink_url"), "tracks_added": len(track_ids)}
 
 
 # ═══════════════════════════════════════════════════════════════════
