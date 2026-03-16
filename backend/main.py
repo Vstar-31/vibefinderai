@@ -102,6 +102,14 @@ except ImportError as _sve:
     _SERVICES_ROUTES_AVAILABLE = False
     services_router = None
 
+try:
+    from routes.metrics_auth import router as metrics_router
+    _METRICS_ROUTES_AVAILABLE = True
+except ImportError as _mre:
+    _METRICS_ROUTES_AVAILABLE = False
+    metrics_router = None
+    logger.warning(f"Metrics routes not found: {_mre}")
+
 # ── NEW: Gemini NLP enhancement (graceful — works without GEMINI_API_KEY) ────
 # gemini_vibe.py exports a singleton instance `gemini_enhancer`, not a bare fn.
 try:
@@ -415,6 +423,11 @@ if _SPOTIFY_ROUTES_AVAILABLE and spotify_router:
 if _SERVICES_ROUTES_AVAILABLE and services_router:
     app.include_router(services_router)
     logger.info("Services routes registered (Last.fm, Deezer, SoundCloud, YouTube).")
+
+# ── Register Metrics router (secure analytics endpoints) ──────────────────────
+if _METRICS_ROUTES_AVAILABLE and metrics_router:
+    app.include_router(metrics_router)
+    logger.info("Metrics routes registered (secured).")
 
 # ---------------------------------------------------------
 # Auth & Security Configuration

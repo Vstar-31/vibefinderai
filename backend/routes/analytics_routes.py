@@ -28,6 +28,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import StreamingResponse
+
+try:
+    from routes.metrics_auth import require_metrics_token
+    _METRICS_AUTH_AVAILABLE = True
+except ImportError:
+    _METRICS_AUTH_AVAILABLE = False
+    require_metrics_token = None
 import jwt
 from prisma import Prisma
 
@@ -69,7 +76,10 @@ async def _require_admin(token: Optional[str]) -> bool:
 # ─── DASHBOARD ENDPOINT ───────────────────────────────────────────────────────
 
 @router.get("/analytics/dashboard")
-async def get_analytics_dashboard(token: Optional[str] = Depends(oauth2_scheme)):
+async def get_analytics_dashboard(
+    token: Optional[str] = Depends(oauth2_scheme),
+    _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
+):
     """
     Full analytics snapshot. Polled every 5s by AnalyticsDashboard.jsx.
     All numbers are derived from real DB data.
@@ -262,7 +272,10 @@ async def get_analytics_dashboard(token: Optional[str] = Depends(oauth2_scheme))
 # ─── LIVE METRICS ONLY (lightweight poll) ────────────────────────────────────
 
 @router.get("/analytics/live")
-async def get_live_metrics(token: Optional[str] = Depends(oauth2_scheme)):
+async def get_live_metrics(
+    token: Optional[str] = Depends(oauth2_scheme),
+    _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
+):
     """
     Lightweight endpoint for the live metrics bar.
     Returns only the last-hour window — much cheaper than full dashboard.
@@ -302,6 +315,7 @@ async def get_live_metrics(token: Optional[str] = Depends(oauth2_scheme)):
 async def get_vibe_breakdown(
     days: int = 7,
     token: Optional[str] = Depends(oauth2_scheme),
+    _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
 ):
     """
     Returns vibe distribution over the last N days.
@@ -345,7 +359,10 @@ async def get_vibe_breakdown(
 # ─── CSV EXPORT ───────────────────────────────────────────────────────────────
 
 @router.get("/analytics/export")
-async def export_analytics_csv(token: Optional[str] = Depends(oauth2_scheme)):
+async def export_analytics_csv(
+    token: Optional[str] = Depends(oauth2_scheme),
+    _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
+):
     """
     Export full VibeRequest history as CSV for offline analysis.
     Useful for QA analysis scripts (qa_analyzer.py, advanced_analyzer.py).

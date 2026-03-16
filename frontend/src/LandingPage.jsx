@@ -70,11 +70,19 @@ function Oscilloscope({ active }) {
 /* ═══════════════════════════════════════════════════════════════
    MAIN LANDING PAGE
 ═══════════════════════════════════════════════════════════════ */
-export default function LandingPage({ onLaunch }) {
-  const [navSolid, setNavSolid] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [typed, setTyped]       = useState("");
-  const fullText = `"Late night drive through rain-slicked streets, Travis Scott on the radio, city lights bleeding through fog..."`;
+export default function LandingPage({ onNavigate, onLaunch }) {
+  // Accepts both new (onNavigate) and legacy (onLaunch) prop shapes
+  const launch = () => {
+    if (onNavigate) onNavigate('/app');
+    else onLaunch?.();
+  };
+
+  const [navSolid,    setNavSolid]    = useState(false);
+  const [menuOpen,    setMenuOpen]    = useState(false);
+  const [typed,       setTyped]       = useState("");
+  const [proExpanded, setProExpanded] = useState(false);
+
+  const fullText = `"Late night drive through rain-slicked streets, the city bleeding through fog, something dark and cinematic..."`;
 
   useEffect(() => {
     const fn = () => { setNavSolid(window.scrollY > 40); };
@@ -104,7 +112,7 @@ export default function LandingPage({ onLaunch }) {
     boxShadow: "0 4px 18px rgba(180,100,10,0.3)",
     transition: "opacity .2s, transform .15s, box-shadow .2s",
   };
-  const mono = "'DM Mono', monospace";
+  const mono  = "'DM Mono', monospace";
   const serif = "'Playfair Display', serif";
   const S = {
     divider:   { border: "none", height: 1, margin: 0, background: "linear-gradient(90deg, transparent, rgba(120,80,20,0.35), transparent)" },
@@ -150,17 +158,15 @@ export default function LandingPage({ onLaunch }) {
           color: rgba(190,155,90,0.7);
         }
 
-        /* ── Responsive nav: hide text links on mobile ── */
-        .nav-links { display: flex; align-items: center; gap: 1.2rem; }
-        .nav-link-btn { display: block; }
-        .nav-hamburger { display: none; }
-
+        /* ── Responsive nav ── */
+        .nav-links    { display: flex; align-items: center; gap: 1.2rem; }
+        .nav-hamburger{ display: none; }
         @media (max-width: 680px) {
-          .nav-links { display: none; }
-          .nav-hamburger { display: flex !important; }
+          .nav-links    { display: none; }
+          .nav-hamburger{ display: flex !important; }
         }
 
-        /* ── Section padding responsive ── */
+        /* ── Section padding ── */
         .lp-section { padding: 70px 1.4rem; }
         @media (max-width: 600px) { .lp-section { padding: 52px 1.2rem; } }
 
@@ -174,85 +180,67 @@ export default function LandingPage({ onLaunch }) {
           border-radius: 14px;
           overflow: hidden;
         }
-        @media (max-width: 540px) {
-          .feature-grid { grid-template-columns: 1fr; }
-        }
+        @media (max-width: 540px) { .feature-grid { grid-template-columns: 1fr; } }
 
         /* ── Use-case grid ── */
-        .usecase-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-          gap: 1rem;
-        }
-        @media (max-width: 500px) {
-          .usecase-grid { grid-template-columns: 1fr; }
-        }
+        .usecase-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+        @media (max-width: 500px) { .usecase-grid { grid-template-columns: 1fr; } }
 
         /* ── Steps ── */
         .step-row {
-          display: grid;
-          grid-template-columns: 50px 1fr;
-          gap: 1.2rem;
-          padding: 1.6rem 0;
-          border-bottom: 1px solid rgba(150,100,25,0.2);
+          display: grid; grid-template-columns: 50px 1fr; gap: 1.2rem;
+          padding: 1.6rem 0; border-bottom: 1px solid rgba(150,100,25,0.2);
         }
 
         /* ── Result preview inner grid ── */
-        .rp-stat-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-        }
-        @media (max-width: 420px) {
-          .rp-stat-grid { grid-template-columns: 1fr; }
-        }
+        .rp-stat-grid { display: grid; grid-template-columns: 1fr 1fr; }
+        @media (max-width: 420px) { .rp-stat-grid { grid-template-columns: 1fr; } }
 
         /* ── Pro mode grid ── */
-        .pro-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 1rem;
-        }
-        @media (max-width: 900px) {
-          .pro-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-        @media (max-width: 560px) {
-          .pro-grid { grid-template-columns: 1fr; }
-        }
+        .pro-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+        @media (max-width: 900px) { .pro-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 560px) { .pro-grid { grid-template-columns: 1fr; } }
 
         /* ── Knob row ── */
-        .knob-row {
-          display: flex;
-          gap: 1rem;
-          flex-wrap: wrap;
-        }
-        .knob-item {
-          flex: 1;
-          min-width: 150px;
-        }
+        .knob-row  { display: flex; gap: 1rem; flex-wrap: wrap; }
+        .knob-item { flex: 1; min-width: 150px; }
 
         /* ── Mobile menu ── */
         .mobile-menu {
-          display: none;
-          position: fixed; top: 58px; left: 0; right: 0; z-index: 99;
-          background: rgba(8,5,1,0.98);
-          border-bottom: 1px solid rgba(155,105,28,0.3);
-          padding: 1rem 1.4rem 1.4rem;
-          flex-direction: column; gap: 0;
+          display: none; position: fixed; top: 58px; left: 0; right: 0; z-index: 99;
+          background: rgba(8,5,1,0.98); border-bottom: 1px solid rgba(155,105,28,0.3);
+          padding: 1rem 1.4rem 1.4rem; flex-direction: column; gap: 0;
           animation: slideDown .18s ease;
         }
         .mobile-menu.open { display: flex; }
         .mobile-menu-link {
-          padding: 13px 0;
-          border-bottom: 1px solid rgba(120,80,20,0.15);
+          padding: 13px 0; border-bottom: 1px solid rgba(120,80,20,0.15);
           font-family: 'DM Mono', monospace; font-size: 12px;
           letter-spacing: 0.12em; text-transform: uppercase;
           color: rgba(190,155,90,0.7);
           background: none; border-left: none; border-right: none; border-top: none;
-          cursor: pointer; text-align: left;
-          transition: color .15s;
+          cursor: pointer; text-align: left; transition: color .15s;
         }
         .mobile-menu-link:last-child { border-bottom: none; margin-top: 12px; }
         .mobile-menu-link:hover { color: #ead9a8; }
+
+        /* ── Pro Mode toggle button (mobile) ── */
+        .pro-toggle {
+          display: none;
+          width: 100%; padding: 12px 16px; margin-bottom: 1rem;
+          background: rgba(20,12,4,0.7); border: 1px solid rgba(155,105,28,0.3);
+          border-radius: 10px; color: rgba(210,160,60,0.8);
+          font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.1em;
+          text-transform: uppercase; cursor: pointer; text-align: left;
+          justify-content: space-between; align-items: center;
+        }
+        @media (max-width: 600px) { .pro-toggle { display: flex; } }
+
+        /* ── CTA buttons — bigger tap targets on mobile ── */
+        @media (max-width: 600px) {
+          .lp-cta-btn { padding: 16px 28px !important; font-size: 13px !important; width: 100% !important; }
+          .lp-hero-cta { padding: 15px 22px !important; }
+        }
       `}</style>
 
       {/* ══ NAV ══════════════════════════════════════════════════ */}
@@ -282,14 +270,14 @@ export default function LandingPage({ onLaunch }) {
               onMouseLeave={e => e.target.style.color = "rgba(180,140,80,0.5)"}
             >{label}</button>
           ))}
-          <button onClick={onLaunch} style={{ ...amberBtn, padding: "8px 18px" }}
+          <button onClick={launch} style={{ ...amberBtn, padding: "8px 18px" }}
             onMouseEnter={e => { e.currentTarget.style.opacity = ".85"; e.currentTarget.style.transform = "translateY(-1px)"; }}
             onMouseLeave={e => { e.currentTarget.style.opacity = "1";   e.currentTarget.style.transform = "none"; }}
           >⚡ Launch</button>
         </div>
 
         {/* Hamburger (mobile) */}
-        <button className="nav-hamburger" onClick={() => setMenuOpen(o => !o)} style={{ display: "none", background: "none", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 7, padding: "7px 10px", cursor: "pointer", color: "rgba(190,155,90,0.8)", fontFamily: mono, fontSize: 11, letterSpacing: "0.08em", gap: 7, alignItems: "center" }}>
+        <button className="nav-hamburger" onClick={() => setMenuOpen(o => !o)} style={{ display: "none", background: "none", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 7, padding: "8px 12px", cursor: "pointer", color: "rgba(190,155,90,0.8)", fontFamily: mono, fontSize: 11, letterSpacing: "0.08em", gap: 7, alignItems: "center", minHeight: 44 }}>
           <span style={{ fontSize: 14, lineHeight: 1 }}>{menuOpen ? "✕" : "☰"}</span>
           <span style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase" }}>Menu</span>
         </button>
@@ -300,7 +288,7 @@ export default function LandingPage({ onLaunch }) {
         {NAV_LINKS.map(([label, id]) => (
           <button key={id} className="mobile-menu-link" onClick={() => scrollTo(id)}>{label}</button>
         ))}
-        <button onClick={() => { onLaunch(); setMenuOpen(false); }} style={{ ...amberBtn, padding: "12px 20px", marginTop: 4 }}>⚡ Launch App →</button>
+        <button onClick={() => { launch(); setMenuOpen(false); }} style={{ ...amberBtn, padding: "14px 20px", marginTop: 4, minHeight: 48 }}>⚡ Launch App →</button>
       </div>
 
       {/* ══ HERO ═════════════════════════════════════════════════ */}
@@ -315,7 +303,7 @@ export default function LandingPage({ onLaunch }) {
           {/* Badge */}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(110,55,8,0.18)", border: "1px solid rgba(180,120,40,0.28)", padding: "5px 14px", borderRadius: 20, fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(210,160,60,0.75)", marginBottom: "1.6rem" }}>
             <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399", display: "inline-block", animation: "pulse 1.8s infinite" }} />
-            Neural Engine Active — Phase 7
+            Neural Engine Active — Phase 8
           </div>
 
           <h1 style={{ fontFamily: serif, fontWeight: 900, fontSize: "clamp(2rem,6vw,3.8rem)", lineHeight: 1.1, color: "#ead9a8", marginBottom: "1.1rem", letterSpacing: "-0.01em" }}>
@@ -344,14 +332,17 @@ export default function LandingPage({ onLaunch }) {
               {typed}
               <span style={{ display: "inline-block", width: 7, height: 13, background: "rgba(217,119,6,0.85)", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "text-bottom" }} />
             </div>
-            <button onClick={onLaunch} style={{ ...amberBtn, padding: "13px 28px", width: "100%", fontSize: "clamp(11px,2vw,13px)", letterSpacing: "0.16em" }}
+            <button
+              onClick={launch}
+              className="lp-hero-cta"
+              style={{ ...amberBtn, padding: "13px 28px", width: "100%", fontSize: "clamp(11px,2vw,13px)", letterSpacing: "0.16em", minHeight: 48 }}
               onMouseEnter={e => { e.currentTarget.style.opacity = ".86"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(180,100,10,0.5)"; }}
               onMouseLeave={e => { e.currentTarget.style.opacity = "1";   e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(180,100,10,0.3)"; }}
             >
               ⚡ Analyse My Vibe — Launch App →
             </button>
             <p style={{ marginTop: 9, fontFamily: mono, fontSize: 10, color: "rgba(120,80,20,0.55)", textAlign: "center", letterSpacing: "0.06em" }}>
-              Free to use · Let's Jam ·{" "}
+              Free to use · No account needed to search ·{" "}
               <button onClick={() => scrollTo("how-it-works")} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(217,160,60,0.6)", fontFamily: mono, fontSize: 10, padding: 0, textDecoration: "underline" }}>How it works ↓</button>
             </p>
           </div>
@@ -371,8 +362,8 @@ export default function LandingPage({ onLaunch }) {
               { n: "02", title: "Tune the knobs", desc: "ARTIST — how closely to match a reference artist. NICHENESS — mainstream to deep cuts. BPM — chill to high energy.", tip: null, tag: "Optional — defaults work great" },
               { n: "03", title: "Pick a language", desc: "Each language routes to its own pool. Hindi heartbreak → Bollywood sad songs. Punjabi hype → bhangra. Not generic western indie.", tag: "18 languages · 10 Indian regional pools" },
               { n: "04", title: "Run the analysis", desc: "The engine classifies your vibe, extracts keywords, maps genre tags, fetches and scores a matched track pool.", tag: "~3–5 seconds" },
-              { n: "05", title: "Check the artist banner", desc: "If the engine spotted an artist in your description, a banner tells you what was locked. Tap ✕ to dismiss and switch to pure vibe mode.", tag: "New in v9.0" },
-              { n: "06", title: "Listen, refine & save", desc: "Preview tracks inline, open in Spotify, rate with 👍/👎. Click genre tags to filter, pivot to secondary vibe, or tweak knobs and re-run. Save playlists and share them with a public link.", tag: null },
+              { n: "05", title: "Check the artist banner", desc: "If the engine spotted an artist in your description, a banner tells you what was locked. Tap ✕ to dismiss and switch to pure vibe mode.", tag: "Artist transparency" },
+              { n: "06", title: "Listen, refine & save", desc: "Preview tracks inline, open on YouTube or Spotify, rate with 👍/👎. Click genre tags to filter, pivot to secondary vibe, or tweak knobs and re-run. Save playlists and share with a public link.", tag: null },
             ].map(({ n, title, desc, tip, tag }) => (
               <div key={n} className="step-row">
                 <div style={{ width: 40, height: 40, flexShrink: 0, background: "rgba(22,14,4,0.8)", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.55)", letterSpacing: "0.08em" }}>{n}</div>
@@ -423,14 +414,14 @@ export default function LandingPage({ onLaunch }) {
           <p style={S.body}>Not a playlist generator. An acoustic intelligence layer that maps language, mood, and context to sound.</p>
           <div className="feature-grid">
             {[
-              { icon: "🧠", title: "Natural Language Analysis",   badge: "Core Engine",        desc: "Describe any moment in plain language. The AI extracts moods, semantic concepts, and audio attributes — including sensory metaphors like 'sunflowers and honey' — to build a matched pool." },
+              { icon: "🧠", title: "Natural Language Analysis",   badge: "Core Engine",        desc: "Describe any moment in plain language. The AI extracts moods, semantic concepts, and audio attributes — including sensory metaphors — to build a matched pool." },
               { icon: "✨", title: "Gemini + Sentiment Layer",    badge: "Dual NLP",           desc: "Heuristic engine runs first. When confidence is low, Gemini Flash fires for deeper understanding. TextBlob sentiment analysis boosts study/focus intent and disambiguates emotional prompts." },
               { icon: "🔒", title: "Smart Artist Detection",      badge: "Artist Transparency", desc: "Mentions of artists auto-lock the pool. A banner tells you exactly what was detected, and a ✕ lets you dismiss it for pure vibe mode." },
-              { icon: "🌐", title: "18 Languages",                badge: "Regional Music",     desc: "Deep routing for 10 Indian regional pools — Hindi, Punjabi, Tamil, Telugu, Marathi, Assamese and more — plus Korean, Arabic, Afrobeats." },
+              { icon: "🌐", title: "18 Languages",                badge: "Regional Music",     desc: "Deep routing for 10 Indian regional pools — Hindi, Punjabi, Tamil, Telugu, Marathi, Assamese and more — plus Korean, Arabic, Japanese, and Afrobeats." },
               { icon: "🎛️", title: "Pro Mode Overrides",          badge: "Power Users",        desc: "Force an artist, lock a genre, flip to secondary vibe, find artists similar to a reference, or lock strict discography mode." },
-              { icon: "💾", title: "Playlists & Sharing",         badge: "New — Phase 6",      desc: "Save any result as a named playlist. Share it publicly with a single link — recipients see the full playlist with previews, no account needed." },
-              { icon: "▶️", title: "Inline Previews + Spotify",   badge: "Spotify API",        desc: "Preview any track without leaving the app. DB-matched tracks link directly via Spotify track IDs — no search guessing." },
-              { icon: "🔬", title: "Neural Match Breakdown",      badge: "Transparency",       desc: "See the exact keywords the AI extracted — #late night #rain #travis scott — so you always know how your vibe was read." },
+              { icon: "💾", title: "Playlists & Sharing",         badge: "Save & Share",       desc: "Save any result as a named playlist. Share it publicly with a single link — recipients see the full playlist with previews, no account needed." },
+              { icon: "▶️", title: "Inline Previews + YouTube",   badge: "Full Playback",      desc: "Preview any track without leaving the app. Connect YouTube for full-length playback and playlist creation — no limits, free for everyone." },
+              { icon: "🔬", title: "Neural Match Breakdown",      badge: "Transparency",       desc: "See the exact keywords the AI extracted — #late night #rain #dark chill — so you always know how your vibe was read." },
             ].map(({ icon, title, badge, desc }) => (
               <div key={title} className="lp-card" style={{ padding: "1.6rem 1.4rem", borderRadius: 0, border: "none", background: "linear-gradient(155deg, rgba(36,23,8,0.95), rgba(18,11,3,0.98))" }}>
                 <div style={{ fontSize: 20, marginBottom: 10 }}>{icon}</div>
@@ -515,9 +506,9 @@ export default function LandingPage({ onLaunch }) {
                 </div>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                   {["👍","👎","▶"].map(act => (
-                    <button key={act} style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 6, padding: "4px 9px", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.5)", cursor: "pointer" }}>{act}</button>
+                    <button key={act} style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(155,105,28,0.35)", borderRadius: 6, padding: "6px 10px", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.5)", cursor: "pointer", minHeight: 36 }}>{act}</button>
                   ))}
-                  <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(30,215,96,0.3)", borderRadius: 6, padding: "4px 9px", fontFamily: mono, fontSize: 10, color: "#1ed760", cursor: "pointer" }}>Spotify</button>
+                  <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(255,0,0,0.3)", borderRadius: 6, padding: "6px 10px", fontFamily: mono, fontSize: 10, color: "#ff6666", cursor: "pointer", minHeight: 36 }}>YouTube</button>
                 </div>
               </div>
             ))}
@@ -525,8 +516,8 @@ export default function LandingPage({ onLaunch }) {
               Neural Match → <span style={{ color: "rgba(190,155,90,0.5)", marginLeft: 6 }}>#late night &nbsp; #rain &nbsp; #travis scott &nbsp; #dark chill</span>
             </div>
             <div style={{ padding: "9px 18px 13px", borderTop: "1px solid rgba(120,80,20,0.12)", display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
-              <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(217,119,6,0.35)", borderRadius: 6, padding: "5px 12px", fontFamily: mono, fontSize: 10, color: "rgba(217,119,6,0.75)", cursor: "pointer", letterSpacing: "0.06em" }}>💾 Save Playlist</button>
-              <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(155,105,28,0.3)", borderRadius: 6, padding: "5px 12px", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.5)", cursor: "pointer", letterSpacing: "0.06em" }}>🔗 Share Link</button>
+              <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(217,119,6,0.35)", borderRadius: 6, padding: "6px 12px", fontFamily: mono, fontSize: 10, color: "rgba(217,119,6,0.75)", cursor: "pointer", letterSpacing: "0.06em", minHeight: 36 }}>💾 Save Playlist</button>
+              <button style={{ background: "rgba(14,9,3,0.6)", border: "1px solid rgba(155,105,28,0.3)", borderRadius: 6, padding: "6px 12px", fontFamily: mono, fontSize: 10, color: "rgba(180,140,80,0.5)", cursor: "pointer", letterSpacing: "0.06em", minHeight: 36 }}>🔗 Share Link</button>
               <span style={{ fontFamily: mono, fontSize: 9, color: "rgba(120,80,20,0.45)", marginLeft: 2 }}>Public · No login required to view</span>
             </div>
           </div>
@@ -540,7 +531,23 @@ export default function LandingPage({ onLaunch }) {
           <p style={S.label}>// Advanced Controls</p>
           <h2 style={S.h2}>Pro Mode overrides</h2>
           <p style={S.body}>For when you want full manual control on top of AI vibe matching. Expand the Pro Mode panel after any analysis.</p>
-          <div className="pro-grid">
+
+          {/* Mobile toggle — hidden on desktop via CSS */}
+          <button
+            className="pro-toggle"
+            onClick={() => setProExpanded(p => !p)}
+          >
+            <span>{proExpanded ? "Hide overrides" : "Show overrides"}</span>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>{proExpanded ? "▲" : "▼"}</span>
+          </button>
+
+          {/* Cards — always visible on desktop, toggled on mobile */}
+          <div className="pro-grid" style={{ display: undefined }}>
+            <style>{`
+              @media (max-width: 600px) {
+                .pro-grid { display: ${proExpanded ? "grid" : "none"} !important; }
+              }
+            `}</style>
             {[
               { icon: "⚡", title: "Force Artist Bypass",     desc: "Lock all results to a specific artist's discography — type \"Deftones\" and every track comes from that sonic world." },
               { icon: "🎛️", title: "Force Genre Bypass",      desc: "Override AI genre inference entirely — type \"psytrance\", \"bhangra\", \"drum and bass\" — bypasses vibe detection. Tags update to match." },
@@ -604,9 +611,9 @@ export default function LandingPage({ onLaunch }) {
           <p style={S.body}>Anything with a feeling that doesn't map neatly to a genre.</p>
           <div className="usecase-grid">
             {[
-              { e: "🌧️", t: "Mood-based listening",    d: "Feel something but don't know what song fits. Describe the feeling and let the AI find it.", q: "sad and numb but kinda okay, november rain, slow indie" },
-              { e: "💻", t: "Study & focus sessions",   d: "Sentiment analysis detects study intent and routes to lo-fi, chillhop, and instrumental pools — not random dark tracks.", q: "late night study session, soft background music, no distractions" },
-              { e: "🎸", t: "Artist-led discovery",     d: "Mention a reference artist and crank Nicheness for lesser-known gems.", q: "sounds like Radiohead but more ambient, deep cuts only" },
+              { e: "🌧️", t: "Mood-based listening",    d: "Feel something but don't know what song fits. Describe the feeling and let the AI find it.", q: "sad and numb but kinda okay, november rain, slow indie, no lyrics please" },
+              { e: "💻", t: "Study & focus sessions",   d: "Sentiment analysis detects study intent and routes to lo-fi, chillhop, and instrumental pools — not random dark tracks.", q: "late night study session, soft background, no distractions, lo-fi chill" },
+              { e: "🎸", t: "Artist-led discovery",     d: "Mention a reference artist and crank Nicheness for lesser-known gems in that sonic zone.", q: "sounds like Cigarettes After Sex, hushed and aching, dark romance" },
               { e: "🪘", t: "Desi & regional moods",    d: "Bollywood, Punjabi, Tamil kuthu, Carnatic, ghazal — all natively routed.", q: "sufi night, rooftop, Nusrat Fateh Ali Khan energy, chai" },
               { e: "🎉", t: "Events & parties",         d: "Shaadi, sangeet, garba, birthday — describe the occasion and energy.", q: "Navratri garba remix, tabla meets EDM, spiritual but hype" },
               { e: "🌅", t: "Cinematic & scene vibes",  d: "Describe a visual or scene. Indian language prompts route to native BGM pools, not western orchestral.", q: "KGF Rocky Bhai energy, power walk moment, mass BGM" },
@@ -616,6 +623,12 @@ export default function LandingPage({ onLaunch }) {
                 <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontSize: 14, color: "#ead9a8", marginBottom: 7 }}>{t}</div>
                 <div style={{ fontFamily: mono, fontSize: 11, color: "rgba(190,155,90,0.55)", lineHeight: 1.7, marginBottom: 11 }}>{d}</div>
                 <div style={{ padding: "8px 11px", background: "rgba(8,5,1,0.7)", borderLeft: "2px solid rgba(217,119,6,0.4)", borderRadius: "0 6px 6px 0", fontFamily: mono, fontStyle: "italic", fontSize: 10, color: "rgba(190,155,90,0.45)", lineHeight: 1.6 }}>"{q}"</div>
+                <button
+                  onClick={launch}
+                  style={{ marginTop: 12, width: "100%", padding: "10px 14px", background: "rgba(20,12,4,0.8)", border: "1px solid rgba(155,105,28,0.3)", borderRadius: 8, fontFamily: mono, fontSize: 10, color: "rgba(210,160,60,0.7)", cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase", transition: "border-color .2s, color .2s", minHeight: 40 }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(217,119,6,0.5)"; e.currentTarget.style.color = "#fde68a"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(155,105,28,0.3)"; e.currentTarget.style.color = "rgba(210,160,60,0.7)"; }}
+                >Try this prompt →</button>
               </div>
             ))}
           </div>
@@ -634,7 +647,10 @@ export default function LandingPage({ onLaunch }) {
           <p style={{ fontFamily: mono, fontSize: 13, color: "rgba(190,155,90,0.55)", maxWidth: 420, margin: "0 auto 2.2rem", lineHeight: 1.85 }}>
             Type a feeling. The engine handles the rest.<br />Free to use · Sign up to save & share playlists.
           </p>
-          <button onClick={onLaunch} style={{ ...amberBtn, padding: "15px 40px", fontSize: 13, letterSpacing: "0.18em" }}
+          <button
+            onClick={launch}
+            className="lp-cta-btn"
+            style={{ ...amberBtn, padding: "15px 40px", fontSize: 13, letterSpacing: "0.18em", minHeight: 52 }}
             onMouseEnter={e => { e.currentTarget.style.opacity = ".86"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 30px rgba(180,100,10,0.5)"; }}
             onMouseLeave={e => { e.currentTarget.style.opacity = "1";   e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(180,100,10,0.3)"; }}
           >⚡ Launch VibeFinderAI →</button>
@@ -649,10 +665,10 @@ export default function LandingPage({ onLaunch }) {
           </div>
           <span style={{ fontFamily: serif, fontSize: 12, color: "#ead9a8", letterSpacing: "-0.01em" }}>VibeFinderAI</span>
         </div>
-        <span>Phase 7 · 18 Languages · Last.fm + Spotify + Gemini</span>
+        <span>Phase 8 · 18 Languages · Last.fm + YouTube + Gemini</span>
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-          {[["App", onLaunch], ["How It Works", () => scrollTo("how-it-works")], ["Features", () => scrollTo("features")]].map(([label, fn]) => (
-            <button key={label} onClick={fn} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(120,80,20,0.55)", fontFamily: mono, fontSize: 11, letterSpacing: "0.06em" }}
+          {[["App", launch], ["How It Works", () => scrollTo("how-it-works")], ["Features", () => scrollTo("features")]].map(([label, fn]) => (
+            <button key={label} onClick={fn} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(120,80,20,0.55)", fontFamily: mono, fontSize: 11, letterSpacing: "0.06em", minHeight: 40, padding: "0 4px" }}
               onMouseEnter={e => e.target.style.color = "rgba(190,155,90,0.7)"}
               onMouseLeave={e => e.target.style.color = "rgba(120,80,20,0.55)"}
             >{label}</button>

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import LandingPage from "./LandingPage.jsx";
 import PlaylistPanel from "./PlaylistPanel.jsx";
 import ServicesPanel from "./ServicesPanel.jsx";
 import MusicPlayer from "./MusicPlayer.jsx";
@@ -604,12 +603,7 @@ class ErrorBoundary extends Component {
   }
 }
 
-export default function App() {
-  // If returning from Spotify OAuth callback, skip landing page immediately
-  const [showLanding, setShowLanding] = useState(() => {
-    const p = new URLSearchParams(window.location.search);
-    return !p.get("spotify"); // skip landing when ?spotify=connected/error is present
-  });
+export default function App({ onNavigate }) {
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem("vf_token") || null; }
     catch { return null; }
@@ -1210,16 +1204,6 @@ export default function App() {
     setShowPlayer(true);
   };
 
-  // Browser back navigation
-  useEffect(() => {
-    if (!showLanding) window.history.pushState({ page: "engine" }, "");
-    const handlePop = () => setShowLanding(true);
-    window.addEventListener("popstate", handlePop);
-    return () => window.removeEventListener("popstate", handlePop);
-  }, [showLanding]);
-
-  if (showLanding) return <LandingPage onLaunch={() => setShowLanding(false)} />;
-
   return (
     <>
       <GlobalStyles />
@@ -1257,7 +1241,7 @@ export default function App() {
           <header className="app-header" style={S.header}>
             <div style={S.logoWrap}>
               <button
-                onClick={() => setShowLanding(true)}
+                onClick={() => onNavigate?.('/')}
                 title="Back to Home"
                 style={{
                   background: "none", border: "none", cursor: "pointer",
