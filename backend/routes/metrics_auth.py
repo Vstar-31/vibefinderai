@@ -27,10 +27,10 @@ from jose import JWTError, jwt
 METRICS_PASSPHRASE = os.getenv("METRICS_PASSPHRASE", "")
 _METRICS_SECRET    = os.getenv("METRICS_SECRET", "") or os.getenv("SECRET_KEY", "")
 
-metrics_router = APIRouter()
+router = APIRouter()
 
 
-@metrics_router.post("/api/metrics/auth")
+@router.post("/api/metrics/auth")
 async def metrics_auth(body: dict = Body(...)):
     """
     Exchange the admin passphrase for a 7-day metrics JWT.

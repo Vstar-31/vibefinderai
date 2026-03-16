@@ -394,7 +394,7 @@ def get_cors_origins():
     ])
     
     # Add production frontend URL if configured
-    frontend_prod = os.getenv("FRONTEND_URL_PROD")
+    frontend_prod = os.getenv("FRONTEND_URL_PROD") or "https://vibefinderai.netlify.app"
     if frontend_prod:
         origins.append(frontend_prod)
     

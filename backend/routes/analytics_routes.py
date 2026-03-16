@@ -77,14 +77,12 @@ async def _require_admin(token: Optional[str]) -> bool:
 
 @router.get("/analytics/dashboard")
 async def get_analytics_dashboard(
-    token: Optional[str] = Depends(oauth2_scheme),
     _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
 ):
     """
     Full analytics snapshot. Polled every 5s by AnalyticsDashboard.jsx.
     All numbers are derived from real DB data.
     """
-    await _require_admin(token)
     db = get_db()
 
     now      = datetime.now(timezone.utc)
@@ -273,14 +271,12 @@ async def get_analytics_dashboard(
 
 @router.get("/analytics/live")
 async def get_live_metrics(
-    token: Optional[str] = Depends(oauth2_scheme),
     _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
 ):
     """
     Lightweight endpoint for the live metrics bar.
     Returns only the last-hour window — much cheaper than full dashboard.
     """
-    await _require_admin(token)
     db = get_db()
 
     now      = datetime.now(timezone.utc)
@@ -314,14 +310,12 @@ async def get_live_metrics(
 @router.get("/analytics/vibes")
 async def get_vibe_breakdown(
     days: int = 7,
-    token: Optional[str] = Depends(oauth2_scheme),
     _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
 ):
     """
     Returns vibe distribution over the last N days.
     Used to power the Top Vibes chart and can power a future trend graph.
     """
-    await _require_admin(token)
     db = get_db()
 
     since = datetime.now(timezone.utc) - timedelta(days=min(days, 90))
@@ -360,14 +354,12 @@ async def get_vibe_breakdown(
 
 @router.get("/analytics/export")
 async def export_analytics_csv(
-    token: Optional[str] = Depends(oauth2_scheme),
     _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
 ):
     """
     Export full VibeRequest history as CSV for offline analysis.
     Useful for QA analysis scripts (qa_analyzer.py, advanced_analyzer.py).
     """
-    await _require_admin(token)
     db = get_db()
 
     try:
