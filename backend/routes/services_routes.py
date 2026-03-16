@@ -852,10 +852,11 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
         logger.info(f"[Services] YT search: {len(found_ids)}/{len(tracks)} found, {cache_hits} from cache")
 
         # 3. Add all found videos to playlist — SEQUENTIAL with delays to avoid 409 rate limits
-        async def add_one(video_id: str, index: int) -> bool:
+        async def add_one(video_id: str, index: int, retry_count: int = 0) -> bool:
             try:
-                # Stagger requests: 200ms delay between each to avoid concurrent modification errors
-                await asyncio.sleep(index * 0.2)
+                # Stagger requests: 400ms delay + exponential backoff on retries
+                base_delay = 0.4 + (retry_count * 0.5)
+                await asyncio.sleep(index * base_delay)
                 
                 resp = await _yt_req(
                     client, "post",
@@ -867,14 +868,19 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
                     }},
                 )
                 if resp.status_code not in (200, 201):
-                    logger.warning(f"[Services] YT add video {video_id} failed: {resp.status_code} — {resp.text[:150]}")
+                    if resp.status_code == 409 and retry_count < 3:
+                        logger.info(f"[Services] YT add video {video_id} got 409 — retrying (attempt {retry_count + 2}/4)...")
+                        await asyncio.sleep(2 ** retry_count)  # exponential backoff: 1s, 2s, 4s
+                        return await add_one(video_id, index, retry_count + 1)
+                    logger.warning(f"[Services] YT add video {video_id} failed: {resp.status_code}")
                     return False
+                logger.info(f"[Services] YT added video {video_id}")
                 return True
             except Exception as e:
                 logger.error(f"[Services] YT add_one exception for {video_id}: {e}")
                 return False
 
-        # Instead of parallel gather, add sequentially to avoid 409 conflicts
+        # Add sequentially to avoid 409 conflicts
         results = []
         for idx, vid in enumerate(found_ids):
             result = await add_one(vid, idx)
