@@ -648,36 +648,63 @@ async def soundcloud_create_playlist(body: SCPlaylistRequest, authorization: str
 # YOUTUBE ACTIONS
 # ═══════════════════════════════════════════════════════════════════
 
+@router.get("/api/services/youtube/cache-stats")
+async def youtube_cache_stats():
+    """Returns YouTube search cache stats — for monitoring quota savings."""
+    now   = _time.time()
+    valid = sum(1 for v in _YT_SEARCH_CACHE.values() if now - v["ts"] <= _YT_CACHE_TTL)
+    return {
+        "total_entries":    len(_YT_SEARCH_CACHE),
+        "valid_entries":    valid,
+        "ttl_days":         7,
+        "quota_saved_est":  valid * 100,
+    }
+
+
 @router.get("/api/services/youtube/search")
-async def youtube_search(q: str = Query(...)):
+async def youtube_search(q: str = Query(...), title: str = Query(None), artist: str = Query(None)):
     """
     Search YouTube for a track — returns {video_id, title, thumbnail}.
     No user auth needed, just YOUTUBE_API_KEY.
-    Used to power the full-length player embed.
+    Pass title+artist for cache lookup (saves 100 quota units per hit).
     """
     if not YOUTUBE_API_KEY:
         raise HTTPException(status_code=503, detail="YouTube API key not configured")
+
+    # Cache check
+    if title and artist:
+        cached = _yt_cache_get(title, artist)
+        if cached:
+            return {"found": True, "video_id": cached, "cached": True}
+
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 "https://www.googleapis.com/youtube/v3/search",
-                params={
-                    "key":        YOUTUBE_API_KEY,
-                    "q":          q,
-                    "type":       "video",
-                    "part":       "snippet",
-                    "maxResults": 1,
-                },
+                params={"key": YOUTUBE_API_KEY, "q": q, "type": "video", "part": "snippet", "maxResults": 1},
                 timeout=8,
             )
         data = resp.json()
+
+        if "error" in data:
+            if data["error"].get("code") == 403:
+                logger.warning(f"[Services] YT quota exceeded on search")
+                return {"found": False, "quota_exceeded": True}
+            return {"found": False}
+
         items = data.get("items", [])
         if not items:
             return {"found": False}
-        item = items[0]
+
+        item     = items[0]
+        video_id = item["id"]["videoId"]
+
+        if title and artist:
+            _yt_cache_set(title, artist, video_id)
+
         return {
             "found":     True,
-            "video_id":  item["id"]["videoId"],
+            "video_id":  video_id,
             "title":     item["snippet"]["title"],
             "thumbnail": item["snippet"]["thumbnails"]["default"]["url"],
             "channel":   item["snippet"]["channelTitle"],
@@ -719,12 +746,7 @@ async def _yt_refresh_token(identity) -> Optional[str]:
 
 @router.post("/api/services/youtube/playlist")
 async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = Query(...)):
-    """
-    Create a YouTube playlist and add matching videos.
-    Searches for all tracks in PARALLEL then adds them concurrently.
-    This reduces 20-track creation from ~60s to ~8s.
-    """
-    import asyncio
+    """Create a YouTube playlist and add matching videos."""
     token   = authorization.replace("Bearer ", "")
     user_id = _get_user_id(token)
     identity = await _db.oauthidentity.find_first(
@@ -735,23 +757,25 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
 
     yt_token = identity.accessToken
 
-    # Shared client for all requests in this operation
-    async def _yt_req(client: httpx.AsyncClient, method: str, url: str, **kwargs):
+    import asyncio
+
+    async def _yt_req(c: httpx.AsyncClient, method: str, url: str, **kwargs):
+        """Auth-aware YouTube API call with token refresh on 401."""
         nonlocal yt_token
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {yt_token}"
-        resp = await getattr(client, method)(url, headers=headers, **kwargs)
+        resp = await getattr(c, method)(url, headers=headers, **kwargs)
         if resp.status_code == 401:
             yt_token = await _yt_refresh_token(identity)
             if not yt_token:
                 raise HTTPException(status_code=401, detail="YouTube token expired — reconnect")
             headers["Authorization"] = f"Bearer {yt_token}"
-            resp = await getattr(client, method)(url, headers=headers, **kwargs)
+            resp = await getattr(c, method)(url, headers=headers, **kwargs)
         return resp
 
     async with httpx.AsyncClient(timeout=15) as client:
 
-        # 1. Create the playlist
+        # 1. Create playlist
         create_resp = await _yt_req(
             client, "post",
             "https://www.googleapis.com/youtube/v3/playlists",
@@ -763,37 +787,47 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
         )
         if create_resp.status_code not in (200, 201):
             logger.error(f"[Services] YT playlist create failed {create_resp.status_code}: {create_resp.text[:200]}")
-            raise HTTPException(status_code=502, detail=f"YouTube playlist create failed ({create_resp.status_code})")
+            raise HTTPException(status_code=502, detail=f"YouTube playlist create failed ({create_resp.status_code}: {create_resp.text[:80]})")
 
         playlist_id  = create_resp.json()["id"]
         playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
-        tracks = body.tracks[:50]
-        logger.info(f"[Services] YT playlist {playlist_id} created — searching {len(tracks)} tracks in parallel...")
+        tracks       = body.tracks[:50]
+        logger.info(f"[Services] YT playlist {playlist_id} created — searching {len(tracks)} tracks (parallel + cache)")
 
-        # 2. Search ALL tracks in parallel
-        async def search_one(t: dict) -> Optional[str]:
-            """Return video_id or None."""
-            q = f"{t.get('title', '')} {t.get('artist', '')} official audio"
+        # 2. Search ALL tracks in parallel — cache hits cost 0 quota units
+        async def search_one(t: dict):
+            title  = t.get("title", "").strip()
+            artist = t.get("artist", "").strip()
+            # Check cache first — saves 100 quota units per hit
+            cached = _yt_cache_get(title, artist)
+            if cached:
+                return cached
+            # Not cached — search the API
+            q = f"{title} {artist} official audio"
             try:
                 resp = await client.get(
                     "https://www.googleapis.com/youtube/v3/search",
-                    params={
-                        "key":        YOUTUBE_API_KEY,
-                        "q":          q,
-                        "type":       "video",
-                        "part":       "snippet",
-                        "maxResults": 1,
-                    },
+                    params={"key": YOUTUBE_API_KEY, "q": q, "type": "video", "part": "snippet", "maxResults": 1},
                 )
-                items = resp.json().get("items", [])
-                return items[0]["id"]["videoId"] if items else None
+                data = resp.json()
+                if "error" in data:
+                    if data["error"].get("code") == 403:
+                        logger.warning("[Services] YT quota exceeded during playlist search")
+                    return None
+                items = data.get("items", [])
+                if not items:
+                    return None
+                video_id = items[0]["id"]["videoId"]
+                _yt_cache_set(title, artist, video_id)
+                return video_id
             except Exception as e:
-                logger.warning(f"[Services] YT search failed for '{q}': {e}")
+                logger.warning(f"[Services] YT search error for '{title}': {e}")
                 return None
 
-        video_ids = await asyncio.gather(*[search_one(t) for t in tracks])
-        found_ids = [vid for vid in video_ids if vid]
-        logger.info(f"[Services] YT search found {len(found_ids)}/{len(tracks)} videos")
+        video_ids  = await asyncio.gather(*[search_one(t) for t in tracks])
+        found_ids  = [vid for vid in video_ids if vid]
+        cache_hits = sum(1 for t in tracks if _yt_cache_get(t.get("title",""), t.get("artist","")))
+        logger.info(f"[Services] YT search: {len(found_ids)}/{len(tracks)} found, {cache_hits} from cache")
 
         # 3. Add all found videos to playlist in parallel
         async def add_one(video_id: str) -> bool:
@@ -812,7 +846,7 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
                 return False
 
         results = await asyncio.gather(*[add_one(vid) for vid in found_ids])
-        added = sum(results)
+        added   = sum(results)
 
     logger.info(f"[Services] ✓ YT playlist '{body.name}' done — {added}/{len(tracks)} tracks for user {user_id[:8]}...")
-    return {"playlist_id": playlist_id, "playlist_url": playlist_url, "tracks_added": added}
+    return {"playlist_id": playlist_id, "playlist_url": playlist_url, "tracks_added": added, "cache_hits": cache_hits}
