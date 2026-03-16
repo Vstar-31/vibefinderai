@@ -648,6 +648,31 @@ async def soundcloud_create_playlist(body: SCPlaylistRequest, authorization: str
 # YOUTUBE ACTIONS
 # ═══════════════════════════════════════════════════════════════════
 
+# ── YouTube search cache (7-day TTL to save quota) ──────────────────
+import time as _time
+_YT_SEARCH_CACHE = {}  # {f"{title}|{artist}": {"video_id": "...", "ts": time.time()}}
+_YT_CACHE_TTL    = 7 * 24 * 3600  # 7 days in seconds
+
+def _yt_cache_key(title: str, artist: str) -> str:
+    """Generate cache key from title+artist."""
+    return f"{title.lower()}|{artist.lower()}".replace(" ", "_")
+
+def _yt_cache_get(title: str, artist: str) -> Optional[str]:
+    """Get cached video_id, return None if not found or expired."""
+    key = _yt_cache_key(title, artist)
+    if key not in _YT_SEARCH_CACHE:
+        return None
+    entry = _YT_SEARCH_CACHE[key]
+    if _time.time() - entry["ts"] > _YT_CACHE_TTL:
+        del _YT_SEARCH_CACHE[key]
+        return None
+    return entry["video_id"]
+
+def _yt_cache_set(title: str, artist: str, video_id: str) -> None:
+    """Store video_id in cache with timestamp."""
+    key = _yt_cache_key(title, artist)
+    _YT_SEARCH_CACHE[key] = {"video_id": video_id, "ts": _time.time()}
+
 @router.get("/api/services/youtube/cache-stats")
 async def youtube_cache_stats():
     """Returns YouTube search cache stats — for monitoring quota savings."""
@@ -659,9 +684,6 @@ async def youtube_cache_stats():
         "ttl_days":         7,
         "quota_saved_est":  valid * 100,
     }
-
-
-@router.get("/api/services/youtube/search")
 async def youtube_search(q: str = Query(...), title: str = Query(None), artist: str = Query(None)):
     """
     Search YouTube for a track — returns {video_id, title, thumbnail}.
@@ -829,9 +851,12 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
         cache_hits = sum(1 for t in tracks if _yt_cache_get(t.get("title",""), t.get("artist","")))
         logger.info(f"[Services] YT search: {len(found_ids)}/{len(tracks)} found, {cache_hits} from cache")
 
-        # 3. Add all found videos to playlist in parallel
-        async def add_one(video_id: str) -> bool:
+        # 3. Add all found videos to playlist — SEQUENTIAL with delays to avoid 409 rate limits
+        async def add_one(video_id: str, index: int) -> bool:
             try:
+                # Stagger requests: 200ms delay between each to avoid concurrent modification errors
+                await asyncio.sleep(index * 0.2)
+                
                 resp = await _yt_req(
                     client, "post",
                     "https://www.googleapis.com/youtube/v3/playlistItems",
@@ -841,11 +866,19 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
                         "resourceId": {"kind": "youtube#video", "videoId": video_id},
                     }},
                 )
-                return resp.status_code in (200, 201)
-            except Exception:
+                if resp.status_code not in (200, 201):
+                    logger.warning(f"[Services] YT add video {video_id} failed: {resp.status_code} — {resp.text[:150]}")
+                    return False
+                return True
+            except Exception as e:
+                logger.error(f"[Services] YT add_one exception for {video_id}: {e}")
                 return False
 
-        results = await asyncio.gather(*[add_one(vid) for vid in found_ids])
+        # Instead of parallel gather, add sequentially to avoid 409 conflicts
+        results = []
+        for idx, vid in enumerate(found_ids):
+            result = await add_one(vid, idx)
+            results.append(result)
         added   = sum(results)
 
     logger.info(f"[Services] ✓ YT playlist '{body.name}' done — {added}/{len(tracks)} tracks for user {user_id[:8]}...")

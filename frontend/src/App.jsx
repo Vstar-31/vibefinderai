@@ -1715,11 +1715,15 @@ export default function App({ onNavigate }) {
                             : result.tracks}
                           activeColor={activeColor}
                         />
-                        {/* ── Play All — launches floating player at track 0 ── */}
+                        {/* ── Play All Embeds — launches floating player with YouTube embeds only ── */}
                         <button
-                          onClick={() => launchPlayer(result.tracks, 0)}
+                          onClick={() => {
+                            const embedTracks = result.tracks.filter(t => t.youtube_embed_id || t.videoId || t.isEmbed);
+                            if (embedTracks.length > 0) launchPlayer(embedTracks, 0);
+                            else alert("No embedded tracks found. Connect YouTube or ensure tracks have embeds.");
+                          }}
                           className="dial-btn"
-                          title="Play all tracks in player"
+                          title="Play all full song embeds (YouTube) in floating player"
                           style={{
                             display: "flex", alignItems: "center", gap: "5px",
                             padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
@@ -2025,6 +2029,26 @@ export default function App({ onNavigate }) {
                                   </div>
                                 );
                               })()}
+
+                              {/* Play Full Song Button (if service connected) */}
+                              {Object.values(servicesStatus).some(s => s?.connected) && (
+                                <button
+                                  onClick={() => launchPlayer([track], 0)}
+                                  className="dial-btn app-track-play"
+                                  title="Play full song in embedded player"
+                                  style={{
+                                    ...S.authBtn(false),
+                                    padding: "8px 14px",
+                                    background: "rgba(100,180,255,0.15)",
+                                    borderColor: "rgba(100,180,255,0.4)",
+                                    color: "rgba(100,180,255,0.9)",
+                                    display: "flex", alignItems: "center", gap: "4px",
+                                  }}
+                                >
+                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                                  Play
+                                </button>
+                              )}
 
                               <button
                                 onClick={() => togglePlay(track.preview_url)}
