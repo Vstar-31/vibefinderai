@@ -684,6 +684,7 @@ async def youtube_cache_stats():
         "ttl_days":         7,
         "quota_saved_est":  valid * 100,
     }
+@router.get("/api/services/youtube/search")
 async def youtube_search(q: str = Query(...), title: str = Query(None), artist: str = Query(None)):
     """
     Search YouTube for a track — returns {video_id, title, thumbnail}.

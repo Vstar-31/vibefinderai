@@ -191,8 +191,11 @@ export default function MusicPlayer({
      postMessage → iframe (send command)
   ════════════════════════════════════════════════════════════ */
   const ytCommand = useCallback((func, args = []) => {
+    // Only send when iframe has loaded a YouTube URL — not about:blank
+    const iframe = iframeRef.current;
+    if (!iframe || !iframe.src?.includes("youtube.com")) return;
     try {
-      iframeRef.current?.contentWindow?.postMessage(
+      iframe.contentWindow?.postMessage(
         JSON.stringify({ event: "command", func, args }),
         "https://www.youtube.com"
       );
