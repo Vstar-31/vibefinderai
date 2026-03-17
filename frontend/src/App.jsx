@@ -2584,7 +2584,7 @@ const TUTORIAL_STEPS = [
   {
     icon: "✍️",
     title: "Describe a feeling, not a genre",
-    body: "Type anything — a mood, a scene, a memory. "Late night coding session, focus, no lyrics" works better than just "lo-fi".",
+    body: "Type anything — a mood, a scene, a memory. \"Late night coding session, focus, no lyrics\" works better than just \"lo-fi\".",
   },
   {
     icon: "🎛️",
@@ -2594,7 +2594,7 @@ const TUTORIAL_STEPS = [
   {
     icon: "🌐",
     title: "Language routing is semantic",
-    body: "Picking Hindi doesn't just filter — it routes to a native Bollywood/regional pool. "Dard" in Hindi gives you different tracks than "pain" in English.",
+    body: "Picking Hindi doesn't just filter — it routes to a native Bollywood/regional pool. \"Dard\" in Hindi gives you different tracks than \"pain\" in English.",
   },
   {
     icon: "🏷️",
@@ -2604,7 +2604,7 @@ const TUTORIAL_STEPS = [
   {
     icon: "▶️",
     title: "Full-length playback via YouTube",
-    body: "Connect YouTube in the Services panel. Then every Play button plays the full song and "Play All" queues the entire playlist — full-length, back-to-back.",
+    body: "Connect YouTube in the Services panel. Then every Play button plays the full song and \"Play All\" queues the entire playlist — full-length, back-to-back.",
   },
   {
     icon: "💾",
