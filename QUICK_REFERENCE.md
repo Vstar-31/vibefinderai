@@ -1,156 +1,271 @@
-# VibeFinderAI Analytics - Quick Reference Card
+# VibeFinderAI — Quick Reference & Status
 
-## 📝 Copy-Paste Integration Snippets
+## 🎵 Current Feature Status
 
-### 1️⃣ Add to main.py (Top of file with imports)
-```python
-import time
-from analytics import collector
-from analytics_routes import router as analytics_router
+### Backend Services (✅ All Connected & Working)
+| Service | Purpose | OAuth | Status |
+|---------|---------|-------|--------|
+| **Last.fm** | Metadata, artist data, ISRC mapping | ✅ | 🟢 Connected |
+| **Spotify** | Track discovery, deep links, previews | ✅ | 🟢 Connected |
+| **YouTube** | Full-length song embeds, OAuth playlists | ✅ | 🟢 Connected + Retry Logic |
+| **Deezer** | Track enrichment, metadata fallback | ✅ | 🟢 Connected |
+| **SoundCloud** | Music discovery, previews | ✅ | 🟢 Connected |
+| **iTunes** | 30-second preview clips | ❌ | 🟢 Active |
+| **Gemini AI** | NLP enhancement for prompts | ✅ | 🟢 Active (graceful fallback) |
+
+---
+
+## 🔌 Critical API Endpoints
+
+### Vibe Analysis
+```
+POST /api/vibe/analyze
+Body: { text, artist_focus, nicheness, bpm_focus, language, track_count }
+Returns: { primary_vibe, secondary_vibe, tracks[], request_id }
 ```
 
-### 2️⃣ Register Router (After `app = FastAPI()`)
-```python
-app.include_router(analytics_router)
+### Music Services
+```
+GET  /api/spotify/auth        # Spotify OAuth callback
+GET  /api/youtube/auth        # YouTube OAuth callback & playlist creation
+POST /api/lastfm/proxy        # CORS-safe Last.fm API proxy
+GET  /api/services/status     # Check which services are connected
 ```
 
-### 3️⃣ Log Search Metric (In get_vibes endpoint)
-```python
-@app.post("/api/get_vibes")
-async def get_vibes(request: VibeRequest, current_user: dict = Depends(get_current_user)):
-    start_time = time.time()
-    
-    try:
-        # ... existing vibe analysis code ...
-        
-        elapsed_ms = (time.time() - start_time) * 1000
-        
-        collector.log_search(
-            vibe_description=request.description,
-            primary_vibe=primary_vibe,
-            secondary_vibe=secondary_vibe,
-            confidence=confidence_score,
-            response_time_ms=elapsed_ms,
-            nicheness=request.nicheness,
-            language=request.language,
-            track_count=len(results.tracks)
-        )
-        
-        return {
-            "status": "success",
-            "primary_vibe": primary_vibe,
-            "tracks": results.tracks
-        }
-    except Exception as e:
-        collector.log_api_error("vibe_engine", str(type(e).__name__))
-        raise
+### Playlist Management
+```
+POST /api/playlist/create     # Create a named playlist
+GET  /api/playlist/{id}       # Get playlist details
+POST /api/playlist/{id}/save  # Save to Spotify/YouTube/etc
 ```
 
-### 4️⃣ Log Feedback (In feedback endpoint)
-```python
-@app.post("/api/feedback")
-async def submit_feedback(feedback: FeedbackRequest, current_user: dict = Depends(get_current_user)):
-    # ... save to DB ...
-    
-    collector.log_feedback(feedback.track_id, feedback.is_positive)
-    
-    return {"status": "feedback_recorded"}
+### Metrics & Analytics
+```
+GET /api/analytics/dashboard  # Dashboard data (requires metrics token)
+GET /api/analytics/live       # Live metrics stream
+GET /api/analytics/vibes      # Vibe statistics
+GET /api/analytics/export     # Full metrics export
+POST /api/metrics/auth        # Exchange passphrase for 7-day JWT metrics token
 ```
 
-### 5️⃣ Frontend Engagement Tracking (In App.jsx)
-```jsx
-// Add this helper function
-const trackEngagement = async (eventType) => {
-  try {
-    const url = buildApiUrl("/api/analytics/engagement");
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event_type: eventType })
-    });
-  } catch (err) {
-    console.error("Analytics error:", err);
-  }
-};
-
-// Use in onClick handlers
-onClick={() => {
-  trackEngagement("preview_click");
-  playPreview(track);
-}}
-
-onClick={() => {
-  trackEngagement("spotify_click");
-  window.location.href = spotifyUrl;
-}}
-
-onClick={() => {
-  trackEngagement("playlist_save");
-  savePlaylist();
-}}
-
-onClick={() => {
-  trackEngagement("pro_mode");
-  toggleProMode();
-}}
+### User Actions
 ```
-
-### 6️⃣ Add Dashboard Route (In frontend App.jsx or router)
-```jsx
-import AnalyticsDashboard from "./AnalyticsDashboard.jsx";
-
-// Add to your routing:
-{
-  path: "/admin/analytics",
-  element: <AnalyticsDashboard />
-}
+POST /api/feedback                # Submit thumbs up/down on track
+GET  /api/user/taste              # Get user's saved preferences
+POST /auth/register, /auth/token  # Authentication
 ```
 
 ---
 
-## 🔗 API Endpoints Reference
+## 🎙️ Audio Playback System
 
-### GET Endpoints (Read-Only)
+### Three Audio Modes:
+1. **Play All** — Queues all results with embeds in MusicPlayer (full-length via YouTube)
+2. **Play** *(YouTube connected only)* — Single track in MusicPlayer for full playback
+3. **Preview** — Inline 30-sec iTunes clip (no player needed)
+
+### PlaylistPlayer vs MusicPlayer
+- **MusicPlayer** (`frontend/src/MusicPlayer.jsx`) — Floating component, full-length track playback
+- **Inline Preview** — HTML5 audio element for 30-sec clips
+
+---
+
+## 🔑 Environment Variables (.env)
+
+Required for backend operation:
 ```bash
-# Main dashboard (for frontend)
-GET /api/analytics/dashboard
+# Database
+DATABASE_URL=postgresql://supabase_url
+PRISMA_DATABASE_URL=postgresql://supabase_url
 
-# Complete summary (all metrics)
-GET /api/analytics/summary
+# OAuth Keys & Secrets
+LASTFM_API_KEY=***
+LASTFM_SHARED_SECRET=***
+SPOTIFY_CLIENT_ID=***
+SPOTIFY_CLIENT_SECRET=***
+SPOTIFY_REDIRECT_URI=http://localhost:8000/api/spotify/auth
 
-# Recent searches (last 50)
-GET /api/analytics/searches?limit=50
+YOUTUBE_CLIENT_ID=***
+YOUTUBE_CLIENT_SECRET=***
+YOUTUBE_REDIRECT_URI=http://localhost:8000/api/youtube/auth
 
-# Vibe statistics
-GET /api/analytics/vibes
+DEEZER_APP_ID=***
+DEEZER_APP_SECRET=***
 
-# Language preferences
-GET /api/analytics/languages
+SOUNDCLOUD_CLIENT_ID=***
 
-# Performance percentiles
-GET /api/analytics/performance
+# AI & NLP
+GEMINI_API_KEY=***
 
-# Engagement & feedback
-GET /api/analytics/engagement
+# JWT Secrets
+SECRET_KEY=your_super_secret_key_change_in_production
+ALGORITHM=HS256
 
-# Data quality metrics
-GET /api/analytics/data-quality
+# Metrics Authentication
+METRICS_PASSPHRASE=your_metrics_passphrase
+
+# Frontend URL
+FRONTEND_URL_PROD=https://vibefinderai.netlify.app
+
+# Server Config
+CORS_ORIGINS=http://localhost:5173,https://vibefinderai.netlify.app
 ```
 
-### POST Endpoints (Write-Only)
+---
+
+## 🚀 Development Setup
+
+### Backend (Python)
 ```bash
-# Backend logs a search
-POST /api/analytics/search
-{
-  "vibe_description": "midnight driving",
-  "primary_vibe": "chill",
-  "secondary_vibe": "retro",
-  "confidence": 0.87,
-  "response_time_ms": 145.3,
-  "nicheness": 0.65,
-  "language": "en",
-  "track_count": 10
-}
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+### Frontend (React)
+```bash
+cd frontend
+npm install
+npm run dev  # Runs on http://localhost:5173
+```
+
+### Database Migrations (Prisma)
+```bash
+cd backend
+npx prisma migrate dev --name "description"
+npx prisma studio  # Open GUI DB browser
+```
+
+---
+
+## 💾 Current Database Schema
+
+**Key Tables:**
+- `User` — Authentication and profile
+- `VibeRequest` — Search history
+- `TrackFeedback` — Like/dislike ratings
+- `Playlist` — Saved playlists
+- `PlaylistTrack` — Playlist membership
+- `TrackFeatureCache` — Pre-computed audio features
+- `ArtistDirectory` — Artist metadata
+- `LastFmArtistLinks` — Cross-reference to Last.fm
+
+---
+
+## ✅ Production Deployment Checklist
+
+- [ ] Backend running on Render (auto-deploy from `main` branch)
+- [ ] Frontend deployed on Netlify (auto-deploy from `main` branch)
+- [ ] All environment variables set in Render dashboard
+- [ ] CORS hardcoded fallback to Netlify production URL
+- [ ] Database backups enabled in Supabase
+- [ ] SSL/TLS certificates auto-renewed
+- [ ] API rate limiting (slowapi) active
+- [ ] Metrics authentication passphrase set
+- [ ] All service OAuth clients updated with production URLs
+
+---
+
+## 📊 Key Changes (Latest Session)
+
+✅ **Fixed** — All music service OAuth connections (Last.fm, Spotify, YouTube, Deezer, SoundCloud)
+✅ **Added** — `/api/lastfm/proxy` endpoint for CORS-safe Last.fm access
+✅ **Implemented** — YouTube playlist creation with exponential backoff retry logic (up to 4 attempts per video on 409 errors)
+✅ **Split** — Audio playback into Play All (embeds), Play (single track), and Preview (30-sec clip)
+✅ **Added** — Metrics authentication framework (passphrase → 7-day JWT token)
+✅ **Fixed** — CORS configuration for production Netlify deployment
+✅ **Added** — YouTube search result cache (7-day TTL)
+
+---
+
+## 🔗 Quick API Test Commands
+
+```bash
+# Test vibe analysis
+curl -X POST http://localhost:8000/api/vibe/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"text":"late night drive","artist_focus":50,"nicheness":50,"bpm_focus":50,"language":"en","track_count":10}'
+
+# Get metrics (need passphrase-derived token)
+curl -X GET http://localhost:8000/api/analytics/dashboard \
+  -H "Authorization: Bearer YOUR_METRICS_TOKEN"
+
+# Test Last.fm proxy
+curl "http://localhost:8000/api/lastfm/proxy?method=artist.search&artist=Dua%20Lipa"
+
+# Check service status
+curl http://localhost:8000/api/services/status
+
+# Health check
+curl http://localhost:8000/health
+```
+
+---
+
+## 📁 Important File Locations
+
+| File | Purpose |
+|------|---------|
+| `backend/main.py` | FastAPI app entry point, route registration, CORS setup |
+| `backend/routes/services_routes.py` | OAuth integrations (Last.fm, YouTube, Spotify, etc.) |
+| `backend/routes/metrics_auth.py` | Metrics authentication (passphrase → JWT) |
+| `backend/routes/analytics_routes.py` | Analytics endpoints (dashboard, live, vibes) |
+| `backend/core/vibe_engine.py` | Core NLP vibe analysis engine |
+| `backend/core/gemini_vibe.py` | Gemini AI enhancement (graceful fallback) |
+| `backend/analyzers/semantic_search.py` | Semantic ranking (graceful fallback if torch unavailable) |
+| `frontend/src/App.jsx` | Main React app, search interface, results display |
+| `frontend/src/MusicPlayer.jsx` | Full-length track player component |
+| `backend/schema.prisma` | Database schema definition |
+
+---
+
+## 🧪 Testing & Debugging
+
+### Run Backend Tests
+```bash
+cd backend
+python testing/health_check.py
+python testing/batch_tester.py
+python testing/batch_tester_v10k_2.py  # Large-scale test
+```
+
+### View Database
+```bash
+cd backend
+npx prisma studio
+```
+
+### Check Logs
+```bash
+tail -f backend/vibefinder_engine.log  # Backend logs
+# Frontend logs in browser console (F12)
+```
+
+### Monitor Services
+```bash
+# Last.fm connection
+curl "http://localhost:8000/api/lastfm/proxy?method=artist.search&artist=Test"
+
+# YouTube playlist creation test
+# (Requires YouTube OAuth token)
+curl -X POST http://localhost:8000/api/youtube/create_playlist \
+  -H "Authorization: Bearer YOUR_YOUTUBE_TOKEN"
+```
+
+---
+
+## 🐛 Common Issues & Fixes
+
+| Issue | Solution |
+|-------|----------|
+| `.env` not loading | Verify `dotenv_path` in main.py points to correct location, ensure `load_dotenv()` called BEFORE route imports |
+| Service OAuth 503 | Check if `.env` variables are set, verify OAuth redirect URIs match config |
+| YouTube 409 errors | Retry logic is active; check backend logs for "YT add video got 409 — retrying" messages |
+| CORS errors on frontend | Check `CORS_ORIGINS` env var includes your frontend URL; verify production URL in main.py |
+| Metrics auth fails | Confirm `METRICS_PASSPHRASE` is set in `.env`, ensure token hasn't expired (7 days) |
+| Import errors | Verify all modules in `backend/` have `__init__.py` files |
 
 # Log feedback rating
 POST /api/analytics/feedback

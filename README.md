@@ -77,8 +77,11 @@ The main playlist section lists all matched tracks, each with:
 - **Album artwork thumbnail**
 - **Track title** and **Artist name**
 - **👍 / 👎 feedback buttons** — to rate whether a suggestion was a good match (for future refinement)
-- **PREVIEW button** — plays a short audio preview of the track inline
-- **SPOTIFY button** — opens the track directly on Spotify [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+- **"Play All" button** — queues all results with embeds (full-length songs on YouTube or available platforms) in the floating MusicPlayer
+- **"Play" button** *(appears when YouTube is connected)* — launches the floating MusicPlayer with just that single track for full-length playback via YouTube embeds
+- **"Preview" button** — plays a 30-second iTunes preview clip inline without launching the player
+- **Service action buttons** (YouTube, Spotify, etc.) — connects to those services or opens tracks directly
+- For standalone testing, a **"Save to YouTube Playlist"** action creates a new playlist on the connected YouTube account [vibefinderai.netlify](https://vibefinderai.netlify.app/)
 
 ### Neural Match Breakdown
 A set of hashtag-style keywords extracted from your input — for example: `#late night` `#late night drive` `#night drive` `#rain` `#travis scott` — showing exactly which semantic concepts the AI used to match your vibe. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
@@ -108,26 +111,37 @@ VibeFinderAI is built as a modern full-stack web application:
 - CSS animations and audio visualization (oscilloscope effects)
 - Responsive hybrid UI with hardware knob components
 - Deployed on Netlify CDN
+- MusicPlayer component for full-length track playback
 
 **Backend:**
-- FastAPI (Python) with JWT authentication
+- FastAPI (Python) with JWT authentication + metrics token authentication
 - Prisma ORM for database management
 - LangChain orchestration for AI prompts
 - vibe_engine.py NLP engine for semantic analysis
+- Audio server with httpx async HTTP client
+- Rate limiting (slowapi) for endpoint protection
 
 **Database:**
 - Supabase PostgreSQL with Prisma schema
 - User authentication and social graph
 - Playlist history and feedback tracking
+- Metrics and analytics collection
 
-**External APIs:**
-- Last.fm for music metadata and ISRC mapping
-- Spotify Web API for track discovery and deep links
-- LangChain for prompt orchestration
+**External APIs & Services:**
+- **Last.fm API** — Music metadata, artist info, track ISRC mapping (OAuth2)
+  - New: `/api/lastfm/proxy` endpoint for CORS-free frontend access
+- **Spotify Web API** — Track discovery and deep links (OAuth2)
+- **Deezer API** — Additional track data enrichment
+- **SoundCloud API** — Music discovery and previews
+- **YouTube API** — Full-length song embeds, OAuth2 playlist creation
+  - Features: 7-day search cache, sequential playlist additions, exponential backoff retry logic (up to 4 attempts per video on 409 errors)
+- **iTunes API** — 30-second preview clips
+- **Google Generative AI (Gemini)** — NLP enhancement for prompt analysis
 
 **Deployment:**
-- Backend: Render (OnRender)
-- Frontend: Netlify
+- Backend: Render (OnRender) with auto-deploy on git push
+- Frontend: Netlify with auto-deploy on git push
+- Environment variables: `.env` for API keys, secrets, and configuration
 - CI/CD pipeline for automated testing and deployment
 
 ***

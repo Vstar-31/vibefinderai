@@ -1,14 +1,34 @@
 # VibeFinderAI Analytics & Informatics System
 
-Comprehensive real-time analytics and monitoring dashboard for tracking engine performance, user engagement, and data quality.
+✅ **FULLY OPERATIONAL** — Real-time analytics and monitoring dashboard for tracking engine performance, user engagement, and data quality.
 
 ## Overview
 
 The analytics system provides three layers:
 
 1. **Backend Analytics Collector** (`backend/analytics.py`) - In-memory metrics collection
-2. **API Routes** (`backend/analytics_routes.py`) - RESTful endpoints for data export
-3. **Frontend Dashboard** (`frontend/src/AnalyticsDashboard.jsx`) - Real-time visualization
+2. **API Routes** (`backend/analytics_routes.py`) - RESTful endpoints with metrics authentication
+3. **Frontend Dashboard** (`frontend/src/AnalyticsDashboard.jsx`) - Real-time visualization with passphrase gate
+
+## Authentication
+
+All analytics endpoints require a **metrics token** (not user OAuth):
+
+```bash
+# 1. Get token via passphrase
+POST /api/metrics/auth
+Body: { "passphrase": "your_metrics_passphrase" }
+Returns: { "token": "jwt_token_...", "expires_in_days": 7 }
+
+# 2. Use token for all queries
+GET /api/analytics/dashboard
+Headers: Authorization: Bearer jwt_token_...
+```
+
+- Tokens valid for 7 days
+- Passphrase-based (set via `METRICS_PASSPHRASE` env var)
+- Constant-time comparison prevents brute-force
+- 1.5-second delay on auth failure
 
 ## Core Metrics Tracked
 
