@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ import logging
 import sys
 import time
 import hashlib
+import httpx
 from core.vibe_engine import LANGUAGE_TAG_MAP
 
 # ---------------------------------------------------------
@@ -2561,3 +2562,28 @@ async def submit_feedback(feedback: FeedbackRequest, token: str = Depends(oauth2
     except Exception as e:
         logger.error(f"Feedback: write error: {e}")
         raise HTTPException(status_code=500, detail="Failed to save feedback")
+
+
+@app.get("/api/lastfm/proxy")
+async def lastfm_proxy(method: str, request: Request):
+    """
+    Proxy Last.fm API requests to avoid CORS issues on the frontend.
+    
+    Query parameters are forwarded to Last.fm with the API key added.
+    
+    Example:
+        GET /api/lastfm/proxy?method=artist.search&artist=Dua%20Lipa
+    """
+    LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
+    if not LASTFM_API_KEY:
+        raise HTTPException(status_code=500, detail="Last.fm API key not configured")
+    
+    try:
+        params = dict(request.query_params)
+        params.update({"api_key": LASTFM_API_KEY, "format": "json"})
+        async with httpx.AsyncClient() as client:
+            r = await client.get("https://ws.audioscrobbler.com/2.0/", params=params)
+        return r.json()
+    except Exception as e:
+        logger.error(f"Last.fm proxy error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

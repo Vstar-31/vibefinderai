@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import PlaylistPanel from "./PlaylistPanel.jsx";
 import ServicesPanel from "./ServicesPanel.jsx";
 import MusicPlayer from "./MusicPlayer.jsx";
+import AudiophilePanel from "./AudiophilePanel.jsx";
 
 /* ─── API CONFIGURATION ─────────────────────────────────────── */
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
@@ -531,6 +532,38 @@ function GlobalStyles() {
       @media (max-width: 380px) {
         .app-track-actions .app-track-preview { display: none !important; }
       }
+
+      /* ── Tooltip ── */
+      .vf-tooltip { position: relative; }
+      .vf-tooltip .vf-tip {
+        visibility: hidden; opacity: 0;
+        position: absolute; bottom: calc(100% + 8px); left: 50%;
+        transform: translateX(-50%);
+        background: rgba(10,6,2,0.97);
+        border: 1px solid rgba(155,105,28,0.35);
+        border-radius: 7px; padding: 7px 11px;
+        font-family: 'DM Mono', monospace; font-size: 10px;
+        color: rgba(210,175,100,0.85); line-height: 1.6;
+        white-space: nowrap; pointer-events: none;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+        transition: opacity 0.15s, visibility 0.15s;
+        z-index: 400;
+        max-width: 220px; white-space: normal; text-align: center;
+      }
+      .vf-tooltip:hover .vf-tip { visibility: visible; opacity: 1; }
+
+      /* Tutorial re-trigger button */
+      .vf-help-btn {
+        position: fixed; bottom: 24px; right: 24px; z-index: 100;
+        width: 36px; height: 36px; border-radius: 50%;
+        background: rgba(20,12,4,0.85);
+        border: 1px solid rgba(155,105,28,0.35);
+        color: rgba(180,140,80,0.5); font-size: 14px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: all 0.2s;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+      }
+      .vf-help-btn:hover { border-color: rgba(217,119,6,0.5); color: #d97706; }
     `}</style>
   );
 }
@@ -644,8 +677,12 @@ export default function App({ onNavigate }) {
   const feedbackToastTimer = useRef(null);
 
   // ── NEW: Playlist Panel State ─────────────────────────────────
-  const [showPlaylistPanel,  setShowPlaylistPanel]  = useState(false);
-  const [showServicesPanel,  setShowServicesPanel]  = useState(false);
+  const [showPlaylistPanel,   setShowPlaylistPanel]  = useState(false);
+  const [showServicesPanel,   setShowServicesPanel]  = useState(false);
+  const [showAudiophilePanel, setShowAudiophilePanel] = useState(false);
+  const [showTutorial,        setShowTutorial]        = useState(() => {
+    try { return !localStorage.getItem("vf_tutorial_seen"); } catch { return true; }
+  });
   // Increments when a playlist is saved — triggers PlaylistPanel to refresh its list
   const [playlistSaveCount, setPlaylistSaveCount] = useState(0);
 
@@ -1312,6 +1349,25 @@ export default function App({ onNavigate }) {
                 </button>
               )}
 
+              {/* ── AUDIOPHILE BUTTON ── */}
+              <button
+                onClick={() => setShowAudiophilePanel(true)}
+                className="dial-btn"
+                title="Music facts, vibe intel & pro tips"
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  padding: "8px 14px", borderRadius: "8px",
+                  fontFamily: "'DM Mono', monospace", fontSize: "11px",
+                  fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase",
+                  cursor: "pointer", transition: "all 0.2s",
+                  background: "rgba(40,20,5,0.8)",
+                  color: "rgba(180,140,80,0.7)",
+                  border: "1px solid rgba(120,80,20,0.4)",
+                }}
+              >
+                🎧
+              </button>
+
               <button onClick={token ? handleLogout : () => setShowAuthModal(true)} className="dial-btn" style={S.authBtn(!!token)}>{token ? <IconUnlock /> : <IconLock />}{token ? "Sign Out" : "Sign In"}</button>
             </div>
           </header>
@@ -1328,9 +1384,9 @@ export default function App({ onNavigate }) {
               <div className="app-knob-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
                   <div className="app-knob-strip" style={{ display: "flex", gap: "16px" }}>
-                    <Knob label="Artist" value={knobs.artist} onChange={v => setKnobs(prev => ({...prev, artist: v}))} />
-                    <Knob label="Nicheness" value={knobs.nicheness} onChange={v => setKnobs(prev => ({...prev, nicheness: v}))} />
-                    <Knob label="BPM" value={knobs.bpm} onChange={v => setKnobs(prev => ({...prev, bpm: v}))} />
+                    <span className="vf-tooltip"><Knob label="Artist" value={knobs.artist} onChange={v => setKnobs(prev => ({...prev, artist: v}))} /><span className="vf-tip">How tightly to match a reference artist&apos;s sound. High = close to the artist, low = pure mood results.</span></span>
+                    <span className="vf-tooltip"><Knob label="Nicheness" value={knobs.nicheness} onChange={v => setKnobs(prev => ({...prev, nicheness: v}))} /><span className="vf-tip">0 = recognisable mainstream · 100 = deep underground cuts. Crank up to discover hidden gems.</span></span>
+                    <span className="vf-tooltip"><Knob label="BPM" value={knobs.bpm} onChange={v => setKnobs(prev => ({...prev, bpm: v}))} /><span className="vf-tip">Target tempo and energy. Low = ambient, slow. High = rave, run, hype.</span></span>
                   </div>
                   <div className="app-knob-label" style={{ marginLeft: "8px" }}>
                     <div style={{ fontSize: "15px", fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: "#e8d5a3", letterSpacing: "0.04em" }}>Describe the Vibe</div>
@@ -1391,6 +1447,7 @@ export default function App({ onNavigate }) {
 
               {/* ── PRO MODE OVERRIDES ── */}
               <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <span className="vf-tooltip" style={{ alignSelf: "flex-start" }}>
                 <button
                   onClick={() => setShowOverrides(!showOverrides)}
                   disabled={!token}
@@ -1398,6 +1455,8 @@ export default function App({ onNavigate }) {
                 >
                   <IconFilter /> {showOverrides ? "Hide Overrides" : "Manual Overrides // Pro Mode"}
                 </button>
+                <span className="vf-tip">Force a specific artist or genre, flip to secondary vibe, or find similar artists. Ignores AI vibe matching.</span>
+                </span>
 
                 {showOverrides && token && (
                   <div className="animate-in app-overrides" style={{ display: "flex", gap: "16px", flexWrap: "wrap", padding: "16px", background: "rgba(10,5,2,0.6)", border: "1px dashed rgba(180,140,80,0.25)", borderRadius: "8px" }}>
@@ -1715,15 +1774,11 @@ export default function App({ onNavigate }) {
                             : result.tracks}
                           activeColor={activeColor}
                         />
-                        {/* ── Play All Embeds — launches floating player with YouTube embeds only ── */}
+                        {/* ── Play All — launches full queue; YouTube if connected ── */}
                         <button
-                          onClick={() => {
-                            const embedTracks = result.tracks.filter(t => t.youtube_embed_id || t.videoId || t.isEmbed);
-                            if (embedTracks.length > 0) launchPlayer(embedTracks, 0);
-                            else alert("No embedded tracks found. Connect YouTube or ensure tracks have embeds.");
-                          }}
+                          onClick={() => launchPlayer(result.tracks, 0)}
                           className="dial-btn"
-                          title="Play all full song embeds (YouTube) in floating player"
+                          title="Play all tracks — full-length via YouTube if connected, previews otherwise"
                           style={{
                             display: "flex", alignItems: "center", gap: "5px",
                             padding: "5px 10px", borderRadius: "6px", fontSize: "10px",
@@ -2033,7 +2088,7 @@ export default function App({ onNavigate }) {
                               {/* Play Full Song Button (if service connected) */}
                               {Object.values(servicesStatus).some(s => s?.connected) && (
                                 <button
-                                  onClick={() => launchPlayer([track], 0)}
+                                  onClick={() => launchPlayer(result.tracks, i)}
                                   className="dial-btn app-track-play"
                                   title="Play full song in embedded player"
                                   style={{
@@ -2352,6 +2407,15 @@ export default function App({ onNavigate }) {
         </ErrorBoundary>
       )}
 
+      {/* ── HELP BUTTON (floating, re-triggers tutorial) ── */}
+      {!showTutorial && (
+        <button
+          className="vf-help-btn"
+          onClick={() => setShowTutorial(true)}
+          title="Show feature guide"
+        >?</button>
+      )}
+
       {/* ── PLAYLIST PANEL (slide-in drawer) ─────────────────────── */}
       {showPlaylistPanel && (
         <PlaylistPanel
@@ -2418,6 +2482,132 @@ export default function App({ onNavigate }) {
           </div>
         </div>
       )}
+      {/* ── AUDIOPHILE PANEL ── */}
+      {showAudiophilePanel && (
+        <AudiophilePanel
+          onClose={() => setShowAudiophilePanel(false)}
+          result={result}
+          activeColor={activeColor}
+          buildApiUrl={buildApiUrl}
+          token={token}
+        />
+      )}
+
+      {/* ── TUTORIAL OVERLAY ── */}
+      {showTutorial && (
+        <TutorialOverlay onDismiss={() => {
+          setShowTutorial(false);
+          try { localStorage.setItem("vf_tutorial_seen", "1"); } catch {}
+        }} />
+      )}
     </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TUTORIAL OVERLAY
+═══════════════════════════════════════════════════════════════ */
+const TUTORIAL_STEPS = [
+  {
+    icon: "✍️",
+    title: "Describe a feeling, not a genre",
+    body: "Type anything — a mood, a scene, a memory. \"Late night coding session, focus, no lyrics\" works better than just \"lo-fi\".",
+  },
+  {
+    icon: "🎛️",
+    title: "Three knobs, zero overthinking",
+    body: "ARTIST — how closely to match a reference artist. NICHENESS — 0 is mainstream, 100 is deep cuts. BPM — energy level. Defaults are fine, tweak after you see results.",
+  },
+  {
+    icon: "🌐",
+    title: "Language routing is semantic",
+    body: "Picking Hindi doesn't just filter — it routes to a native Bollywood/regional pool. \"Dard\" in Hindi gives you different tracks than \"pain\" in English.",
+  },
+  {
+    icon: "🏷️",
+    title: "Genre tags are live filters",
+    body: "After results load, the coloured tags under your vibe are clickable. Tap one to hard-filter the whole playlist to that genre.",
+  },
+  {
+    icon: "▶️",
+    title: "Full-length playback via YouTube",
+    body: "Connect YouTube in the Services panel. Then every Play button plays the full song and \"Play All\" queues the entire playlist — full-length, back-to-back.",
+  },
+  {
+    icon: "💾",
+    title: "Save & share playlists",
+    body: "Sign in to save results as named playlists. Each gets a public share link — anyone can preview every track with no account needed.",
+  },
+];
+
+function TutorialOverlay({ onDismiss }) {
+  const [step, setStep] = useState(0);
+  const total = TUTORIAL_STEPS.length;
+  const s = TUTORIAL_STEPS[step];
+  const mono = "'DM Mono', monospace";
+  const serif = "'Playfair Display', serif";
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 500,
+      background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "20px",
+    }}>
+      <div className="panel-card screws animate-in" style={{
+        width: "min(480px, 100%)", padding: "36px 32px 28px", position: "relative",
+      }}>
+        {/* Progress dots */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 28, justifyContent: "center" }}>
+          {TUTORIAL_STEPS.map((_, i) => (
+            <div key={i} onClick={() => setStep(i)} style={{
+              width: i === step ? 22 : 6, height: 6, borderRadius: 3,
+              background: i === step ? "#d97706" : i < step ? "rgba(217,119,6,0.4)" : "rgba(120,80,20,0.25)",
+              transition: "all 0.3s", cursor: "pointer",
+            }} />
+          ))}
+        </div>
+
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 36, marginBottom: 14 }}>{s.icon}</div>
+          <div style={{ fontFamily: serif, fontSize: "1.3rem", fontWeight: 700, color: "#fde68a", marginBottom: 12, lineHeight: 1.3 }}>{s.title}</div>
+          <div style={{ fontFamily: mono, fontSize: 12, color: "rgba(190,155,90,0.65)", lineHeight: 1.85 }}>{s.body}</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          {step > 0 && (
+            <button onClick={() => setStep(s => s - 1)} style={{
+              padding: "9px 20px", borderRadius: 8, background: "rgba(40,20,5,0.8)",
+              border: "1px solid rgba(120,80,20,0.4)", color: "rgba(180,140,80,0.6)",
+              fontFamily: mono, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer",
+            }}>← Back</button>
+          )}
+          {step < total - 1 ? (
+            <button onClick={() => setStep(s => s + 1)} style={{
+              padding: "9px 28px", borderRadius: 8,
+              background: "linear-gradient(135deg, #92400e, #d97706)",
+              border: "1px solid rgba(251,191,36,0.25)", color: "#fef3c7",
+              fontFamily: mono, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer",
+            }}>Next →</button>
+          ) : (
+            <button onClick={onDismiss} style={{
+              padding: "9px 28px", borderRadius: 8,
+              background: "linear-gradient(135deg, #92400e, #d97706)",
+              border: "1px solid rgba(251,191,36,0.25)", color: "#fef3c7",
+              fontFamily: mono, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer",
+            }}>Let's go ⚡</button>
+          )}
+        </div>
+
+        <button onClick={onDismiss} style={{
+          position: "absolute", top: 16, right: 16, background: "none", border: "none",
+          color: "rgba(180,140,80,0.3)", cursor: "pointer", fontSize: 16, padding: 4,
+        }}>✕</button>
+
+        <p style={{ textAlign: "center", marginTop: 14, fontFamily: mono, fontSize: 9, color: "rgba(120,80,20,0.4)", letterSpacing: "0.08em" }}>
+          Tip {step + 1} of {total} · press ✕ to skip
+        </p>
+      </div>
+    </div>
   );
 }
