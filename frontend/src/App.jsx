@@ -533,22 +533,36 @@ function GlobalStyles() {
         .app-track-actions .app-track-preview { display: none !important; }
       }
 
+      /* ── Mobile player adjustments ── */
+      @media (max-width: 600px) {
+        /* Stack player controls vertically on narrow screens */
+        .mp-right-controls { display: none !important; }
+        .mp-centre { flex: 1 !important; }
+        .mp-track-info { max-width: 120px !important; }
+        /* Inline facts strip stays visible on mobile */
+        .vf-inline-fact { font-size: 9px !important; }
+        /* Help button repositioned for mobile (clear of player) */
+        .vf-help-btn { bottom: 100px !important; right: 12px !important; }
+      }
+
       /* ── Tooltip ── */
       .vf-tooltip { position: relative; }
       .vf-tooltip .vf-tip {
         visibility: hidden; opacity: 0;
-        position: absolute; bottom: calc(100% + 8px); left: 50%;
+        position: absolute; top: calc(100% + 8px); left: 50%;
         transform: translateX(-50%);
         background: rgba(10,6,2,0.97);
         border: 1px solid rgba(155,105,28,0.35);
         border-radius: 7px; padding: 7px 11px;
         font-family: 'DM Mono', monospace; font-size: 10px;
         color: rgba(210,175,100,0.85); line-height: 1.6;
-        white-space: nowrap; pointer-events: none;
+        white-space: normal; pointer-events: none;
         box-shadow: 0 4px 16px rgba(0,0,0,0.6);
         transition: opacity 0.15s, visibility 0.15s;
         z-index: 400;
-        max-width: 220px; white-space: normal; text-align: center;
+        max-width: 200px; text-align: center;
+        /* ensure it doesn't go off right edge */
+        left: auto; right: 0; transform: none;
       }
       .vf-tooltip:hover .vf-tip { visibility: visible; opacity: 1; }
 
@@ -1943,6 +1957,9 @@ export default function App({ onNavigate }) {
 
                     <div style={{ height: "1px", background: `linear-gradient(90deg, ${activeColor}33, transparent)`, marginBottom: "16px" }} />
 
+                    {/* ── Inline facts rotator ── */}
+                    <InlineFact activeColor={activeColor} />
+
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                       {result.tracks.map((track, i) => {
                         const trackKey    = `${track.title}|${track.artist}`;
@@ -2507,11 +2524,67 @@ export default function App({ onNavigate }) {
 /* ═══════════════════════════════════════════════════════════════
    TUTORIAL OVERLAY
 ═══════════════════════════════════════════════════════════════ */
+
+/* ─── INLINE FACT ROTATOR ────────────────────────────────────── */
+const INLINE_FACTS = [
+  { text: "Crank NICHENESS past 70 to find tracks with under 10k Last.fm listeners.", icon: "🔍" },
+  { text: "Connect YouTube in Services for full-length playback on every track.", icon: "▶️" },
+  { text: "Tap any genre tag on your results to hard-filter the whole playlist.", icon: "🏷️" },
+  { text: "Language routing is semantic — Hindi picks Bollywood pools, not a filter.", icon: "🌐" },
+  { text: "Pro Mode > Similar to Artist uses ListenBrainz social graph for discovery.", icon: "🎛️" },
+  { text: "The Secondary Vibe flip is most useful when confidence is below 60%.", icon: "🔄" },
+  { text: "Bhangra originated as harvest celebration music in Punjab.", icon: "🥁" },
+  { text: "Play All queues your entire playlist — hit Next/Prev to navigate.", icon: "⏭️" },
+  { text: "Save playlists and share the link — no login needed to view.", icon: "💾" },
+  { text: "Lo-fi's warm crackle comes from deliberately sampling vinyl imperfections.", icon: "🎵" },
+];
+
+function InlineFact({ activeColor }) {
+  const [idx, setIdx] = useState(() => Math.floor(Math.random() * INLINE_FACTS.length));
+  const [visible, setVisible] = useState(true);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIdx(i => (i + 1) % INLINE_FACTS.length);
+        setVisible(true);
+      }, 300);
+    }, 7000);
+    return () => clearInterval(timerRef.current);
+  }, []);
+
+  const f = INLINE_FACTS[idx];
+  return (
+    <div
+      onClick={() => { setIdx(i => (i + 1) % INLINE_FACTS.length); setVisible(true); }}
+      title="Click for next tip"
+      style={{
+        display: "flex", alignItems: "flex-start", gap: 8,
+        padding: "8px 12px", marginBottom: 12,
+        background: "rgba(14,9,3,0.5)",
+        border: "1px solid rgba(120,80,20,0.18)",
+        borderLeft: `2px solid ${activeColor}55`,
+        borderRadius: 7, cursor: "pointer",
+        opacity: visible ? 1 : 0,
+        transition: "opacity 0.3s ease",
+      }}
+    >
+      <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1.6 }}>{f.icon}</span>
+      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(180,140,80,0.55)", lineHeight: 1.65 }}>
+        <span style={{ color: `${activeColor}88`, marginRight: 5, fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase" }}>tip ·</span>
+        {f.text}
+      </span>
+    </div>
+  );
+}
+
 const TUTORIAL_STEPS = [
   {
     icon: "✍️",
     title: "Describe a feeling, not a genre",
-    body: "Type anything — a mood, a scene, a memory. \"Late night coding session, focus, no lyrics\" works better than just \"lo-fi\".",
+    body: "Type anything — a mood, a scene, a memory. "Late night coding session, focus, no lyrics" works better than just "lo-fi".",
   },
   {
     icon: "🎛️",
@@ -2521,7 +2594,7 @@ const TUTORIAL_STEPS = [
   {
     icon: "🌐",
     title: "Language routing is semantic",
-    body: "Picking Hindi doesn't just filter — it routes to a native Bollywood/regional pool. \"Dard\" in Hindi gives you different tracks than \"pain\" in English.",
+    body: "Picking Hindi doesn't just filter — it routes to a native Bollywood/regional pool. "Dard" in Hindi gives you different tracks than "pain" in English.",
   },
   {
     icon: "🏷️",
@@ -2531,7 +2604,7 @@ const TUTORIAL_STEPS = [
   {
     icon: "▶️",
     title: "Full-length playback via YouTube",
-    body: "Connect YouTube in the Services panel. Then every Play button plays the full song and \"Play All\" queues the entire playlist — full-length, back-to-back.",
+    body: "Connect YouTube in the Services panel. Then every Play button plays the full song and "Play All" queues the entire playlist — full-length, back-to-back.",
   },
   {
     icon: "💾",

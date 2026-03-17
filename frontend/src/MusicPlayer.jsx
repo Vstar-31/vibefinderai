@@ -1,33 +1,32 @@
 /**
- * MusicPlayer.jsx  — VibeFinderAI v2
- * ────────────────────────────────────
- * PRIMARY MODE  : YouTube IFrame API  (when visibleServices.youtube is true)
- *   – Full-length playback for every track in the queue
- *   – Pre-fetches video IDs for all queued tracks in background
- *   – Progress bar / play-pause / seek all control the YT player
- *   – Auto-advances on video end via onStateChange callback
+ * MusicPlayer.jsx  — VibeFinderAI
+ * ────────────────────────────────
+ * PRIMARY  : YouTube IFrame API — full-length playback when YT connected
+ * FALLBACK : HTML Audio — 30s previews
  *
- * FALLBACK MODE : HTML Audio (30-second previews)
- *   – Used when YouTube is not connected or no video found for a track
- *
- * PROPS
- * ─────
- *  tracks           – full result.tracks array (entire playlist queue)
- *  initialIndex     – which track to start on
- *  activeColor      – theme accent colour
- *  onClose          – dismiss player
- *  token            – VibeFinder JWT
- *  buildApiUrl      – URL builder fn
- *  spotifyConnected – bool (for export button)
- *  onExportSpotify  – fn(tracks) → Promise
- *  servicesConnected – { lastfm: bool, youtube: bool }
- *  visibleServices   – { lastfm: bool, youtube: bool }
- *  onServiceAction   – fn(service, action, track) → Promise
+ * KEY FIX: Video ID cache is MODULE-LEVEL (outside the component).
+ * This means:
+ *  - No duplicate fetch requests across re-renders
+ *  - Cache persists when the player is closed/reopened
+ *  - Multiple component instances share the same cache
+ *  - fetchingSet prevents concurrent fetches for the same track
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
 
-/* ── Icons ─────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════
+   MODULE-LEVEL VIDEO ID CACHE
+   Lives outside the component — survives re-renders and remounts
+══════════════════════════════════════════════════════════════ */
+const _VIDEO_CACHE   = new Map();   // "title|artist" → videoId
+const _FETCHING_KEYS = new Set();   // keys currently in-flight
+
+function _cacheKey(t) { return `${t.title}|${t.artist}`; }
+function _cacheGet(t)  { return _VIDEO_CACHE.get(_cacheKey(t)) || null; }
+function _cacheSet(t, vid) { _VIDEO_CACHE.set(_cacheKey(t), vid); }
+function _isFetching(t){ return _FETCHING_KEYS.has(_cacheKey(t)); }
+
+/* ── Icons ─────────────────────────────────────────────────── */
 const Ic = {
   play:    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>,
   pause:   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>,
@@ -61,24 +60,23 @@ const shuffleArray = (arr) => {
   return a;
 };
 
-/* ── YouTube IFrame API loader (singleton) ───────────────────── */
-let _ytApiLoading = false;
-let _ytApiReady   = false;
-const _ytCallbacks = [];
+/* ── YouTube IFrame API singleton loader ─────────────────────── */
+let _ytApiState = "idle"; // idle | loading | ready
+const _ytApiWaiters = [];
 
-function loadYtApi(cb) {
-  if (_ytApiReady) { cb(); return; }
-  _ytCallbacks.push(cb);
-  if (_ytApiLoading) return;
-  _ytApiLoading = true;
+function ensureYtApi(cb) {
+  if (_ytApiState === "ready") { cb(); return; }
+  _ytApiWaiters.push(cb);
+  if (_ytApiState === "loading") return;
+  _ytApiState = "loading";
   window.onYouTubeIframeAPIReady = () => {
-    _ytApiReady = true;
-    _ytCallbacks.forEach(fn => fn());
-    _ytCallbacks.length = 0;
+    _ytApiState = "ready";
+    _ytApiWaiters.forEach(fn => fn());
+    _ytApiWaiters.length = 0;
   };
-  const tag = document.createElement("script");
-  tag.src = "https://www.youtube.com/iframe_api";
-  document.head.appendChild(tag);
+  const s = document.createElement("script");
+  s.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(s);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -97,7 +95,7 @@ export default function MusicPlayer({
   visibleServices   = {},
   onServiceAction,
 }) {
-  const ytMode = !!(visibleServices?.youtube && servicesConnected?.youtube);
+  const useYT = !!(visibleServices?.youtube && servicesConnected?.youtube);
 
   /* ── Queue ─────────────────────────────────────────────────── */
   const [queue,    setQueue]    = useState(() => tracks.map((t, i) => ({ ...t, _origIdx: i })));
@@ -105,9 +103,9 @@ export default function MusicPlayer({
 
   /* ── Playback state ────────────────────────────────────────── */
   const [isPlaying,  setIsPlaying]  = useState(false);
-  const [progress,   setProgress]   = useState(0);   // 0–1
-  const [elapsed,    setElapsed]    = useState(0);   // seconds
-  const [duration,   setDuration]   = useState(0);   // seconds
+  const [progress,   setProgress]   = useState(0);
+  const [elapsed,    setElapsed]    = useState(0);
+  const [duration,   setDuration]   = useState(0);
   const [volume,     setVolume]     = useState(0.7);
   const [muted,      setMuted]      = useState(false);
   const [shuffle,    setShuffle]    = useState(false);
@@ -115,107 +113,114 @@ export default function MusicPlayer({
   const [showQueue,  setShowQueue]  = useState(false);
   const [minimised,  setMinimised]  = useState(false);
 
-  /* ── YouTube state ─────────────────────────────────────────── */
-  const [videoIds,   setVideoIds]   = useState({});  // { "title|artist": videoId }
-  const [ytReady,    setYtReady]    = useState(false);
-  const [ytLoading,  setYtLoading]  = useState(false); // fetching video ID for current
-  const fetchingRef = useRef(new Set());               // prevent duplicate fetches
+  /* ── Video ID ready state (triggers re-render when new ID arrives) */
+  const [cacheVersion, setCacheVersion] = useState(0);
+  const bumpCache = () => setCacheVersion(v => v + 1);
 
-  /* ── Export / service toast ────────────────────────────────── */
-  const [exporting,     setExporting]     = useState(false);
-  const [exportDone,    setExportDone]    = useState(null);
-  const [serviceToast,  setServiceToast]  = useState(null);
+  /* ── YT player state ───────────────────────────────────────── */
+  const [ytReady,   setYtReady]   = useState(false);
+  const [ytLoading, setYtLoading] = useState(false);
+
+  /* ── Export / service ──────────────────────────────────────── */
+  const [exporting,    setExporting]    = useState(false);
+  const [exportDone,   setExportDone]   = useState(null);
+  const [serviceToast, setServiceToast] = useState(null);
 
   /* ── Refs ──────────────────────────────────────────────────── */
   const audioRef    = useRef(null);
   const ytPlayerRef = useRef(null);
   const progressRef = useRef(null);
   const pollRef     = useRef(null);
-  const queueRef    = useRef(queue);
+
+  // Stable refs for callbacks that mustn't cause re-renders
   const repeatRef   = useRef(repeat);
   const queueIdxRef = useRef(queueIdx);
-
-  // Keep refs in sync
-  useEffect(() => { queueRef.current    = queue;    }, [queue]);
+  const queueRef    = useRef(queue);
   useEffect(() => { repeatRef.current   = repeat;   }, [repeat]);
   useEffect(() => { queueIdxRef.current = queueIdx; }, [queueIdx]);
+  useEffect(() => { queueRef.current    = queue;    }, [queue]);
 
-  const track = queue[queueIdx] || queue[0];
+  const track      = queue[queueIdx] || queue[0];
+  const currentVid = track ? _cacheGet(track) : null;
 
-  /* ── Build cache key ───────────────────────────────────────── */
-  const cacheKey = (t) => `${t.title}|${t.artist}`;
-
-  /* ── Fetch video ID for one track ──────────────────────────── */
-  const fetchVideoId = useCallback(async (t, priority = false) => {
+  /* ════════════════════════════════════════════════════════════
+     VIDEO ID FETCHING
+     Uses module-level cache + fetching set — zero duplicates
+  ════════════════════════════════════════════════════════════ */
+  const fetchVideoId = useCallback(async (t, isPriority = false) => {
     if (!buildApiUrl || !t) return null;
-    const key = cacheKey(t);
-    if (videoIds[key]) return videoIds[key];
-    if (fetchingRef.current.has(key)) return null;
-    fetchingRef.current.add(key);
-    if (priority) setYtLoading(true);
+    const cached = _cacheGet(t);
+    if (cached) return cached;
+    if (_isFetching(t)) return null;
+
+    const key = _cacheKey(t);
+    _FETCHING_KEYS.add(key);
+    if (isPriority) setYtLoading(true);
+
     try {
       const url = buildApiUrl(
-        `/api/services/youtube/search?title=${encodeURIComponent(t.title)}&artist=${encodeURIComponent(t.artist)}&q=${encodeURIComponent(`${t.title} ${t.artist} official audio`)}`
+        `/api/services/youtube/search` +
+        `?title=${encodeURIComponent(t.title)}` +
+        `&artist=${encodeURIComponent(t.artist)}` +
+        `&q=${encodeURIComponent(`${t.title} ${t.artist} official audio`)}`
       );
       const res  = await fetch(url);
+      if (!res.ok) return null;
       const data = await res.json();
       if (data.found && data.video_id) {
-        setVideoIds(prev => ({ ...prev, [key]: data.video_id }));
+        _cacheSet(t, data.video_id);
+        bumpCache(); // trigger re-render so UI reflects new ID
         return data.video_id;
       }
-    } catch {}
+    } catch { /* swallow — no video found */ }
     finally {
-      fetchingRef.current.delete(key);
-      if (priority) setYtLoading(false);
+      _FETCHING_KEYS.delete(key);
+      if (isPriority) setYtLoading(false);
     }
     return null;
-  }, [buildApiUrl, videoIds]);
+  }, [buildApiUrl]); // stable — only changes if buildApiUrl changes
 
-  /* ── Pre-fetch all tracks (background, 2 at a time) ────────── */
+  /* ── Background pre-fetch: next 4 tracks only ─────────────── */
   useEffect(() => {
-    if (!ytMode || !buildApiUrl) return;
-    const unfetched = queue.filter(t => !videoIds[cacheKey(t)] && !fetchingRef.current.has(cacheKey(t)));
-    if (unfetched.length === 0) return;
-    // Stagger requests to avoid quota burst
-    unfetched.forEach((t, idx) => {
-      setTimeout(() => fetchVideoId(t), idx * 300);
-    });
-  }, [queue, ytMode]); // eslint-disable-line
+    if (!useYT || !buildApiUrl) return;
+    const start = queueIdx;
+    const end   = Math.min(queueIdx + 4, queue.length);
+    for (let i = start; i < end; i++) {
+      const t = queue[i];
+      if (!_cacheGet(t) && !_isFetching(t)) {
+        const delay = (i - start) * 400; // 400ms stagger
+        setTimeout(() => fetchVideoId(t), delay);
+      }
+    }
+  }, [queueIdx, useYT]); // eslint-disable-line
 
-  /* ── YouTube IFrame API setup ──────────────────────────────── */
+  /* ════════════════════════════════════════════════════════════
+     YOUTUBE IFRAME PLAYER SETUP
+  ════════════════════════════════════════════════════════════ */
   useEffect(() => {
-    if (!ytMode) return;
-    loadYtApi(() => {
-      if (ytPlayerRef.current) return; // already created
-      // Ensure container exists
-      const container = document.getElementById("vf-yt-player");
+    if (!useYT) return;
+    ensureYtApi(() => {
+      if (ytPlayerRef.current) return;
+      // Make sure the container div exists
+      const container = document.getElementById("vf-yt-hidden");
       if (!container) return;
-      ytPlayerRef.current = new window.YT.Player("vf-yt-player", {
-        height: "0",
-        width:  "0",
-        playerVars: {
-          autoplay:       1,
-          controls:       0,
-          disablekb:      1,
-          fs:             0,
-          modestbranding: 1,
-          rel:            0,
-        },
+
+      ytPlayerRef.current = new window.YT.Player("vf-yt-hidden", {
+        height: "1", width: "1",
+        playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0 },
         events: {
           onReady: () => {
             setYtReady(true);
             ytPlayerRef.current.setVolume(Math.round(volume * 100));
           },
           onStateChange: (e) => {
-            const state = e.data;
-            if (state === window.YT?.PlayerState?.PLAYING) {
-              setIsPlaying(true);
-            } else if (state === window.YT?.PlayerState?.PAUSED) {
-              setIsPlaying(false);
-            } else if (state === window.YT?.PlayerState?.ENDED) {
-              // Auto-advance
-              const q   = queueRef.current;
+            const YT = window.YT?.PlayerState;
+            if (!YT) return;
+            if (e.data === YT.PLAYING) { setIsPlaying(true); }
+            else if (e.data === YT.PAUSED) { setIsPlaying(false); }
+            else if (e.data === YT.ENDED) {
               const idx = queueIdxRef.current;
+              const q   = queueRef.current;
               const rep = repeatRef.current;
               if (rep === "one") {
                 ytPlayerRef.current?.seekTo(0);
@@ -233,36 +238,33 @@ export default function MusicPlayer({
       });
     });
     return () => {
+      clearInterval(pollRef.current);
       ytPlayerRef.current?.destroy();
       ytPlayerRef.current = null;
     };
-  }, [ytMode]); // eslint-disable-line
+  }, [useYT]); // eslint-disable-line
 
-  /* ── Load track into YouTube player when queueIdx changes ──── */
+  /* ── Load track into YT when queueIdx changes ─────────────── */
   useEffect(() => {
-    if (!ytMode || !ytReady || !track) return;
-    const key = cacheKey(track);
-    const vid = videoIds[key];
+    if (!useYT || !ytReady || !track) return;
+    const vid = _cacheGet(track);
     if (vid) {
       ytPlayerRef.current?.loadVideoById(vid);
     } else {
-      // Fetch priority and load when ready
+      // Priority fetch — load as soon as ID arrives
       fetchVideoId(track, true).then(id => {
         if (id) ytPlayerRef.current?.loadVideoById(id);
       });
     }
-    // Reset progress display
-    setElapsed(0);
-    setProgress(0);
-    setDuration(0);
-  }, [queueIdx, ytReady, videoIds, ytMode]); // eslint-disable-line
+    setElapsed(0); setProgress(0); setDuration(0);
+  }, [queueIdx, ytReady, cacheVersion, useYT]); // eslint-disable-line
 
-  /* ── Poll YouTube progress ─────────────────────────────────── */
+  /* ── Poll YT progress ──────────────────────────────────────── */
   useEffect(() => {
-    if (!ytMode) return;
+    if (!useYT) return;
     clearInterval(pollRef.current);
     pollRef.current = setInterval(() => {
-      if (!ytPlayerRef.current || typeof ytPlayerRef.current.getCurrentTime !== "function") return;
+      if (!ytPlayerRef.current?.getCurrentTime) return;
       try {
         const cur = ytPlayerRef.current.getCurrentTime() || 0;
         const dur = ytPlayerRef.current.getDuration()    || 0;
@@ -272,41 +274,7 @@ export default function MusicPlayer({
       } catch {}
     }, 500);
     return () => clearInterval(pollRef.current);
-  }, [ytMode]);
-
-  /* ── HTML Audio setup (preview/fallback mode) ───────────────── */
-  useEffect(() => {
-    if (ytMode) return; // YouTube handles it
-    const audio = new Audio();
-    audio.volume = volume;
-    audioRef.current = audio;
-
-    audio.addEventListener("timeupdate", () => {
-      setElapsed(audio.currentTime);
-      setProgress(audio.duration ? audio.currentTime / audio.duration : 0);
-    });
-    audio.addEventListener("durationchange", () => setDuration(audio.duration || 0));
-    audio.addEventListener("ended",  handleNextFallback);
-    audio.addEventListener("pause",  () => setIsPlaying(false));
-    audio.addEventListener("play",   () => setIsPlaying(true));
-
-    if (tracks[initialIndex]?.preview_url) {
-      audio.src = tracks[initialIndex].preview_url;
-      audio.play().catch(() => {});
-    }
-    return () => { audio.pause(); audio.src = ""; };
-  }, []); // eslint-disable-line
-
-  /* ── Load track into audio when queueIdx changes (fallback) ── */
-  useEffect(() => {
-    if (ytMode || !audioRef.current || !track?.preview_url) {
-      if (!ytMode) setIsPlaying(false);
-      return;
-    }
-    audioRef.current.src    = track.preview_url;
-    audioRef.current.volume = muted ? 0 : volume;
-    audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-  }, [queueIdx, queue, ytMode]); // eslint-disable-line
+  }, [useYT]);
 
   /* ── Sync volume ────────────────────────────────────────────── */
   useEffect(() => {
@@ -315,17 +283,34 @@ export default function MusicPlayer({
     if (ytPlayerRef.current?.setVolume) ytPlayerRef.current.setVolume(Math.round(v * 100));
   }, [volume, muted]);
 
-  /* ── Controls ──────────────────────────────────────────────── */
-  const handleNext = useCallback(() => {
-    setQueueIdx(i => {
-      if (repeat === "one") return i;
-      if (i >= queue.length - 1) return repeat === "all" ? 0 : i;
-      return i + 1;
-    });
-  }, [queue.length, repeat]);
+  /* ════════════════════════════════════════════════════════════
+     HTML AUDIO (PREVIEW FALLBACK)
+  ════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (useYT) return;
+    const audio = new Audio();
+    audio.volume = muted ? 0 : volume;
+    audioRef.current = audio;
+    audio.addEventListener("timeupdate",    () => { setElapsed(audio.currentTime); setProgress(audio.duration ? audio.currentTime / audio.duration : 0); });
+    audio.addEventListener("durationchange",() => setDuration(audio.duration || 0));
+    audio.addEventListener("ended",        () => advanceQueue());
+    audio.addEventListener("pause",        () => setIsPlaying(false));
+    audio.addEventListener("play",         () => setIsPlaying(true));
+    if (tracks[initialIndex]?.preview_url) { audio.src = tracks[initialIndex].preview_url; audio.play().catch(() => {}); }
+    return () => { audio.pause(); audio.src = ""; };
+  }, []); // eslint-disable-line
 
-  // Separate ref-based version for the YT onStateChange callback
-  const handleNextFallback = useCallback(() => {
+  useEffect(() => {
+    if (useYT || !audioRef.current || !track?.preview_url) { if (!useYT) setIsPlaying(false); return; }
+    audioRef.current.src = track.preview_url;
+    audioRef.current.volume = muted ? 0 : volume;
+    audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+  }, [queueIdx, queue, useYT]); // eslint-disable-line
+
+  /* ════════════════════════════════════════════════════════════
+     CONTROLS
+  ════════════════════════════════════════════════════════════ */
+  const advanceQueue = useCallback(() => {
     const idx = queueIdxRef.current;
     const q   = queueRef.current;
     const rep = repeatRef.current;
@@ -337,31 +322,32 @@ export default function MusicPlayer({
     else if (rep === "all") setQueueIdx(0);
   }, []);
 
+  const handleNext = useCallback(() => {
+    setQueueIdx(i => {
+      if (repeat === "one") return i;
+      if (i >= queue.length - 1) return repeat === "all" ? 0 : i;
+      return i + 1;
+    });
+  }, [queue.length, repeat]);
+
   const handlePrev = () => {
-    if (ytMode) {
-      if (ytPlayerRef.current && ytPlayerRef.current.getCurrentTime() > 3) {
-        ytPlayerRef.current.seekTo(0);
-        return;
-      }
-    } else if (audioRef.current && audioRef.current.currentTime > 3) {
-      audioRef.current.currentTime = 0;
+    const cur = useYT ? ytPlayerRef.current?.getCurrentTime?.() : audioRef.current?.currentTime;
+    if (cur > 3) {
+      if (useYT) ytPlayerRef.current?.seekTo(0);
+      else if (audioRef.current) audioRef.current.currentTime = 0;
       return;
     }
     setQueueIdx(i => Math.max(0, i - 1));
   };
 
   const togglePlay = () => {
-    if (ytMode) {
+    if (useYT) {
       if (!ytPlayerRef.current) return;
-      if (isPlaying) ytPlayerRef.current.pauseVideo();
-      else           ytPlayerRef.current.playVideo();
+      isPlaying ? ytPlayerRef.current.pauseVideo() : ytPlayerRef.current.playVideo();
     } else {
       if (!audioRef.current || !track?.preview_url) return;
       if (isPlaying) audioRef.current.pause();
-      else {
-        if (!audioRef.current.src) audioRef.current.src = track.preview_url;
-        audioRef.current.play().catch(() => {});
-      }
+      else { if (!audioRef.current.src) audioRef.current.src = track.preview_url; audioRef.current.play().catch(() => {}); }
     }
   };
 
@@ -369,23 +355,19 @@ export default function MusicPlayer({
     if (!progressRef.current) return;
     const rect  = progressRef.current.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    if (ytMode && ytPlayerRef.current?.seekTo) {
-      ytPlayerRef.current.seekTo(ratio * (duration || 0));
-    } else if (audioRef.current?.duration) {
-      audioRef.current.currentTime = ratio * audioRef.current.duration;
-    }
+    if (useYT && ytPlayerRef.current?.seekTo) ytPlayerRef.current.seekTo(ratio * (duration || 0));
+    else if (audioRef.current?.duration) audioRef.current.currentTime = ratio * audioRef.current.duration;
   };
 
   const toggleShuffle = () => {
-    const currentTrack = queue[queueIdx];
+    const cur = queue[queueIdx];
     if (!shuffle) {
       const rest = queue.filter((_, i) => i !== queueIdx);
-      setQueue([currentTrack, ...shuffleArray(rest)]);
+      setQueue([cur, ...shuffleArray(rest)]);
       setQueueIdx(0);
     } else {
-      const restored = [...tracks].map((t, i) => ({ ...t, _origIdx: i }));
-      setQueue(restored);
-      setQueueIdx(currentTrack._origIdx);
+      setQueue([...tracks].map((t, i) => ({ ...t, _origIdx: i })));
+      setQueueIdx(cur._origIdx);
     }
     setShuffle(s => !s);
   };
@@ -401,262 +383,189 @@ export default function MusicPlayer({
     finally   { setExporting(false); }
   };
 
-  /* ── Service action (love/scrobble) ─────────────────────────── */
   const serviceAction = async (service, action) => {
-    if (!onServiceAction) return;
     try {
-      await onServiceAction(service, action, track);
-      setServiceToast(`♥ ${action === "love" ? "Loved" : "Scrobbled"} on ${service}`);
-    } catch { setServiceToast(`⚠ ${service} failed`); }
+      await onServiceAction?.(service, action, track);
+      setServiceToast(`♥ ${action === "love" ? "Loved" : "Scrobbled"}`);
+    } catch { setServiceToast("⚠ Failed"); }
     setTimeout(() => setServiceToast(null), 2500);
   };
 
-  /* ── Derived ────────────────────────────────────────────────── */
-  const hasAudio   = ytMode ? !!videoIds[cacheKey(track || {})] : !!track?.preview_url;
-  const canPlay    = ytMode ? (ytReady && (hasAudio || ytLoading)) : hasAudio;
-  const modeLabel  = ytMode ? "YouTube" : "Preview";
-  const currentVid = track ? videoIds[cacheKey(track)] : null;
+  /* ── Derived ─────────────────────────────────────────────────── */
+  const hasAudio = useYT ? !!currentVid : !!track?.preview_url;
+  const canPlay  = hasAudio || ytLoading;
 
-  /* ── MINIMISED ──────────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════
+     MINIMISED BAR
+  ═══════════════════════════════════════════════════════════ */
   if (minimised) {
     return (
       <>
-        {ytMode && <div id="vf-yt-player" style={{ display: "none" }} />}
-        <div style={{
-          position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)",
-          zIndex: 200, display: "flex", alignItems: "center", gap: "10px",
-          padding: "8px 16px",
-          background: "linear-gradient(135deg, #120900, #0a0500)",
-          border: `1px solid ${activeColor}55`, borderRadius: "40px",
-          boxShadow: `0 8px 32px rgba(0,0,0,0.8), 0 0 20px ${activeColor}22`,
-          backdropFilter: "blur(12px)", cursor: "pointer", maxWidth: "90vw",
-        }}>
-          {track?.cover_art
-            ? <img src={track.cover_art} alt="" style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0 }} />
-            : <div style={{ width: 28, height: 28, borderRadius: 4, background: "rgba(120,80,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.disc}</div>
-          }
+        {useYT && <div id="vf-yt-hidden" style={{ position: "fixed", bottom: -2, right: -2, width: 1, height: 1, opacity: 0, pointerEvents: "none", zIndex: -1 }} />}
+        <div style={{ position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 200, display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", background: "linear-gradient(135deg, #120900, #0a0500)", border: `1px solid ${activeColor}55`, borderRadius: 40, boxShadow: `0 8px 32px rgba(0,0,0,0.8), 0 0 20px ${activeColor}22`, backdropFilter: "blur(12px)", maxWidth: "90vw" }}>
+          {track?.cover_art ? <img src={track.cover_art} alt="" style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0 }} /> : <div style={{ width: 28, height: 28, borderRadius: 4, background: "rgba(120,80,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.disc}</div>}
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 11, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{track?.title}</div>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.5)", display: "flex", alignItems: "center", gap: 4 }}>
-              {ytMode && <>{Ic.yt} </>}
-              {track?.artist}
-            </div>
+            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.5)", display: "flex", alignItems: "center", gap: 3 }}>{useYT && Ic.yt}{track?.artist}</div>
           </div>
-          <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ ...S.ctrl, width: 28, height: 28 }}>
-            {isPlaying ? Ic.pause : Ic.play}
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); handleNext(); }} style={{ ...S.ctrl, width: 24, height: 24 }}>
-            {Ic.next}
-          </button>
-          <button onClick={() => setMinimised(false)} style={{ ...S.ctrl, opacity: 0.5, width: 22, height: 22 }}>
-            {Ic.chevron}
-          </button>
+          <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ ...S.ctrl, width: 28, height: 28 }}>{isPlaying ? Ic.pause : Ic.play}</button>
+          <button onClick={(e) => { e.stopPropagation(); handleNext(); }} style={{ ...S.ctrl, width: 24, height: 24 }}>{Ic.next}</button>
+          <button onClick={() => setMinimised(false)} style={{ ...S.ctrl, opacity: 0.5, width: 22, height: 22 }}>{Ic.chevron}</button>
         </div>
       </>
     );
   }
 
-  /* ── FULL PLAYER ────────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════
+     FULL PLAYER
+  ═══════════════════════════════════════════════════════════ */
   return (
-    <div style={{
-      position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200,
-      background: "linear-gradient(180deg, rgba(10,5,0,0.97) 0%, #060300 100%)",
-      borderTop: `1px solid ${activeColor}44`,
-      boxShadow: `0 -8px 40px rgba(0,0,0,0.8), 0 0 30px ${activeColor}18`,
-      backdropFilter: "blur(20px)",
-      padding: "0 0 env(safe-area-inset-bottom, 0)",
-    }}>
-      {/* Hidden YouTube player div — IFrame API mounts here */}
-      {ytMode && <div id="vf-yt-player" style={{ display: "none", position: "absolute", width: 1, height: 1 }} />}
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: "linear-gradient(180deg, rgba(10,5,0,0.97) 0%, #060300 100%)", borderTop: `1px solid ${activeColor}44`, boxShadow: `0 -8px 40px rgba(0,0,0,0.8), 0 0 30px ${activeColor}18`, backdropFilter: "blur(20px)", padding: "0 0 env(safe-area-inset-bottom, 0)" }}>
 
-      {/* ── PROGRESS BAR ── */}
-      <div
-        ref={progressRef}
-        onClick={seekTo}
-        style={{ height: 3, background: "rgba(120,80,20,0.2)", cursor: "pointer", position: "relative" }}
-      >
-        <div style={{
-          height: "100%", width: `${progress * 100}%`,
-          background: `linear-gradient(90deg, ${activeColor}88, ${activeColor})`,
-          transition: "width 0.5s linear",
-        }} />
-        <div style={{
-          position: "absolute", top: -3, left: `${progress * 100}%`,
-          transform: "translateX(-50%)",
-          width: 9, height: 9, borderRadius: "50%",
-          background: activeColor, boxShadow: `0 0 6px ${activeColor}`,
-          transition: "left 0.5s linear",
-        }} />
+      {/* Hidden YT player div */}
+      {useYT && <div id="vf-yt-hidden" style={{ position: "absolute", bottom: 0, right: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />}
+
+      {/* Progress bar */}
+      <div ref={progressRef} onClick={seekTo} style={{ height: 3, background: "rgba(120,80,20,0.2)", cursor: "pointer", position: "relative" }}>
+        <div style={{ height: "100%", width: `${progress * 100}%`, background: `linear-gradient(90deg, ${activeColor}88, ${activeColor})`, transition: "width 0.5s linear" }} />
+        <div style={{ position: "absolute", top: -3, left: `${progress * 100}%`, transform: "translateX(-50%)", width: 9, height: 9, borderRadius: "50%", background: activeColor, boxShadow: `0 0 6px ${activeColor}`, transition: "left 0.5s linear" }} />
       </div>
 
-      <div style={{ padding: "10px 20px 12px", maxWidth: 900, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ padding: "10px 16px 12px", maxWidth: 900, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
 
-          {/* ── ALBUM ART ── */}
+          {/* Album art */}
           <div style={{ position: "relative", flexShrink: 0 }}>
             {track?.cover_art
               ? <img src={track.cover_art} alt="" style={{ width: 48, height: 48, borderRadius: 6, boxShadow: `0 0 12px ${activeColor}44`, border: `1px solid ${activeColor}33` }} />
               : <div style={{ width: 48, height: 48, borderRadius: 6, background: "rgba(120,80,20,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(180,140,80,0.4)", border: `1px solid rgba(120,80,20,0.3)` }}>{Ic.disc}</div>
             }
-            {isPlaying && (
-              <div style={{ position: "absolute", inset: 0, borderRadius: 6, border: `1.5px solid ${activeColor}66`, animation: "pulseRing 2s ease infinite" }} />
-            )}
+            {isPlaying && <div style={{ position: "absolute", inset: 0, borderRadius: 6, border: `1.5px solid ${activeColor}66`, animation: "pulseRing 2s ease infinite" }} />}
           </div>
 
-          {/* ── TRACK INFO ── */}
-          <div style={{ flex: "0 0 auto", minWidth: 0, maxWidth: 160 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {track?.title || "—"}
-            </div>
-            <div style={{ fontSize: 10, color: "rgba(180,140,80,0.6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "0.04em" }}>
-              {track?.artist || ""}
-            </div>
+          {/* Track info */}
+          <div style={{ flex: "0 0 auto", minWidth: 0, maxWidth: 150 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.title || "—"}</div>
+            <div style={{ fontSize: 10, color: "rgba(180,140,80,0.6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.artist || ""}</div>
             <div style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
               {fmt(elapsed)} / {fmt(duration)}
-              {ytMode && (
-                <span style={{ color: currentVid ? "#ff6666" : "rgba(180,80,80,0.4)", display: "flex", alignItems: "center", gap: 2 }}>
-                  {Ic.yt}
-                  {ytLoading ? " finding…" : !currentVid ? " no video" : ""}
+              {useYT && (
+                <span style={{ color: currentVid ? "rgba(255,80,80,0.6)" : "rgba(180,80,80,0.35)", display: "flex", alignItems: "center", gap: 2 }}>
+                  {Ic.yt}{ytLoading ? " …" : !currentVid ? " searching" : ""}
                 </span>
               )}
-              {!ytMode && <span style={{ color: "rgba(180,140,80,0.3)" }}>preview</span>}
+              {!useYT && <span style={{ opacity: 0.5 }}>preview</span>}
             </div>
           </div>
 
-          {/* ── CENTRE CONTROLS ── */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <button onClick={toggleShuffle} style={{ ...S.ctrl, color: shuffle ? activeColor : "rgba(180,140,80,0.35)" }} title="Shuffle queue">{Ic.shuffle}</button>
-              <button onClick={handlePrev} style={S.ctrl} title="Previous track">{Ic.prev}</button>
+          {/* Centre controls */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <button onClick={toggleShuffle} style={{ ...S.ctrl, color: shuffle ? activeColor : "rgba(180,140,80,0.35)" }} title="Shuffle">{Ic.shuffle}</button>
+              <button onClick={handlePrev} style={S.ctrl} title="Previous">{Ic.prev}</button>
 
-              {/* ── MAIN PLAY/PAUSE ── */}
+              {/* Main play/pause */}
               <button
                 onClick={togglePlay}
-                disabled={!canPlay && !ytLoading}
-                title={ytMode ? (ytLoading ? "Finding on YouTube…" : !currentVid ? "No video found for this track" : isPlaying ? "Pause" : "Play full track on YouTube") : (track?.preview_url ? "Play 30s preview" : "No preview available")}
+                disabled={!canPlay}
+                title={useYT
+                  ? (ytLoading ? "Finding on YouTube…" : !currentVid ? "No video found" : isPlaying ? "Pause" : "Play full track")
+                  : (track?.preview_url ? "Play 30s preview" : "No preview")}
                 style={{
                   ...S.ctrl, width: 42, height: 42, borderRadius: "50%",
                   background: canPlay ? `linear-gradient(135deg, ${activeColor}cc, ${activeColor})` : "rgba(60,40,10,0.4)",
                   border: `1px solid ${activeColor}55`,
                   color: canPlay ? "#000" : "rgba(120,80,20,0.3)",
                   boxShadow: canPlay ? `0 0 16px ${activeColor}44` : "none",
-                  opacity: (canPlay || ytLoading) ? 1 : 0.5,
-                  fontSize: 16,
+                  opacity: canPlay ? 1 : 0.5,
                 }}
               >
-                {ytLoading ? (
-                  <div style={{ width: 14, height: 14, border: `2px solid ${activeColor}44`, borderTopColor: activeColor, borderRadius: "50%", animation: "ytSpin 0.8s linear infinite" }} />
-                ) : isPlaying ? Ic.pause : Ic.play}
+                {ytLoading
+                  ? <div style={{ width: 14, height: 14, border: `2px solid ${activeColor}44`, borderTopColor: activeColor, borderRadius: "50%", animation: "ytSpin 0.8s linear infinite" }} />
+                  : isPlaying ? Ic.pause : Ic.play}
               </button>
 
-              <button onClick={handleNext} style={S.ctrl} title="Next track">{Ic.next}</button>
+              <button onClick={handleNext} style={S.ctrl} title="Next">{Ic.next}</button>
               <button onClick={cycleRepeat} style={{ ...S.ctrl, color: repeat !== "off" ? activeColor : "rgba(180,140,80,0.35)", position: "relative" }} title={`Repeat: ${repeat}`}>
-                {repeat === "one" ? Ic.repeat1 : Ic.repeat}
+                {Ic.repeat}
                 {repeat === "one" && <span style={{ position: "absolute", top: -4, right: -4, fontSize: 7, color: activeColor, fontWeight: "bold" }}>1</span>}
               </button>
             </div>
 
             {/* Mode badge */}
-            <div style={{ fontSize: 8, color: ytMode ? "rgba(255,80,80,0.5)" : "rgba(180,140,80,0.25)", letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 3 }}>
-              {ytMode ? <>{Ic.yt} Full length · YouTube</> : "30s preview mode"}
+            <div style={{ fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 3, color: useYT ? "rgba(255,80,80,0.55)" : "rgba(180,140,80,0.25)" }}>
+              {useYT ? <>{Ic.yt} Full length · YouTube</> : "30s preview mode · connect YouTube for full tracks"}
             </div>
           </div>
 
-          {/* ── RIGHT CONTROLS ── */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {/* Right controls */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {/* Volume */}
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <button onClick={() => setMuted(m => !m)} style={{ ...S.ctrl, color: muted ? "rgba(180,140,80,0.3)" : "rgba(180,140,80,0.6)" }}>
-                {muted ? Ic.volMute : Ic.volHigh}
-              </button>
-              <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume}
-                onChange={e => { setVolume(+e.target.value); setMuted(false); }}
-                style={{ width: 60, accentColor: activeColor, cursor: "pointer" }}
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <button onClick={() => setMuted(m => !m)} style={{ ...S.ctrl, color: muted ? "rgba(180,140,80,0.3)" : "rgba(180,140,80,0.6)" }}>{muted ? Ic.volMute : Ic.volHigh}</button>
+              <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={e => { setVolume(+e.target.value); setMuted(false); }} style={{ width: 55, accentColor: activeColor, cursor: "pointer" }} />
             </div>
 
-            {/* Queue */}
-            <button onClick={() => setShowQueue(s => !s)} style={{ ...S.ctrl, color: showQueue ? activeColor : "rgba(180,140,80,0.4)" }} title="View queue">{Ic.queue}</button>
+            <button onClick={() => setShowQueue(s => !s)} style={{ ...S.ctrl, color: showQueue ? activeColor : "rgba(180,140,80,0.4)" }} title={`Queue (${queue.length})`}>{Ic.queue}</button>
 
-            {/* Spotify export */}
             {spotifyConnected && (
-              <button onClick={handleExport} disabled={exporting}
-                style={{ ...S.ctrl, padding: "5px 10px", borderRadius: 6, background: "rgba(29,185,84,0.15)", border: "1px solid rgba(29,185,84,0.4)", color: exportDone?.url ? "#34d399" : "#1db954", fontSize: 10, fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em", display: "flex", alignItems: "center", gap: 5, opacity: exporting ? 0.6 : 1 }}
-                title="Export to Spotify"
-              >
-                {Ic.spotify} {exporting ? "Exporting…" : exportDone?.url ? "Exported!" : "Export"}
+              <button onClick={handleExport} disabled={exporting} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(29,185,84,0.15)", border: "1px solid rgba(29,185,84,0.4)", color: exportDone?.url ? "#34d399" : "#1db954", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 4, opacity: exporting ? 0.6 : 1 }}>
+                {Ic.spotify} {exporting ? "…" : exportDone?.url ? "✓" : "Export"}
               </button>
             )}
 
-            {/* Last.fm love */}
             {visibleServices?.lastfm && servicesConnected?.lastfm && (
-              <button onClick={() => serviceAction("lastfm", "love")}
-                style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(213,16,7,0.12)", border: "1px solid rgba(213,16,7,0.3)", color: "#d51007", fontSize: 10, fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 4 }}
-                title="Love on Last.fm"
-              >♥ Last.fm</button>
+              <button onClick={() => serviceAction("lastfm", "love")} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(213,16,7,0.12)", border: "1px solid rgba(213,16,7,0.3)", color: "#d51007", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 3 }} title="Love on Last.fm">
+                ♥ Last.fm
+              </button>
             )}
 
-            {serviceToast && (
-              <span style={{ fontSize: 9, color: serviceToast.startsWith("⚠") ? "#f87171" : "#34d399", fontFamily: "'DM Mono', monospace" }}>
-                {serviceToast}
-              </span>
-            )}
+            {serviceToast && <span style={{ fontSize: 9, color: serviceToast.startsWith("⚠") ? "#f87171" : "#34d399", fontFamily: "'DM Mono', monospace" }}>{serviceToast}</span>}
 
             <button onClick={() => setMinimised(true)} style={{ ...S.ctrl, opacity: 0.4, transform: "rotate(180deg)" }} title="Minimise">{Ic.chevron}</button>
-            <button onClick={onClose} style={{ ...S.ctrl, opacity: 0.4 }} title="Close player">{Ic.close}</button>
+            <button onClick={onClose} style={{ ...S.ctrl, opacity: 0.4 }} title="Close">{Ic.close}</button>
           </div>
         </div>
 
-        {/* ── QUEUE PANEL ── */}
+        {/* Queue panel */}
         {showQueue && (
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(120,80,20,0.2)", maxHeight: 220, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: `${activeColor}44 transparent` }}>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
-              Queue — {queue.length} tracks {shuffle ? "· shuffled" : ""} {ytMode ? "· YouTube full-length" : "· 30s previews"}
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(120,80,20,0.2)", maxHeight: 200, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: `${activeColor}44 transparent` }}>
+            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>
+              Queue — {queue.length} tracks {shuffle ? "· shuffled" : ""} {useYT ? "· full-length YouTube" : "· 30s previews"}
             </div>
             {queue.map((t, i) => {
-              const vid = videoIds[cacheKey(t)];
+              const vid     = _cacheGet(t);
+              const loading = _isFetching(t);
               return (
-                <div key={`${t.title}|${t.artist}|${i}`} onClick={() => setQueueIdx(i)}
-                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", borderRadius: 6, cursor: "pointer", background: i === queueIdx ? `${activeColor}18` : "transparent", border: `1px solid ${i === queueIdx ? activeColor + "44" : "transparent"}`, transition: "all 0.15s", marginBottom: 2 }}
-                >
-                  <span style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", width: 16, textAlign: "right", flexShrink: 0 }}>
-                    {i === queueIdx ? "▶" : i + 1}
-                  </span>
-                  {t.cover_art
-                    ? <img src={t.cover_art} alt="" style={{ width: 24, height: 24, borderRadius: 3, flexShrink: 0 }} />
-                    : <div style={{ width: 24, height: 24, borderRadius: 3, background: "rgba(120,80,20,0.2)", flexShrink: 0 }} />
-                  }
+                <div key={`${t.title}|${i}`} onClick={() => setQueueIdx(i)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", borderRadius: 6, cursor: "pointer", background: i === queueIdx ? `${activeColor}18` : "transparent", border: `1px solid ${i === queueIdx ? activeColor + "44" : "transparent"}`, transition: "all 0.15s", marginBottom: 2 }}>
+                  <span style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", width: 16, textAlign: "right", flexShrink: 0 }}>{i === queueIdx ? "▶" : i + 1}</span>
+                  {t.cover_art ? <img src={t.cover_art} alt="" style={{ width: 24, height: 24, borderRadius: 3, flexShrink: 0 }} /> : <div style={{ width: 24, height: 24, borderRadius: 3, background: "rgba(120,80,20,0.2)", flexShrink: 0 }} />}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 11, color: i === queueIdx ? "#fde68a" : "rgba(220,190,140,0.8)", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</div>
                     <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.artist}</div>
                   </div>
-                  {/* Video ID status */}
-                  {ytMode && (
-                    <span style={{ fontSize: 8, flexShrink: 0, color: vid ? "rgba(255,80,80,0.5)" : fetchingRef.current.has(cacheKey(t)) ? "rgba(180,140,80,0.3)" : "rgba(120,80,20,0.3)" }}>
-                      {vid ? "▶" : fetchingRef.current.has(cacheKey(t)) ? "…" : "–"}
+                  {useYT && (
+                    <span style={{ fontSize: 8, flexShrink: 0, color: vid ? "rgba(255,80,80,0.6)" : loading ? "rgba(217,119,6,0.4)" : "rgba(120,80,20,0.3)" }}>
+                      {vid ? "▶" : loading ? "…" : "–"}
                     </span>
                   )}
-                  {!ytMode && !t.preview_url && (
-                    <span style={{ fontSize: 8, color: "rgba(180,140,80,0.2)", flexShrink: 0 }}>no preview</span>
-                  )}
+                  {!useYT && !t.preview_url && <span style={{ fontSize: 8, color: "rgba(180,140,80,0.2)", flexShrink: 0 }}>no preview</span>}
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* Export result */}
         {exportDone && !exportDone.error && exportDone.url && (
-          <div style={{ marginTop: 8, fontSize: 10, color: "#34d399", display: "flex", alignItems: "center", gap: 8 }}>
-            ✓ Exported to Spotify!
-            <a href={exportDone.url} target="_blank" rel="noopener noreferrer" style={{ color: "#1db954", textDecoration: "underline" }}>Open playlist</a>
+          <div style={{ marginTop: 8, fontSize: 10, color: "#34d399", display: "flex", alignItems: "center", gap: 8, fontFamily: "'DM Mono', monospace" }}>
+            ✓ Exported! <a href={exportDone.url} target="_blank" rel="noopener noreferrer" style={{ color: "#1db954" }}>Open in Spotify ↗</a>
           </div>
         )}
       </div>
 
       <style>{`
-        @keyframes pulseRing { 0%,100% { opacity:.8; transform:scale(1); } 50% { opacity:.3; transform:scale(1.04); } }
-        @keyframes ytSpin    { to { transform: rotate(360deg); } }
+        @keyframes pulseRing { 0%,100%{opacity:.8;transform:scale(1);}50%{opacity:.3;transform:scale(1.04);} }
+        @keyframes ytSpin    { to{transform:rotate(360deg);} }
       `}</style>
     </div>
   );
