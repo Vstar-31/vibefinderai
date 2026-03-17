@@ -207,7 +207,7 @@ export default function MusicPlayer({
 
       ytPlayerRef.current = new window.YT.Player("vf-yt-hidden", {
         height: "1", width: "1",
-        playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0 },
+        playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0, origin: window.location.origin },
         events: {
           onReady: () => {
             setYtReady(true);
@@ -401,7 +401,7 @@ export default function MusicPlayer({
   if (minimised) {
     return (
       <>
-        {useYT && <div id="vf-yt-hidden" style={{ position: "fixed", bottom: -2, right: -2, width: 1, height: 1, opacity: 0, pointerEvents: "none", zIndex: -1 }} />}
+        {useYT && <div id="vf-yt-hidden" style={{ position: "fixed", bottom: -200, right: -200, width: 160, height: 90, pointerEvents: "none", zIndex: -1 }} />}
         <div style={{ position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 200, display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", background: "linear-gradient(135deg, #120900, #0a0500)", border: `1px solid ${activeColor}55`, borderRadius: 40, boxShadow: `0 8px 32px rgba(0,0,0,0.8), 0 0 20px ${activeColor}22`, backdropFilter: "blur(12px)", maxWidth: "90vw" }}>
           {track?.cover_art ? <img src={track.cover_art} alt="" style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0 }} /> : <div style={{ width: 28, height: 28, borderRadius: 4, background: "rgba(120,80,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.disc}</div>}
           <div style={{ minWidth: 0 }}>
@@ -423,7 +423,7 @@ export default function MusicPlayer({
     <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: "linear-gradient(180deg, rgba(10,5,0,0.97) 0%, #060300 100%)", borderTop: `1px solid ${activeColor}44`, boxShadow: `0 -8px 40px rgba(0,0,0,0.8), 0 0 30px ${activeColor}18`, backdropFilter: "blur(20px)", padding: "0 0 env(safe-area-inset-bottom, 0)" }}>
 
       {/* Hidden YT player div */}
-      {useYT && <div id="vf-yt-hidden" style={{ position: "absolute", bottom: 0, right: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />}
+      {useYT && <div id="vf-yt-hidden" style={{ position: "fixed", bottom: -200, right: -200, width: 160, height: 90, pointerEvents: "none", zIndex: -1 }} />}
 
       {/* Progress bar */}
       <div ref={progressRef} onClick={seekTo} style={{ height: 3, background: "rgba(120,80,20,0.2)", cursor: "pointer", position: "relative" }}>
