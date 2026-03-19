@@ -24,11 +24,8 @@ try:
     from analyzers import semantic_search
     print("✓ from analyzers import semantic_search")
     
-    from analyzers import advanced_analyzer
-    print("✓ from analyzers import advanced_analyzer")
-    
-    from analyzers import qa_analyzer
-    print("✓ from analyzers import qa_analyzer")
+    from analyzers import report_analysis_hub
+    print("✓ from analyzers import report_analysis_hub")
     
     # Test data imports
     from data import enrichment
@@ -46,3 +43,4 @@ except ImportError as e:
 except Exception as e:
     print(f"\n❌ Error: {e}")
     sys.exit(1)
+

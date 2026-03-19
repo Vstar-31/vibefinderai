@@ -28,12 +28,10 @@ backend/
 │
 ├── analyzers/
 │   ├── __init__.py
-│   ├── advanced_analyzer.py        # Advanced analysis tools
-│   ├── prompt_analyzer_v2.py       # Prompt analysis
-│   ├── qa_analyzer.py              # QA scoring
+│   ├── report_analysis_hub.py      # Unified report analyzer (single pipeline)
 │   ├── semantic_search.py          # Semantic search & ranking (graceful fallback)
 │   ├── sentiment_boost.py          # Sentiment analysis boost
-│   └── prompt_result_analyzer.py   # Result analysis
+│   └── (legacy analyzers removed)
 │
 ├── data/
 │   ├── __init__.py
@@ -49,9 +47,7 @@ backend/
 ├── testing/
 │   ├── __init__.py
 │   ├── health_check.py             # Health check utility
-│   ├── batch_tester.py             # Batch testing tool
 │   ├── batch_tester_v10k_2.py      # Large-scale batch testing
-│   ├── analysis_tool_interactive.py # Interactive analysis tool
 │   ├── qa_analysis_report.json     # QA Results (data file)
 │   └── qa_analysis_report.txt      # QA Results (data file)
 │

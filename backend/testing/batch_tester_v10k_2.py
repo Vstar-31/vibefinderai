@@ -1,24 +1,48 @@
 #!/usr/bin/env python3
 """
-batch_tester_v10k_3.py  — VIBEFINDER AI MEGA STRESS SUITE v3 (GEN Z POWER USER)
-20,000+ prompts × Dynamic Track Limits × ALL Pro Mode Overrides + 16 Knob Profiles
-250 unique seed prompts × 16 knob profiles × 5 Pro Mode variations = 20,000 test cases
-+ GEMINI AI AUTO-GRADING (Free Tier) - Deferred to end of script
+batch_tester_v10k_2.py â€” VIBEFINDER AI COMPREHENSIVE ANALYSIS SUITE v2 (CURRENT)
+20,000+ prompts Ã— Dynamic Track Limits Ã— ALL Pro Mode Overrides + 16 Knob Profiles
+250 unique seed prompts Ã— 16 knob profiles Ã— 5 Pro Mode variations = 20,000 test cases
++ Thorough Analytics & Log Generation + Music Services Testing
+
+FEATURES TESTED:
+  âœ“ Vibe analysis engine (primary & secondary vibes)
+  âœ“ All knob configurations (artist focus, BPM, nicheness)
+  âœ“ Pro Mode overrides (genre forcing, artist forcing, secondary vibe pivoting)
+  âœ“ Multi-language support (20+ languages)
+  âœ“ Track limiting & pagination
+  âœ“ Semantic search & ranking
+  âœ“ YouTube retry logic (cache + exponential backoff)
+  âœ“ Music service OAuth status
+  âœ“ Metrics collection & analytics
+  âœ“ Gemini AI auto-grading (free tier)
 
 Run from backend folder:
-    python batch_tester_v10k_3.py
+    python testing/batch_tester_v10k_2.py
 
-Outputs: 
-    qa_batch_v10k_3.log (Main engine results)
-    qa_batch_gemini_analysis.log (AI Grades & Summary)
+Outputs:
+    analysis_reports/batch_report_TIMESTAMP.json - Comprehensive analysis
+    qa_batch_v10k_3.log - Main engine results
+    qa_batch_gemini_analysis.log - AI Grades & Summary
+    qa_batch_services_status.log - Service connection tests
 """
 import asyncio
 import logging
 import re
 import os
+import sys
 import random
 import json
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
 from prisma import Prisma
+
+# Ensure backend modules are importable regardless of current working directory.
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 # For Gemini REST API
 try:
@@ -27,44 +51,171 @@ try:
 except ImportError:
     _AIOHTTP_AVAILABLE = False
 
-import vibe_engine
-from main import (
-    fetch_lastfm_tracks,
-    fetch_lastfm_artist_tracks,
-    fetch_lastfm_track_search,
-    filter_and_score_tracks,
-    VibeRequest,
-    COMMON_WORDS_BLACKLIST,
-    TRACK_BLOCKLIST,
-)
+# â”€â”€ PROPER IMPORTS FOR NEW MODULAR STRUCTURE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+from core import vibe_engine
+from core.vibe_engine import LANGUAGE_TAG_MAP
 
-# ══════════════════════════════════════════════════════════════════════════════
-# GEMINI AI CONFIG (Free Tier)
-# ══════════════════════════════════════════════════════════════════════════════
+# Lazy-loaded symbols from main.py to avoid heavy imports in FAST_PARALLEL_MODE workers.
+fetch_lastfm_tracks = None
+fetch_lastfm_artist_tracks = None
+fetch_lastfm_track_search = None
+filter_and_score_tracks = None
+VibeRequest = None
+COMMON_WORDS_BLACKLIST = None
+TRACK_BLOCKLIST = None
+
+
+def _ensure_main_symbols_loaded():
+    global fetch_lastfm_tracks
+    global fetch_lastfm_artist_tracks
+    global fetch_lastfm_track_search
+    global filter_and_score_tracks
+    global VibeRequest
+    global COMMON_WORDS_BLACKLIST
+    global TRACK_BLOCKLIST
+
+    if VibeRequest is not None and filter_and_score_tracks is not None:
+        return
+
+    from main import (
+        fetch_lastfm_tracks as _fetch_lastfm_tracks,
+        fetch_lastfm_artist_tracks as _fetch_lastfm_artist_tracks,
+        fetch_lastfm_track_search as _fetch_lastfm_track_search,
+        filter_and_score_tracks as _filter_and_score_tracks,
+        VibeRequest as _VibeRequest,
+        COMMON_WORDS_BLACKLIST as _COMMON_WORDS_BLACKLIST,
+        TRACK_BLOCKLIST as _TRACK_BLOCKLIST,
+    )
+
+    fetch_lastfm_tracks = _fetch_lastfm_tracks
+    fetch_lastfm_artist_tracks = _fetch_lastfm_artist_tracks
+    fetch_lastfm_track_search = _fetch_lastfm_track_search
+    filter_and_score_tracks = _filter_and_score_tracks
+    VibeRequest = _VibeRequest
+    COMMON_WORDS_BLACKLIST = _COMMON_WORDS_BLACKLIST
+    TRACK_BLOCKLIST = _TRACK_BLOCKLIST
+
+# â”€â”€ ENVIRONMENT & CONFIGURATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 from dotenv import load_dotenv
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# Free tier allows 15 Requests Per Minute. 
-# We sample a percentage of tests to grade automatically so it doesn't take 24 hours.
-GEMINI_SAMPLE_RATE = 1.0 # 5% of prompts will be auto-graded by AI. Set to 1.0 for all.
+LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+METRICS_PASSPHRASE = os.getenv("METRICS_PASSPHRASE")
+
+# Free tier allows 15 RPM. We sample a percentage to grade automatically.
+GEMINI_SAMPLE_RATE = 0.1  # 10% of prompts will be auto-graded by AI
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
 
-async def evaluate_with_gemini(prompt_text, dominant_vibe, returned_tracks):
-    """Hits the Gemini API to grade our engine's result like a real Gen Z user."""
-    if not GEMINI_API_KEY or not _AIOHTTP_AVAILABLE or not returned_tracks:
+# Batch configuration
+TEST_LIMIT = 20000  # Full suite
+DEBUG_MODE = False  # Set to True for limited testing (100 prompts)
+ANALYSIS_CONCURRENCY = int(os.getenv("BATCH_ANALYSIS_CONCURRENCY", "8"))
+API_DRIVEN_MODE = True
+FAST_PARALLEL_MODE = False
+
+# Backend API configuration for real-world, full-stack evaluation.
+BACKEND_BASE_URL = os.getenv("BATCH_BACKEND_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+BATCH_TEST_EMAIL = os.getenv("BATCH_TEST_EMAIL", "batchbot@vibefinder.ai")
+BATCH_TEST_USERNAME = os.getenv("BATCH_TEST_USERNAME", "batchbot_v2")
+BATCH_TEST_PASSWORD = os.getenv("BATCH_TEST_PASSWORD", "BatchBot@123456")
+BACKEND_HEALTH_WAIT_SECONDS = int(os.getenv("BACKEND_HEALTH_WAIT_SECONDS", "30"))
+AUTH_RETRY_ATTEMPTS = int(os.getenv("BATCH_AUTH_RETRY_ATTEMPTS", "3"))
+AUTH_RETRY_DELAY_SECONDS = float(os.getenv("BATCH_AUTH_RETRY_DELAY_SECONDS", "2.0"))
+
+# Gemini grading setup.
+# Keep inline grading disabled for long runs; run Gemini later from log JSONL.
+INLINE_GEMINI_EVAL = False
+GEMINI_EVAL_ALL = True
+GEMINI_CONCURRENCY = 3
+
+# â”€â”€ COMPREHENSIVE LOGGER SETUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+logging_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+os.makedirs("analysis_reports", exist_ok=True)
+
+# Main Engine Logger
+main_logger = logging.getLogger("VibeFinder_Batch")
+main_logger.setLevel(logging.DEBUG)
+main_fh = logging.FileHandler(f"qa_batch_{logging_ts}.log", encoding="utf-8")
+main_sh = logging.StreamHandler()
+fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s", datefmt="%H:%M:%S")
+main_fh.setFormatter(fmt)
+main_sh.setFormatter(fmt)
+main_logger.handlers = [main_fh, main_sh]
+
+# Services Status Logger
+services_logger = logging.getLogger("Services_Status")
+services_logger.setLevel(logging.INFO)
+services_fh = logging.FileHandler(f"qa_batch_services_{logging_ts}.log", encoding="utf-8")
+services_fh.setFormatter(fmt)
+services_logger.handlers = [services_fh]
+
+# Metrics Logger
+metrics_logger = logging.getLogger("Metrics_Collector")
+metrics_logger.setLevel(logging.INFO)
+metrics_fh = logging.FileHandler(f"qa_batch_metrics_{logging_ts}.log", encoding="utf-8")
+metrics_fh.setFormatter(fmt)
+metrics_logger.handlers = [metrics_fh]
+
+# Gemini Analysis Logger
+gemini_logger = logging.getLogger("GeminiGrader")
+gemini_logger.setLevel(logging.INFO)
+g_fh = logging.FileHandler(f"qa_batch_gemini_{logging_ts}.log", encoding="utf-8")
+g_fh.setFormatter(fmt)
+gemini_logger.handlers = [g_fh, main_sh]
+
+async def evaluate_with_gemini(prompt_payload: dict, response_payload: dict):
+    """Evaluate one prompt+response pair using Gemini and return pass/fail style output."""
+    if not GEMINI_API_KEY or not _AIOHTTP_AVAILABLE:
         return None
 
-    track_list_str = ", ".join([f"{t.get('title')} by {t.get('artist')}" for t in returned_tracks[:5]])
+    returned_tracks = response_payload.get("tracks", [])
+    track_list_str = ", ".join([
+        f"{t.get('title', '')} by {t.get('artist', '')}"
+        for t in returned_tracks[:10]
+    ])
+    if not track_list_str:
+        track_list_str = "NO_TRACKS"
     
-    sys_prompt = "You are Aryan, a 19-year-old Gen Z music power user from India. You are grading an AI music engine."
-    user_prompt = f"""
-    I asked the music engine for this vibe: "{prompt_text}"
-    The engine classified the vibe as: "{dominant_vibe}"
-    The engine gave me these top tracks: {track_list_str}
+    sys_prompt = (
+        "You are a chill Gen Z audiophile from Jaipur evaluating a music recommendation engine. "
+        "Judge if the returned tracks match the user intent, vibe, language, locks, and knobs."
+    )
 
-    Grade this result strictly. Respond ONLY in this JSON format:
-    {{"verdict": "✅ Hit" or "⚠️ Partial" or "❌ Miss", "reason": "One short, chill sentence explaining why using Gen Z slang."}}
+    prompt_text = prompt_payload.get("text", "")
+    language = prompt_payload.get("language", "Any")
+    knobs = {
+        "artist_focus": prompt_payload.get("artist_focus", 50),
+        "bpm_focus": prompt_payload.get("bpm_focus", 50),
+        "nicheness": prompt_payload.get("nicheness", 50),
+        "track_limit": prompt_payload.get("track_limit", 10),
+    }
+
+    user_prompt = f"""
+    Prompt: "{prompt_text}"
+    Language lock: {language}
+    Knobs: {json.dumps(knobs)}
+    Artist lock: {prompt_payload.get('override_artist')}
+    Genre lock: {prompt_payload.get('override_genre')}
+    Secondary vibe enabled: {prompt_payload.get('use_secondary_vibe', False)}
+    Dismiss detected artist: {prompt_payload.get('dismiss_detected_artist', False)}
+
+    Engine output dominant vibe: "{response_payload.get('dominant_vibe', 'unknown')}"
+    Confidence: {response_payload.get('confidence', 0)}
+    Secondary vibe: {response_payload.get('secondary_vibe')}
+    Secondary confidence: {response_payload.get('secondary_confidence', 0)}
+    Genres selected: {response_payload.get('genres', [])}
+    Tracks returned ({len(returned_tracks)}): {track_list_str}
+
+    Grade strictly and respond ONLY with valid JSON in this exact schema:
+    {{
+      "verdict": "PASS" | "PARTIAL" | "FAIL",
+      "relevancy_score": 0-100,
+      "reason": "short explanation",
+      "issues": ["issue1", "issue2"],
+      "improvements": ["suggestion1", "suggestion2"]
+    }}
     """
 
     payload = {
@@ -79,18 +230,35 @@ async def evaluate_with_gemini(prompt_text, dominant_vibe, returned_tracks):
                 if resp.status == 200:
                     data = await resp.json()
                     text_resp = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                    return json.loads(text_resp)
+                    parsed = json.loads(text_resp)
+                    if "verdict" not in parsed:
+                        parsed["verdict"] = "FAIL"
+                    if "relevancy_score" not in parsed:
+                        parsed["relevancy_score"] = 0
+                    return parsed
                 elif resp.status == 429:
-                    return {"verdict": "⚠️ Rate Limited", "reason": "Gemini free tier limit hit bro."}
+                    return {
+                        "verdict": "FAIL",
+                        "relevancy_score": 0,
+                        "reason": "Rate limited",
+                        "issues": ["gemini_rate_limited"],
+                        "improvements": ["retry_later"],
+                    }
     except Exception as e:
-        return {"verdict": "❌ Error", "reason": f"Gemini failed: {str(e)}"}
+        return {
+            "verdict": "FAIL",
+            "relevancy_score": 0,
+            "reason": f"Gemini failed: {str(e)}",
+            "issues": ["gemini_error"],
+            "improvements": ["check_api_key_or_quota"],
+        }
     return None
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# KNOB PROFILES — 16 configurations
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# KNOB PROFILES â€” 16 configurations
 # (artist_focus 0-100, bpm_focus 0-100, nicheness 0-100, label)
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 KNOB_PROFILES = [
     (50,  100, 50,  "default_balanced"),
     (10,  100, 50,  "artist_suppressed"),
@@ -110,10 +278,10 @@ KNOB_PROFILES = [
     (90,  160, 90,  "max_all"),
 ]
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SEED PROMPTS — 250 Gen Z Power User Prompts (Expanded Jaipur/India/Global edition)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SEED PROMPTS â€” 250 Gen Z Power User Prompts (Expanded Jaipur/India/Global edition)
 # Format: (text, language, default_knob_idx, override_genre, override_artist)
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 _SEEDS = [
     # -- Original 125 --
     ("late night drive through rain-slicked streets, Travis Scott on the radio", "English", 14, "trap", "Travis Scott"),
@@ -213,9 +381,9 @@ _SEEDS = [
     ("Woke up feeling like Ranveer Singh, hyper confident, Bollywood hero entry", "Hindi", 10, "bollywood", "Ranveer Singh"),
     ("playing something from my city's underground music scene, Delhi", "English", 12, "delhi indie", "Peter Cat Recording Co."),
     ("totally exhausted, need something that isn't English, just give me something beautiful", "Japanese", 9, "japanese ambient", None),
-    ("describe VibeFinderAI itself — oscilloscope, neural, music discovery engine", "Any", 12, "ambient techno", None),
-    ("my favorite prompt of the test — whichever vibe you felt worked best, try it again with higher nicheness", "Hindi", 8, "indie folk", "Prateek Kuhad"),
-    ("one more thing — give me something I've never heard before, maximum nicheness, any language, any vibe", "Any", 8, "experimental", None),
+    ("describe VibeFinderAI itself â€” oscilloscope, neural, music discovery engine", "Any", 12, "ambient techno", None),
+    ("my favorite prompt of the test â€” whichever vibe you felt worked best, try it again with higher nicheness", "Hindi", 8, "indie folk", "Prateek Kuhad"),
+    ("one more thing â€” give me something I've never heard before, maximum nicheness, any language, any vibe", "Any", 8, "experimental", None),
     ("grungy 90s alt rock, seattle flannel, angst and heavy distortion", "English", 10, "grunge", "Nirvana"),
     ("hyperpop glitchcore madness, sugar rush, 200 bpm, internet brain rot", "English", 6, "hyperpop", "100 gecs"),
     ("Bhojpuri mass dance, high energy, village party, loud beats", "Hindi", 10, "bhojpuri", "Pawan Singh"),
@@ -225,7 +393,7 @@ _SEEDS = [
     ("soft country morning, acoustic guitar on a porch, cowboy coffee, peaceful", "English", 13, "americana", "Tyler Childers"),
     ("retro 80s pop montage, training for the big fight, synth brass, euphoric", "English", 5, "80s pop", "Survivor"),
     ("midwest emo revival, twinkly guitars, screaming in a basement, nostalgic", "English", 14, "midwest emo", "American Football"),
-    ("bossa nova afternoon, ipanema beach, gentle acoustic, portuguese singing", "Portuguese", 13, "bossa nova", "João Gilberto"),
+    ("bossa nova afternoon, ipanema beach, gentle acoustic, portuguese singing", "Portuguese", 13, "bossa nova", "JoÃ£o Gilberto"),
     ("shoegaze wall of sound, looking at my pedals, fuzzy dreamy loud", "English", 13, "shoegaze", "My Bloody Valentine"),
     ("industrial techno warehouse, berlin 4am, strobe lights, dark heavy bass", "English", 10, "industrial techno", "Amelie Lens"),
     ("symphonic epic battle, dragons flying, choir swelling, huge orchestration", "Any", 10, "epic orchestral", "Hans Zimmer"),
@@ -270,7 +438,7 @@ _SEEDS = [
     ("synthwave drive outrun, neon grid, retrowave outrun aesthetic", "English", 10, "synthwave", "Kavinsky"),
     ("marathi lavani dance, high tempo, folk instruments, loud", "Marathi", 10, "marathi folk", "Ajay-Atul"),
     ("afrobeat fela kuti classic, brass section, political groove", "Afrobeats", 13, "afrobeat", "Fela Kuti"),
-    ("spanish flamenco guitar, passionate clapping, fire dance", "Spanish", 10, "flamenco", "Paco de Lucía"),
+    ("spanish flamenco guitar, passionate clapping, fire dance", "Spanish", 10, "flamenco", "Paco de LucÃ­a"),
     ("brazilian funk carioca, favela party, heavy bass dirty", "Portuguese", 10, "baile funk", "MC Kevin o Chris"),
     ("old school boom bap hip hop, new york 90s, scratch dj", "English", 13, "boom bap", "Nas"),
     ("ambient drone sleep music, floating in space, no beat", "Any", 9, "drone", "Stars of the Lid"),
@@ -290,7 +458,7 @@ _SEEDS = [
     ("country pop summer radio, luke bryan, drinking beer outside", "English", 10, "country pop", "Luke Bryan"),
     ("dubstep heavy drop, skrillex, laser show, bass face", "English", 11, "dubstep", "Skrillex"),
     ("nu disco funky bass, purple disco machine, groovy night", "English", 10, "nu disco", "Purple Disco Machine"),
-    ("cumbia sonidera, dancing cumbia, accordion, latin party", "Spanish", 10, "cumbia", "Los Ángeles Azules"),
+    ("cumbia sonidera, dancing cumbia, accordion, latin party", "Spanish", 10, "cumbia", "Los Ãngeles Azules"),
     ("bengali rock fossils, kolkata underground, emotional shouting", "Bengali", 11, "bengali rock", "Rupam Islam"),
     ("urdu lofi poetry, sad aesthetic, moonlit balcony", "Urdu", 14, "lofi", "Ali Sethi"),
     ("assamese bihu dance, spring festival, dhol pepa", "Assamese", 10, "bihu", "Zubeen Garg"),
@@ -303,7 +471,7 @@ _SEEDS = [
     ("cottagecore folk, hozier, running through fields", "English", 13, "indie folk", "Hozier"),
     ("royalcore orchestral, bridgerton ball, string quartet", "Any", 10, "classical crossover", "Vitamin String Quartet"),
     ("pirate tavern music, hurdy gurdy, sea shanty", "English", 10, "sea shanty", "The Longest Johns"),
-    ("vaporwave mallsoft, empty mall 1998, muzak slowed", "Any", 12, "mallsoft", "猫 シ Corp."),
+    ("vaporwave mallsoft, empty mall 1998, muzak slowed", "Any", 12, "mallsoft", "çŒ« ã‚· Corp."),
     ("soviet post punk, molchat doma, cold bleak winter", "Any", 10, "russian post-punk", "Molchat Doma"),
     ("mexican corridos tumbados, peso pluma, acoustic guitar trap", "Spanish", 11, "corridos tumbados", "Peso Pluma"),
     ("jamaican dancehall bashment, whining, loud sound system", "English", 10, "dancehall", "Vybz Kartel"),
@@ -311,7 +479,7 @@ _SEEDS = [
     ("south african gqom, dark electronic dance, heavy drums", "Afrobeats", 10, "gqom", "DJ Maphorisa"),
     ("moroccan mahraganat, street wedding, auto tune loud", "Arabic", 10, "mahraganat", "Hassan Shakosh"),
     ("turkish gnawa folk, spiritual trance, desert instruments", "Arabic", 12, "gnawa", "Hamza El Din"),
-    ("persian psych rock, 70s anatolian rock, funky", "Any", 10, "anatolian rock", "Altın Gün"),
+    ("persian psych rock, 70s anatolian rock, funky", "Any", 10, "anatolian rock", "AltÄ±n GÃ¼n"),
     ("french rap marseille, pnl, aggressive street trap", "French", 11, "french rap", "PNL"),
     ("german techno bunker, 140bpm, dark sweat", "English", 11, "hard techno", "Klangkuenstler"),
     ("italian disco 80s, synth pop, cheesy but good", "Any", 10, "italo disco", "Giorgio Moroder"),
@@ -327,7 +495,7 @@ _SEEDS = [
     ("canadian reggae, soft dub, island vibes in the cold", "English", 12, "reggae", "Magic!"),
     ("hawaiian roots reggae, ukulele, beach bonfire", "English", 12, "hawaiian reggae", "J Boog"),
     ("trinidadian lovers rock, sweet reggae, romantic slow", "English", 14, "lovers rock", "Gregory Isaacs"),
-    ("cuban mariachi, trumpets, cantina drinking", "Spanish", 10, "mariachi", "Vicente Fernández"),
+    ("cuban mariachi, trumpets, cantina drinking", "Spanish", 10, "mariachi", "Vicente FernÃ¡ndez"),
     ("argentinian ranchera, heartbreak tequila, loud crying", "Spanish", 14, "ranchera", "Christian Nodal"),
     ("colombian salsa cubana, fast footwork, brass heavy", "Spanish", 10, "salsa", "Celia Cruz"),
     ("peruvian vallenato, accordion, emotional folk", "Spanish", 10, "vallenato", "Carlos Vives"),
@@ -339,24 +507,24 @@ _SEEDS = [
     ("uruguayan zamba, slow sad folk, acoustic", "Spanish", 14, "zamba", "Mercedes Sosa"),
     ("guyanese calypso, steel pan drum, carnival beach", "Any", 10, "calypso", "Mighty Sparrow"),
     ("surinamese soca, jump up festival, whistles blowing", "Any", 10, "soca", "Machel Montano"),
-    ("icelandic indie pop, lorde style, soft synth", "English", 13, "indie pop", "Björk"),
-    ("finnish ethereal wave, sigur ros, icy glacier music", "Any", 9, "ethereal wave", "Sigur Rós"),
+    ("icelandic indie pop, lorde style, soft synth", "English", 13, "indie pop", "BjÃ¶rk"),
+    ("finnish ethereal wave, sigur ros, icy glacier music", "Any", 9, "ethereal wave", "Sigur RÃ³s"),
     ("swedish death metal, gothenburg sound, melodic fast", "English", 11, "melodic death metal", "In Flames"),
     ("norwegian black metal, dark forest church burning", "English", 11, "black metal", "Mayhem"),
     ("danish power metal, dragons fantasy, soaring vocals", "English", 10, "power metal", "Nightwish"),
     ("poland eurodance 90s, aqua barbie girl vibes, fun", "English", 10, "eurodance", "Aqua"),
-    ("dutch trance classic, tiesto, 1999 rave, arpeggios", "English", 10, "trance", "Tiësto"),
+    ("dutch trance classic, tiesto, 1999 rave, arpeggios", "English", 10, "trance", "TiÃ«sto"),
     ("belgian hardstyle bounce, jumpstyle, crazy bass", "English", 6, "jumpstyle", "Jeckyll & Hyde"),
     ("austrian gabber, hakken dance, distorted kick drum", "English", 11, "gabber", "Angerfist"),
     ("swiss classical waltz, ballroom dance, elegant strings", "Any", 9, "waltz", "Johann Strauss II"),
     ("hungarian folk punk, accordion distortion, drunk party", "Any", 10, "folk punk", "Gogol Bordello"),
     ("czech dark cabaret, gothic piano, dramatic singing", "Any", 10, "dark cabaret", "The Dresden Dolls"),
     ("slovakian ska punk, upbeat brass section, skanking", "English", 10, "ska punk", "Streetlight Manifesto"),
-    ("croatian gypsy punk, balkan beats, wild violin", "Any", 10, "balkan brass", "Goran Bregović"),
+    ("croatian gypsy punk, balkan beats, wild violin", "Any", 10, "balkan brass", "Goran BregoviÄ‡"),
     ("serbian turbofolk, balkan club music, accordion edm", "Any", 10, "turbofolk", "Ceca"),
     ("romanian disco polo, eastern bloc 90s party", "Any", 10, "disco polo", "Akcent"),
     ("bulgarian manele, street party, synth melodies", "Any", 10, "manele", "Florin Salam"),
-    ("greek arabesk, oriental pop, emotional strings", "Any", 14, "arabesk", "İbrahim Tatlıses"),
+    ("greek arabesk, oriental pop, emotional strings", "Any", 14, "arabesk", "Ä°brahim TatlÄ±ses"),
     ("ukrainian hardbass, 200 bpm, squatting in tracksuits", "Any", 6, "hardbass", "DJ Blyatman"),
     ("lithuanian phonk drift, cowbell melody, car edit", "English", 11, "drift phonk", "Kaito Shoma"),
     ("latvian chillwave synth, neon nostalgia, slow driving", "English", 12, "chillwave", "Tycho"),
@@ -370,15 +538,78 @@ _SEEDS = [
     ("moldovan drill uk, pop smoke bass slides, aggressive", "English", 11, "uk drill", "Pop Smoke")
 ]
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PROMPT BUILDER — 250 seeds × 16 knobs × 5 Pro Modes = 20,000 cases
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PROMPT BUILDER â€” 250 seeds Ã— 16 knobs Ã— 5 Pro Modes = 20,000 cases
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+def _extra_jaipur_genz_audiophile_seeds():
+    """Extra prompts in Jaipur Gen-Z Hinglish style with broad genre coverage."""
+    scenes = [
+        "jawahar circle late-night loop",
+        "nahargarh fort sunset scene",
+        "c-scheme cafe study grind",
+        "hostel terrace 2am feels",
+        "old jaipur walk in walled city",
+        "raja park scooty ride",
+        "patrika gate rainy evening",
+        "college fest aftermovie energy",
+        "amer road dawn drive",
+        "bapu bazaar thrift run",
+    ]
+    moods = [
+        "clean mix, no cringe remixes",
+        "warm analog texture, less harsh highs",
+        "bass tight but not muddy",
+        "vocals upfront but chill",
+        "moody but still replayable",
+        "underground gems only",
+        "fresh tracks not overused reels songs",
+        "high-detail headphone session",
+        "car speaker friendly with punch",
+        "minimal atmospheric late-night",
+    ]
+    genre_specs = [
+        ("desi hip hop", "Hindi"),
+        ("punjabi rnb", "Punjabi"),
+        ("qawwali fusion", "Urdu"),
+        ("hindustani neo-classical", "Hindi"),
+        ("sufi rock", "Hindi"),
+        ("uk garage", "English"),
+        ("drum and bass", "English"),
+        ("afro house", "English"),
+        ("future garage", "English"),
+        ("jazz fusion", "Any"),
+        ("indie electronica", "English"),
+        ("math rock", "English"),
+        ("city pop", "Japanese"),
+        ("k-indie", "Korean"),
+        ("baile funk", "Portuguese"),
+        ("arabic trap", "Arabic"),
+        ("tamil indie", "Tamil"),
+        ("telugu melodic", "Telugu"),
+        ("marathi indie", "Marathi"),
+        ("bhojpuri folk fusion", "Hindi"),
+    ]
+
+    generated = []
+    for scene in scenes:
+        for mood in moods[:6]:
+            for genre, language in genre_specs:
+                prompt = (
+                    f"bro {scene} ke liye {genre} chahiye, {mood}, "
+                    "thoda niche but not random, skip generic playlist vibes"
+                )
+                generated.append((prompt, language, 12, genre, None))
+
+    return generated[:220]
+
+
 def build_prompts():
     prompts = []
     limits = [5, 10, 20, 50]
     limit_idx = 0
+    all_seeds = _SEEDS + _extra_jaipur_genz_audiophile_seeds()
 
-    for text, language, base_kp, ov_genre, ov_artist in _SEEDS:
+    for text, language, base_kp, ov_genre, ov_artist in all_seeds:
         for kp_idx, (af, bpm, niche, label) in enumerate(KNOB_PROFILES):
             
             # Generate 5 Pro Mode variations for EVERY knob combination
@@ -415,14 +646,16 @@ def build_prompts():
                     "dismiss_detected_artist": dismiss,
                     "mode_label":   f"Mode_{mode}"
                 })
-                
+
+    rng = random.Random(42)
+    rng.shuffle(prompts)
     return prompts[:20000]
 
 PROMPTS = build_prompts()
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # LOGGER SETUP
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Main Engine Logger
 logger = logging.getLogger("VibeFinder_v10k_3")
 logger.setLevel(logging.INFO)
@@ -457,400 +690,670 @@ def _is_negated_entity(entity: str, text: str) -> bool:
 def _clean_title(title: str) -> str:
     return TITLE_NOISE.sub("", title).strip()
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN BATCH RUNNER
-# ══════════════════════════════════════════════════════════════════════════════
-async def run_batch():
-    db = Prisma()
-    await db.connect()
 
-    logger.info("=" * 80)
-    logger.info("  VIBEFINDER AI — MEGA STRESS SUITE v3 (JAIPUR/GEN Z EDITION)")
-    logger.info(f"  {len(PROMPTS)} PROMPTS | GEMINI QUEUE ENABLED ({GEMINI_SAMPLE_RATE*100}% sample)")
-    logger.info("=" * 80 + "\n")
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SERVICE STATUS CHECKER â€” Tests OAuth Connections & API Availability
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-    try:
-        db_artists = await db.artistdirectory.find_many()
-    except Exception as e:
-        logger.error(f"DB connect failed: {e}")
-        return
-
-    total = len(PROMPTS)
-    signal_lost = 0
-    blocklist_hits = 0
-    genre_noise_hits = 0
+async def check_service_status():
+    """Check which music services are properly configured."""
+    services = {}
     
-    # Setup for deferred Gemini evaluation
-    gemini_eval_queue = []
-    gemini_hits = 0
-    gemini_partials = 0
-    gemini_misses = 0
+    # Check Last.fm
+    services['lastfm'] = {
+        'available': bool(LASTFM_API_KEY),
+        'status': 'âœ… READY' if LASTFM_API_KEY else 'âŒ NO KEY',
+        'endpoints': ['/api/lastfm/proxy', '/api/services/lastfm/love', '/api/services/lastfm/scrobble']
+    }
+    
+    # Check YouTube
+    services['youtube'] = {
+        'available': bool(YOUTUBE_API_KEY),
+        'status': 'âœ… READY' if YOUTUBE_API_KEY else 'âŒ NO KEY',
+        'features': ['OAuth playlist creation', 'Video search cache (7-day TTL)', 'Exponential backoff retry (409 errors)'],
+        'endpoints': ['/api/youtube/search', '/api/youtube/playlist', '/api/youtube/auth']
+    }
+    
+    # Check environment
+    services['environment'] = {
+        'gemini_available': bool(GEMINI_API_KEY),
+        'metrics_auth_available': bool(METRICS_PASSPHRASE),
+        'database': 'Prisma (Supabase PostgreSQL)',
+        'frontend_url': os.getenv('FRONTEND_URL_PROD', 'https://vibefinderai.netlify.app')
+    }
+    
+    services_logger.info("=" * 80)
+    services_logger.info("  SERVICE AVAILABILITY STATUS")
+    services_logger.info("=" * 80)
+    
+    for service, details in services.items():
+        services_logger.info(f"\n{service.upper()}:")
+        for key, value in details.items():
+            if isinstance(value, list):
+                services_logger.info(f"  {key}:")
+                for item in value:
+                    services_logger.info(f"    - {item}")
+            else:
+                services_logger.info(f"  {key}: {value}")
+    
+    return services
 
-    GENRE_JUNK = {"ghazal", "jazz", "blues", "folk", "pop", "rock", "hip-hop",
-                  "classical", "ambient", "soul", "rnb", "indie", "dance",
-                  "electronic", "metal", "punk", "country", "reggae"}
 
-    for idx, item in enumerate(PROMPTS, 1):
-        text         = item["text"]
-        language     = item["language"]
-        artist_focus = item["artist_focus"]
-        bpm_focus    = item["bpm_focus"]
-        nicheness    = item["nicheness"]
-        knob_label   = item["knob_label"]
-        track_limit  = item["track_limit"]
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# METRICS COLLECTOR â€” Tracks Test statistics & Performance
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-        logger.info(f"--- [PROMPT {idx}/{total}] ---")
-        logger.info(f"INPUT    : \"{text}\"")
-        logger.info(f"LANGUAGE : {language}")
-        logger.info(f"KNOBS    : artist={artist_focus}  bpm={bpm_focus}  niche={nicheness}  [{knob_label}]")
-        logger.info(f"LIMIT    : {track_limit}")
+def _weighting_profile(item: dict) -> dict:
+    artist_focus = int(item.get("artist_focus", 50))
+    bpm_focus = int(item.get("bpm_focus", 50))
+    nicheness = int(item.get("nicheness", 50))
+    return {
+        "artist_weight": "high" if artist_focus >= 70 else "medium" if artist_focus >= 40 else "low",
+        "tempo_weight": "high" if bpm_focus >= 70 or bpm_focus <= 30 else "medium",
+        "discovery_weight": "niche" if nicheness >= 70 else "mainstream" if nicheness <= 30 else "balanced",
+        "knob_values": {
+            "artist_focus": artist_focus,
+            "bpm_focus": bpm_focus,
+            "nicheness": nicheness,
+        },
+        "locks": {
+            "artist_lock": item.get("override_artist"),
+            "genre_lock": item.get("override_genre"),
+            "secondary_vibe_mode": bool(item.get("use_secondary_vibe", False)),
+            "dismiss_detected_artist": bool(item.get("dismiss_detected_artist", False)),
+        },
+    }
 
-        # Log Pro Mode settings
-        pro_flags = []
-        if item["use_secondary_vibe"]: pro_flags.append("PIVOT: Secondary Vibe")
-        if item["override_genre"]: pro_flags.append(f"FORCE GENRE: {item['override_genre']}")
-        if item["override_artist"]: pro_flags.append(f"FORCE ARTIST: {item['override_artist']}")
-        if item["dismiss_detected_artist"]: pro_flags.append("DISMISS: Auto-Artist")
-        if pro_flags:
-            logger.info(f"PRO MODE : {' | '.join(pro_flags)}")
 
-        request = VibeRequest(
-            text=text,
-            language=language,
-            track_limit=track_limit,
-            artist_focus=artist_focus,
-            bpm_focus=bpm_focus,
-            nicheness=nicheness,
-            use_secondary_vibe=item["use_secondary_vibe"],
-            override_genre=item["override_genre"],
-            override_artist=item["override_artist"],
-            dismiss_detected_artist=item["dismiss_detected_artist"]
-        )
-        
-        prompt_lower = text.lower()
-        prompt_words = len(prompt_lower.split())
+def _build_request_payload(item: dict) -> dict:
+    return {
+        "text": item["text"],
+        "language": item["language"],
+        "artist_focus": item["artist_focus"],
+        "bpm_focus": item["bpm_focus"],
+        "nicheness": item["nicheness"],
+        "track_limit": item["track_limit"],
+        "use_secondary_vibe": item.get("use_secondary_vibe", False),
+        "override_genre": item.get("override_genre"),
+        "override_artist": item.get("override_artist"),
+        "dismiss_detected_artist": item.get("dismiss_detected_artist", False),
+    }
 
-        # ── Entity scanner ───────────────────────────────────────────────────
-        detected_artist = request.override_artist
-        detected_song   = None
-        
-        if not detected_artist and not request.dismiss_detected_artist:
-            for a in db_artists:
-                aname = a.name.lower()
-                if re.search(rf'\b{re.escape(aname)}\b', prompt_lower):
-                    if _is_negated_entity(aname, prompt_lower):
-                        continue
-                    detected_artist = a.name
-                    if a.songs:
-                        for s in [s.strip().lower() for s in a.songs.split(",")]:
-                            if s and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
-                                if not _is_negated_entity(s, prompt_lower):
-                                    detected_song = s
-                                    break
-                    break
-                elif a.songs:
-                    for s in [s.strip().lower() for s in a.songs.split(",")]:
-                        if (len(s) > 3
-                                and s not in COMMON_WORDS_BLACKLIST
-                                and re.search(rf'\b{re.escape(s)}\b', prompt_lower)):
-                            if _is_negated_entity(s, prompt_lower):
-                                continue
-                            if prompt_words >= 10:
-                                continue
-                            detected_artist = a.name
-                            detected_song   = s
-                            break
-                    if detected_artist:
-                        break
 
-        # ── Vibe analysis ────────────────────────────────────────────────────
-        vibe_data = vibe_engine.analyze_vibe_algorithm(
-            text=request.text,
-            artist_focus=request.artist_focus,
-            genre_focus=50,
-            bpm_focus=request.bpm_focus,
-        )
-        if detected_song and not detected_artist and vibe_data.get("confidence", 0) >= 0.30:
-            detected_song = None
-            
-        vibe_data["detected_artist"] = detected_artist
-        vibe_data["detected_song"]   = detected_song
+def _heuristic_relevance(response_payload: dict, prompt_payload: dict) -> dict:
+    tracks = response_payload.get("tracks", [])
+    confidence = float(response_payload.get("confidence", 0) or 0)
+    score = 0
+    if tracks:
+        score += 55
+    score += min(35, int(confidence * 35))
+    if prompt_payload.get("override_artist") and tracks:
+        wanted = prompt_payload["override_artist"].lower()
+        if any((t.get("artist") or "").lower() == wanted for t in tracks):
+            score += 10
+    score = max(0, min(100, score))
+    verdict = "PASS" if score >= 70 else "PARTIAL" if score >= 45 else "FAIL"
+    return {
+        "verdict": verdict,
+        "relevancy_score": score,
+        "reason": "heuristic_fallback",
+        "issues": [] if tracks else ["no_tracks"],
+        "improvements": ["enable_more_sources"] if not tracks else [],
+    }
 
-        # ── Target genre resolution ──────────────────────────────────────────
-        active_vibe_for_tags = vibe_data.get("dominant_vibe", "")
-        
-        if detected_artist and vibe_data.get("confidence", 0) < 0.10:
-            vibe_data["dominant_vibe"] = "artist_driven"
-            target_genre = None
-        elif request.override_genre:
-            target_genre = request.override_genre
-            active_vibe_for_tags = "override"
-        elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
-            sec_vibe_name = vibe_data["secondary_vibe"]
-            active_vibe_for_tags = sec_vibe_name
-            _lang = (request.language or "Any").strip()
-            _lang_map_sec = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
-            mapped_genres = vibe_engine.VIBE_MAP.get(sec_vibe_name, {}).get("genres", [sec_vibe_name])
-            target_genre = (
-                _lang_map_sec.get(sec_vibe_name)
-                or _lang_map_sec.get("default")
-                or mapped_genres[0]
-            )
-        else:
-            _lang = (request.language or "Any").strip()
-            _lang_map = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
-            _dominant = vibe_data.get("dominant_vibe", "")
-            target_genre = (
-                _lang_map.get(_dominant)
-                or _lang_map.get("default")
-                or vibe_data.get("genres", ["Dream Pop"])[0]
-            )
-            
-        vibe_data["target_genre_override"] = target_genre
 
-        # ── Pool fetch ───────────────────────────────────────────────────────
-        is_fallback = False
-        raw_pool: list[dict] = []
+class TokenManager:
+    """
+    Thread-safe JWT token manager that auto-refreshes on 401 or expiry.
 
-        if vibe_data.get("confidence", 0.0) < 0.25 and not detected_artist and not request.override_genre:
-            is_fallback = True
-            vibe_data["dominant_vibe"]   = "Direct Search"
-            vibe_data["secondary_vibe"]  = "Fallback Mode"
-            raw_pool = await fetch_lastfm_track_search(request.text, limit=200)
-            raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(
-                f"{t.get('title','')} {t.get('artist','')}"
-            )]
+    Problem it solves: A single token acquired at startup expires after ~30-60 min.
+    At 11s avg latency × 20k prompts ÷ 8 concurrency, a batch run takes 7+ hours.
+    Without refresh, everything after minute 30 returns 401 → vibe=unknown → 98.7% failure.
 
-            # 3-STAGE DIRECT SEARCH FALLBACK
-            if not raw_pool:
-                _STOPWORDS = {
-                    "a","an","the","and","or","but","for","with","at","by","of","in",
-                    "on","to","is","it","my","me","we","be","as","so","up","type","vibe",
-                    "music","songs","playlist","feel","feeling","i","need","want","give",
+    Solution: refresh eagerly every REFRESH_INTERVAL_SECONDS, and also on first 401.
+    All concurrent workers share one manager; asyncio.Lock prevents thundering-herd
+    re-auth when many workers detect 401 simultaneously.
+    """
+
+    REFRESH_INTERVAL_SECONDS: int = 25 * 60  # refresh 5 min before typical 30-min expiry
+
+    def __init__(self, session: "aiohttp.ClientSession"):
+        self._session = session
+        self._token: Optional[str] = None
+        self._acquired_at: float = 0.0
+        self._lock = asyncio.Lock()
+        self._credentials: dict = {}  # filled after first successful auth
+
+    async def _register_user(self, email: str, username: str, password: str) -> int:
+        payload = {"email": email, "username": username, "password": password}
+        async with self._session.post(
+            f"{BACKEND_BASE_URL}/auth/register", json=payload, timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
+            return resp.status
+
+    async def _fetch_token(self, username: str, password: str) -> str:
+        form_data = {"username": username, "password": password}
+        async with self._session.post(
+            f"{BACKEND_BASE_URL}/auth/token", data=form_data,
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                raise RuntimeError(f"Auth failed for '{username}' ({resp.status}): {body[:300]}")
+            data = await resp.json()
+            token = data.get("access_token")
+            if not token:
+                raise RuntimeError("Auth token missing in response")
+            return token
+
+    async def _acquire(self) -> str:
+        """Perform initial registration + login. Sets self._credentials."""
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, AUTH_RETRY_ATTEMPTS + 1):
+            try:
+                reg_status = await self._register_user(
+                    BATCH_TEST_EMAIL, BATCH_TEST_USERNAME, BATCH_TEST_PASSWORD
+                )
+                if reg_status == 201:
+                    main_logger.info(f"[Auth] Batch user registered: {BATCH_TEST_USERNAME}")
+                self._credentials = {
+                    "username": BATCH_TEST_USERNAME,
+                    "password": BATCH_TEST_PASSWORD,
                 }
-                _tokens = [
-                    w for w in re.sub(r"[^\w\s]", " ", request.text.lower()).split()
-                    if w not in _STOPWORDS and len(w) > 2
-                ]
-                _stage1_query = " ".join(_tokens[:4])
-                if _stage1_query:
-                    raw_pool = await fetch_lastfm_track_search(_stage1_query, limit=200)
-                    raw_pool = [t for t in raw_pool if not JUNK_PATTERNS.search(
-                        f"{t.get('title','')} {t.get('artist','')}"
-                    )]
+                return await self._fetch_token(BATCH_TEST_USERNAME, BATCH_TEST_PASSWORD)
+            except Exception as exc:
+                last_error = exc
+                main_logger.warning(f"[Auth] Token attempt {attempt}/{AUTH_RETRY_ATTEMPTS} failed: {exc}")
+                if attempt < AUTH_RETRY_ATTEMPTS:
+                    await asyncio.sleep(AUTH_RETRY_DELAY_SECONDS)
 
-            if not raw_pool:
-                _all_tokens = [
-                    w for w in re.sub(r"[^\w\s]", " ", request.text.lower()).split()
-                    if len(w) > 3
-                ]
-                if _all_tokens:
-                    _artist_guess = max(_all_tokens, key=len)
-                    raw_pool = await fetch_lastfm_artist_tracks(artist=_artist_guess, limit=100)
+        # Fallback: fresh per-run user avoids stale-password collisions.
+        suffix = datetime.now().strftime("%H%M%S")
+        fallback_user = f"{BATCH_TEST_USERNAME}_{suffix}"
+        fallback_email = BATCH_TEST_EMAIL.replace("@", f"+{suffix}@")
+        main_logger.info(f"[Auth] Falling back to fresh batch user: {fallback_user}")
+        reg_status = await self._register_user(fallback_email, fallback_user, BATCH_TEST_PASSWORD)
+        if reg_status not in (200, 201):
+            raise RuntimeError(f"Fallback register failed ({reg_status}); last error: {last_error}")
+        self._credentials = {"username": fallback_user, "password": BATCH_TEST_PASSWORD}
+        return await self._fetch_token(fallback_user, BATCH_TEST_PASSWORD)
 
-            if not raw_pool:
-                _s3_results = await asyncio.gather(
-                    fetch_lastfm_tracks("dream pop", limit=60),
-                    fetch_lastfm_tracks("indie pop", limit=60),
-                    fetch_lastfm_tracks("chillwave", limit=60),
-                    return_exceptions=True,
-                )
-                for _r in _s3_results:
-                    if isinstance(_r, list):
-                        raw_pool.extend(_r)
-
-        elif request.override_artist or vibe_data.get("dominant_vibe") == "artist_driven":
-            art_tgt = request.override_artist or detected_artist
-            raw_pool = await fetch_lastfm_artist_tracks(artist=art_tgt, limit=200)
-
+    async def _refresh(self) -> None:
+        """Re-login using stored credentials. Called under lock."""
+        creds = self._credentials
+        if not creds:
+            # First call — do full acquire
+            self._token = await self._acquire()
         else:
-            # Multi-tag parallel fetch
-            _lang    = (request.language or "Any").strip()
-            
-            if hasattr(vibe_engine, "VIBE_TAG_MATRIX"):
-                _tags = (
-                    vibe_engine.VIBE_TAG_MATRIX
-                    .get(active_vibe_for_tags, {})
-                    .get(_lang)
-                    or vibe_engine.VIBE_TAG_MATRIX.get(active_vibe_for_tags, {}).get("Any")
-                    or ([target_genre] if target_genre else [])
-                )
-                _tags = _tags[:4]
-            else:
-                _tags = [target_genre] if target_genre else []
+            try:
+                self._token = await self._fetch_token(creds["username"], creds["password"])
+            except Exception as exc:
+                main_logger.warning(f"[Auth] Token refresh failed ({exc}), re-acquiring...")
+                self._token = await self._acquire()
+        self._acquired_at = asyncio.get_event_loop().time()
+        main_logger.info("[Auth] Token refreshed successfully.")
 
-            if _tags:
-                tag_results = await asyncio.gather(
-                    *[fetch_lastfm_tracks(tag, limit=max(60, 200 // len(_tags)))
-                      for tag in _tags],
-                    return_exceptions=True
-                )
-                genre_pool = []
-                for r in tag_results:
-                    if isinstance(r, list):
-                        genre_pool.extend(r)
-            else:
-                genre_pool = []
+    async def get_token(self) -> str:
+        """Return a valid token. Refreshes if expired or not yet acquired."""
+        now = asyncio.get_event_loop().time()
+        if (
+            self._token is None
+            or (now - self._acquired_at) >= self.REFRESH_INTERVAL_SECONDS
+        ):
+            async with self._lock:
+                # Re-check under lock (another coroutine may have refreshed while we waited)
+                now = asyncio.get_event_loop().time()
+                if (
+                    self._token is None
+                    or (now - self._acquired_at) >= self.REFRESH_INTERVAL_SECONDS
+                ):
+                    await self._refresh()
+        return self._token  # type: ignore[return-value]
 
-            # Language-agnostic pool retry
-            if not genre_pool and _lang != "Any":
-                _fallback_tags = (
-                    vibe_engine.VIBE_TAG_MATRIX.get(active_vibe_for_tags, {}).get("Any")
-                    or ([target_genre] if target_genre else [])
-                )
-                if _fallback_tags:
-                    _fb_results = await asyncio.gather(
-                        *[fetch_lastfm_tracks(tag, limit=max(60, 200 // len(_fallback_tags)))
-                          for tag in _fallback_tags],
-                        return_exceptions=True
+    async def force_refresh(self) -> str:
+        """Force token refresh — called when a request returns 401."""
+        async with self._lock:
+            await self._refresh()
+        return self._token  # type: ignore[return-value]
+
+
+async def _ensure_api_token(session: "aiohttp.ClientSession") -> str:
+    """Legacy helper kept for backwards compat — returns initial token via TokenManager."""
+    mgr = TokenManager(session)
+    return await mgr.get_token()
+
+
+async def _wait_for_backend_health(session: "aiohttp.ClientSession", max_wait_seconds: int) -> None:
+    deadline = time.time() + max_wait_seconds
+    last_error = "unknown"
+    while time.time() < deadline:
+        try:
+            async with session.get(f"{BACKEND_BASE_URL}/health", timeout=6) as resp:
+                if resp.status == 200:
+                    main_logger.info(f"[PHASE 1.5] Backend reachable at {BACKEND_BASE_URL}")
+                    return
+                last_error = f"health_status_{resp.status}"
+        except Exception as e:
+            last_error = str(e)
+        await asyncio.sleep(2)
+    raise RuntimeError(
+        f"Backend not reachable within {max_wait_seconds}s at {BACKEND_BASE_URL}/health; last error: {last_error}"
+    )
+
+
+async def _analyze_prompt_via_api(
+    session: "aiohttp.ClientSession",
+    token_mgr: "TokenManager",
+    payload: dict,
+) -> dict:
+    """
+    POST to /api/vibe/analyze with automatic token refresh on 401.
+
+    Retry budget: 3 attempts total.
+    - 5xx → wait and retry (transient server error).
+    - 401 → force-refresh token and retry once (expired JWT).
+    - 4xx other → surface error immediately (bad request, no point retrying).
+    """
+    _ERR = lambda status, detail: {  # noqa: E731
+        "error": True,
+        "status": status,
+        "detail": detail,
+        "dominant_vibe": "unknown",
+        "confidence": 0,
+        "secondary_vibe": None,
+        "genres": [],
+        "tracks": [],
+    }
+
+    per_req_timeout = aiohttp.ClientTimeout(total=90)
+    token_refreshed = False
+    retries = 3
+
+    for attempt in range(1, retries + 1):
+        token = await token_mgr.get_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        try:
+            async with session.post(
+                f"{BACKEND_BASE_URL}/api/vibe/analyze",
+                json=payload,
+                headers=headers,
+                timeout=per_req_timeout,
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+
+                text = await resp.text()
+
+                if resp.status == 401 and not token_refreshed:
+                    # Token expired mid-batch — force refresh, retry once
+                    main_logger.debug("[Auth] 401 received — refreshing token and retrying.")
+                    await token_mgr.force_refresh()
+                    token_refreshed = True
+                    continue  # retry immediately, don't count against retries
+
+                if resp.status >= 500 and attempt < retries:
+                    await asyncio.sleep(1.5 * attempt)
+                    continue
+
+                # 4xx (other than 401) or 5xx on last attempt — surface
+                return _ERR(resp.status, text[:500])
+
+        except asyncio.TimeoutError:
+            main_logger.warning(f"[Batch] Request timeout on attempt {attempt}/{retries} (90s)")
+            if attempt < retries:
+                await asyncio.sleep(2.0 * attempt)
+                continue
+            return _ERR(598, "timeout_after_90s")
+
+        except Exception as exc:
+            if attempt < retries:
+                await asyncio.sleep(1.5 * attempt)
+                continue
+            return _ERR(599, f"request_error: {str(exc)[:350]}")
+
+    return _ERR(597, "analyze_retry_exhausted")
+
+
+class MetricsCollector:
+    def __init__(self):
+        self.total_tests = 0
+        self.successful_tests = 0
+        self.failed_tests = 0
+        self.latencies = []
+        self.vibes_detected = {}
+        self.languages_tested = {}
+        self.errors_by_type = {}
+        self.gemini_verdicts = {"PASS": 0, "PARTIAL": 0, "FAIL": 0}
+        self.relevancy_scores = []
+        self.primary_confidences = []
+        self.secondary_confidences = []
+        self.test_results = []
+        self.detail_file = f"analysis_reports/prompt_level_results_{logging_ts}.jsonl"
+
+    def record_test(self, detail: dict, latency_ms: float):
+        self.total_tests += 1
+        self.latencies.append(latency_ms)
+
+        lang = detail.get("language", "Any")
+        self.languages_tested[lang] = self.languages_tested.get(lang, 0) + 1
+
+        vibe = detail.get("engine_output", {}).get("dominant_vibe", "unknown")
+        self.vibes_detected[vibe] = self.vibes_detected.get(vibe, 0) + 1
+
+        track_count = int(detail.get("engine_output", {}).get("track_count", 0) or 0)
+        if track_count > 0:
+            self.successful_tests += 1
+        else:
+            self.failed_tests += 1
+
+        verdict = (detail.get("relevance", {}).get("verdict") or "FAIL").upper()
+        if verdict not in self.gemini_verdicts:
+            verdict = "FAIL"
+        self.gemini_verdicts[verdict] += 1
+
+        score = detail.get("relevance", {}).get("relevancy_score")
+        if isinstance(score, (int, float)):
+            self.relevancy_scores.append(float(score))
+
+        primary_conf = detail.get("engine_output", {}).get("confidence")
+        if isinstance(primary_conf, (int, float)):
+            self.primary_confidences.append(float(primary_conf))
+
+        secondary_conf = detail.get("engine_output", {}).get("secondary_confidence")
+        if isinstance(secondary_conf, (int, float)):
+            self.secondary_confidences.append(float(secondary_conf))
+
+        os.makedirs("analysis_reports", exist_ok=True)
+        with open(self.detail_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(detail, ensure_ascii=False) + "\n")
+
+        if len(self.test_results) < 200:
+            self.test_results.append(detail)
+
+    def record_error(self, error_type: str):
+        self.errors_by_type[error_type] = self.errors_by_type.get(error_type, 0) + 1
+
+    def get_summary(self) -> dict:
+        avg_latency = sum(self.latencies) / len(self.latencies) if self.latencies else 0
+        p95_latency = sorted(self.latencies)[int(len(self.latencies) * 0.95)] if self.latencies else 0
+        p99_latency = sorted(self.latencies)[int(len(self.latencies) * 0.99)] if self.latencies else 0
+        avg_rel = (sum(self.relevancy_scores) / len(self.relevancy_scores)) if self.relevancy_scores else 0
+        avg_primary_conf = (
+            sum(self.primary_confidences) / len(self.primary_confidences)
+            if self.primary_confidences
+            else 0
+        )
+        avg_secondary_conf = (
+            sum(self.secondary_confidences) / len(self.secondary_confidences)
+            if self.secondary_confidences
+            else 0
+        )
+        p95_primary_conf = (
+            sorted(self.primary_confidences)[int(len(self.primary_confidences) * 0.95)]
+            if self.primary_confidences
+            else 0
+        )
+        p95_secondary_conf = (
+            sorted(self.secondary_confidences)[int(len(self.secondary_confidences) * 0.95)]
+            if self.secondary_confidences
+            else 0
+        )
+
+        return {
+            "total_tests": self.total_tests,
+            "successful": self.successful_tests,
+            "failed": self.failed_tests,
+            "success_rate": (self.successful_tests / self.total_tests * 100) if self.total_tests > 0 else 0,
+            "avg_relevancy_score": round(avg_rel, 2),
+            "gemini_verdicts": self.gemini_verdicts,
+            "confidence": {
+                "avg_primary": round(avg_primary_conf, 4),
+                "p95_primary": round(p95_primary_conf, 4),
+                "avg_secondary": round(avg_secondary_conf, 4),
+                "p95_secondary": round(p95_secondary_conf, 4),
+            },
+            "performance": {
+                "avg_latency_ms": round(avg_latency, 2),
+                "p95_latency_ms": round(p95_latency, 2),
+                "p99_latency_ms": round(p99_latency, 2),
+                "max_latency_ms": round(max(self.latencies), 2) if self.latencies else 0,
+                "min_latency_ms": round(min(self.latencies), 2) if self.latencies else 0,
+            },
+            "top_vibes": sorted(self.vibes_detected.items(), key=lambda x: x[1], reverse=True)[:20],
+            "languages_tested": sorted(self.languages_tested.items(), key=lambda x: x[1], reverse=True),
+            "errors_by_type": self.errors_by_type,
+            "detail_file": self.detail_file,
+        }
+
+    def save_report(self, filename: str = None):
+        if not filename:
+            filename = f"analysis_reports/batch_analysis_{logging_ts}.json"
+
+        report = {
+            "test_metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "total_prompts": self.total_tests,
+                "app_version": "v2.1 (real-feature evaluation)",
+                "mode": "api_driven" if API_DRIVEN_MODE else "local",
+                "backend_base_url": BACKEND_BASE_URL,
+                "concurrency": ANALYSIS_CONCURRENCY,
+                "inline_gemini_eval": INLINE_GEMINI_EVAL,
+                "gemini_eval_all": GEMINI_EVAL_ALL,
+                "gemini_postprocess_script": "analyzers/gemini_log_grader.py",
+            },
+            "summary": self.get_summary(),
+            "recent_samples": self.test_results,
+        }
+
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+
+        return filename
+
+
+metrics = MetricsCollector()
+
+
+async def run_batch():
+    """Run realistic batch analysis using the full backend pipeline and Gemini grading."""
+    main_logger.info("=" * 100)
+    main_logger.info("  VIBEFINDER AI - REAL WORLD BATCH ANALYSIS")
+    main_logger.info(f"  Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    main_logger.info(f"  Prompt Pool: {len(PROMPTS)}")
+    main_logger.info(f"  API_DRIVEN_MODE: {API_DRIVEN_MODE}")
+    main_logger.info(f"  Concurrency: {ANALYSIS_CONCURRENCY}")
+    main_logger.info("=" * 100 + "\n")
+
+    main_logger.info("[PHASE 1] Service configuration check...")
+    await check_service_status()
+    main_logger.info("[PHASE 1] Service check complete\n")
+
+    total = min(TEST_LIMIT, len(PROMPTS)) if not DEBUG_MODE else min(200, len(PROMPTS))
+    main_logger.info(f"[PHASE 2] Running {total} prompts with full feature payloads...\n")
+
+    connector = aiohttp.TCPConnector(limit=max(32, ANALYSIS_CONCURRENCY * 3)) if _AIOHTTP_AVAILABLE else None
+    # Per-request timeout is managed inside _analyze_prompt_via_api (90s).
+    # Session-level timeout is generous — just a safety net for the whole run.
+    session_timeout = aiohttp.ClientTimeout(total=None, connect=30) if _AIOHTTP_AVAILABLE else None
+
+    if not _AIOHTTP_AVAILABLE:
+        raise RuntimeError("aiohttp is required for API-driven realistic testing")
+
+    start_time = time.time()
+    done_count = 0
+    sem = asyncio.Semaphore(ANALYSIS_CONCURRENCY)
+    gem_sem = asyncio.Semaphore(GEMINI_CONCURRENCY)
+
+    # Track error breakdown for post-run diagnostics
+    error_counts: dict = {}
+
+    async with aiohttp.ClientSession(connector=connector, timeout=session_timeout) as session:
+        token_mgr: Optional[TokenManager] = None
+
+        if API_DRIVEN_MODE:
+            main_logger.info("[PHASE 1.5] Waiting for backend health endpoint (up to 120s)...")
+            await _wait_for_backend_health(session, max(BACKEND_HEALTH_WAIT_SECONDS, 120))
+            main_logger.info("[PHASE 1.6] Acquiring initial batch auth token via TokenManager...")
+            token_mgr = TokenManager(session)
+            await token_mgr.get_token()  # fail fast if auth is broken
+            main_logger.info("[PHASE 1.6] TokenManager ready (auto-refreshes every 25 min)")
+
+        async def _run_one(idx: int, item: dict):
+            async with sem:
+                req_payload = _build_request_payload(item)
+                w_profile = _weighting_profile(item)
+                t0 = time.time()
+
+                if API_DRIVEN_MODE:
+                    response_payload = await _analyze_prompt_via_api(session, token_mgr, req_payload)
+                else:
+                    dominant = vibe_engine.extract_dominant_vibe(req_payload["text"].lower())
+                    response_payload = {
+                        "dominant_vibe": dominant,
+                        "confidence": 0,
+                        "secondary_vibe": None,
+                        "genres": [],
+                        "tracks": [],
+                    }
+
+                # Track error types for diagnostics
+                if response_payload.get("error"):
+                    status = response_payload.get("status", 0)
+                    key = f"http_{status}" if status else "unknown_error"
+                    error_counts[key] = error_counts.get(key, 0) + 1
+
+                tracks = response_payload.get("tracks", []) or []
+                engine_output = {
+                    "dominant_vibe": response_payload.get("dominant_vibe", "unknown"),
+                    "confidence": response_payload.get("confidence", 0),
+                    "secondary_vibe": response_payload.get("secondary_vibe"),
+                    "secondary_confidence": response_payload.get("secondary_confidence", 0),
+                    "genres": response_payload.get("genres", []),
+                    "matched_keywords": response_payload.get("matched_keywords", []),
+                    "detected_artist": response_payload.get("detected_artist"),
+                    "detected_song": response_payload.get("detected_song"),
+                    "track_count": len(tracks),
+                    "tracks": tracks,
+                }
+
+                relevance = _heuristic_relevance(response_payload, req_payload)
+                if INLINE_GEMINI_EVAL and GEMINI_EVAL_ALL:
+                    async with gem_sem:
+                        gemini_eval = await evaluate_with_gemini(req_payload, response_payload)
+                    if gemini_eval:
+                        relevance = gemini_eval
+
+                latency_ms = (time.time() - t0) * 1000
+                detail = {
+                    "prompt_index": idx,
+                    "timestamp": datetime.now().isoformat(),
+                    "prompt": req_payload["text"],
+                    "language": req_payload.get("language", "Any"),
+                    "request_payload": req_payload,
+                    "weighting": w_profile,
+                    "engine_output": engine_output,
+                    "relevance": relevance,
+                    "latency_ms": round(latency_ms, 3),
+                }
+                return detail, latency_ms
+
+        batch_size = ANALYSIS_CONCURRENCY * 4
+        main_logger.info(
+            f"[PHASE 2] Dispatching prompts in batches of {batch_size} with up to {ANALYSIS_CONCURRENCY} concurrent requests"
+        )
+        for batch_start in range(0, total, batch_size):
+            batch = PROMPTS[batch_start:batch_start + batch_size]
+            tasks = [
+                asyncio.create_task(_run_one(batch_start + offset + 1, item))
+                for offset, item in enumerate(batch)
+            ]
+            pending = set(tasks)
+
+            while pending:
+                done, pending = await asyncio.wait(pending, timeout=15, return_when=asyncio.FIRST_COMPLETED)
+
+                if not done:
+                    main_logger.info(
+                        "[HEARTBEAT] Waiting on in-flight requests | "
+                        f"processed={done_count}/{total} | pending_in_batch={len(pending)} | "
+                        f"batch_start={batch_start + 1}"
                     )
-                    for r in _fb_results:
-                        if isinstance(r, list):
-                            genre_pool.extend(r)
+                    continue
 
-            artist_pool = []
-            if detected_artist and request.artist_focus > 25:
-                artist_pool = await fetch_lastfm_artist_tracks(
-                    artist=detected_artist, limit=50
-                )
+                for completed in done:
+                    try:
+                        detail, latency_ms = await completed
+                        metrics.record_test(detail, latency_ms)
+                    except Exception as exc:
+                        metrics.record_error(type(exc).__name__)
+                        main_logger.error(f"Prompt failed: {exc}")
 
-            merged = genre_pool + artist_pool
-            seen: set[str] = set()
-            for t in merged:
-                ident = f"{t.get('title','').lower()}|{t.get('artist','').lower()}"
-                if ident not in seen:
-                    seen.add(ident)
-                    raw_pool.append(t)
+                    done_count += 1
+                    if done_count % 100 == 0 or done_count == total:
+                        # Log error breakdown every 500 prompts to catch token issues early
+                        if error_counts and done_count % 500 == 0:
+                            main_logger.info(f"[DIAG] Error breakdown so far: {error_counts}")
+                        main_logger.info(
+                            f"[PROGRESS] {done_count}/{total} prompts processed ({(done_count/total)*100:.1f}%)"
+                        )
 
-        # Clean title noise before scoring
-        for t in raw_pool:
-            t["title"] = _clean_title(t.get("title", ""))
-
-        # Filter genre-name-as-artist junk
-        raw_pool = [
-            t for t in raw_pool
-            if t.get("artist", "").strip().lower() not in GENRE_JUNK
-        ]
-
-        # ── Score ────────────────────────────────────────────────────────────
-        best_tracks = []
-        if raw_pool:
-            best_tracks = filter_and_score_tracks(
-                raw_pool, request, vibe_data, is_fallback=is_fallback
+    if error_counts:
+        main_logger.info(f"[DIAG] Final error type breakdown: {error_counts}")
+        if error_counts.get("http_401", 0) > 50:
+            main_logger.error(
+                "[DIAG] HIGH 401 COUNT — TokenManager may not have refreshed in time. "
+                "Check REFRESH_INTERVAL_SECONDS and token expiry on the server."
             )
 
-        # ── Log results ──────────────────────────────────────────────────────
-        conf_pct = int(vibe_data.get("confidence", 0) * 100)
-        logger.info(f"VIBE     : {vibe_data.get('dominant_vibe')} ({conf_pct}% conf)")
-        if vibe_data.get("secondary_vibe"):
-            s_conf = int(vibe_data.get("secondary_confidence", 0) * 100)
-            logger.info(f"SECONDARY: {vibe_data.get('secondary_vibe')} ({s_conf}%)")
-        if detected_artist:
-            logger.info(f"ENTITY   : Artist=[{detected_artist}] Song=[{detected_song}]")
-        logger.info(f"TAG_USED : {target_genre}")
-        logger.info(f"GENRES   : {', '.join(vibe_data.get('genres', []))}")
-        logger.info(f"BPM_RNG  : {vibe_data.get('bpm_range')}")
-        logger.info(f"POOL_SZ  : {len(raw_pool)} raw → {len(best_tracks)} scored")
-        logger.info(f"TRACKS (top {track_limit}):")
+    duration = time.time() - start_time
+    summary = metrics.get_summary()
+    report_file = metrics.save_report()
 
-        if not best_tracks:
-            signal_lost += 1
-            logger.info("  [!] SIGNAL LOST — zero tracks returned")
-        else:
-            for i, t in enumerate(best_tracks[:track_limit], 1):
-                title  = t.get("title", "")
-                artist = t.get("artist", "")
-                score  = t.get("score", 0)
-                bl_key = f"{title.lower()}|{artist.lower()}"
-                flags  = []
-                if bl_key in TRACK_BLOCKLIST:
-                    flags.append("⚠️BLOCKLIST")
-                    blocklist_hits += 1
-                if artist.strip().lower() in GENRE_JUNK:
-                    flags.append("⚠️GENRE_AS_ARTIST")
-                    genre_noise_hits += 1
-                flag_str = "  " + "  ".join(flags) if flags else ""
-                logger.info(f"  {i:>2}. [{score:>5.1f}] {title} — {artist}{flag_str}")
+    main_logger.info("\n" + "=" * 100)
+    main_logger.info("  TEST SUITE SUMMARY")
+    main_logger.info("=" * 100)
+    main_logger.info(f"Total Tests Run      : {summary['total_tests']}")
+    main_logger.info(f"Successful           : {summary['successful']} ({summary['success_rate']:.1f}%)")
+    main_logger.info(f"Failed               : {summary['failed']}")
+    main_logger.info(f"Average Relevancy    : {summary['avg_relevancy_score']}")
+    main_logger.info(f"Gemini Verdicts      : {summary['gemini_verdicts']}")
+    main_logger.info(f"Avg Primary Conf     : {summary['confidence']['avg_primary']}")
+    main_logger.info(f"P95 Primary Conf     : {summary['confidence']['p95_primary']}")
+    main_logger.info(f"Avg Secondary Conf   : {summary['confidence']['avg_secondary']}")
+    main_logger.info(f"P95 Secondary Conf   : {summary['confidence']['p95_secondary']}")
+    main_logger.info(f"Average Latency      : {summary['performance']['avg_latency_ms']}ms")
+    main_logger.info(f"P95 Latency          : {summary['performance']['p95_latency_ms']}ms")
+    main_logger.info(f"P99 Latency          : {summary['performance']['p99_latency_ms']}ms")
+    main_logger.info(f"Detail JSONL         : {summary['detail_file']}")
+    main_logger.info(f"Summary JSON         : {report_file}")
+    main_logger.info(f"Total Duration       : {duration:.1f}s ({duration/60:.1f} min)")
+    main_logger.info("=" * 100 + "\n")
 
-        # ── GEMINI AUTO-GRADER QUEUEING ───────────────────────────────────────────────
-        if GEMINI_API_KEY and _AIOHTTP_AVAILABLE and best_tracks:
-            if random.random() < GEMINI_SAMPLE_RATE:
-                gemini_eval_queue.append({
-                    "idx": idx,
-                    "text": text,
-                    "dominant_vibe": vibe_data.get('dominant_vibe'),
-                    "best_tracks": best_tracks[:5]
-                })
-                logger.info("  🤖 Queued for Gemini AI evaluation at the end.")
+    metrics_logger.info(json.dumps(summary, indent=2, ensure_ascii=False))
 
-        logger.info("-" * 80 + "\n")
-
-    await db.disconnect()
-    
-    # ── GEMINI BATCH EVALUATION (Deferred Phase) ──────────────────────────────────
-    if gemini_eval_queue:
-        logger.info("=" * 80)
-        logger.info(f"  STARTING BATCH GEMINI EVALUATION ({len(gemini_eval_queue)} items)  ")
-        logger.info("  Check 'qa_batch_gemini_analysis.log' for detailed AI grades.")
-        logger.info("=" * 80 + "\n")
-        
-        gemini_logger.info("=" * 80)
-        gemini_logger.info("  VIBEFINDER GEMINI AUTO-GRADER ANALYSIS  ")
-        gemini_logger.info("=" * 80)
-        
-        for i, eval_req in enumerate(gemini_eval_queue, 1):
-            logger.info(f"  🤖 Grading {i}/{len(gemini_eval_queue)}... (sleeping 4s for rate limits)")
-            gemini_logger.info(f"\n--- [EVAL {i}/{len(gemini_eval_queue)} | PROMPT #{eval_req['idx']}] ---")
-            gemini_logger.info(f"INPUT : \"{eval_req['text']}\"")
-            gemini_logger.info(f"VIBE  : {eval_req['dominant_vibe']}")
-            
-            eval_result = await evaluate_with_gemini(
-                eval_req['text'], 
-                eval_req['dominant_vibe'], 
-                eval_req['best_tracks']
-            )
-            
-            if eval_result:
-                verdict = eval_result.get("verdict", "❌ Error")
-                reason = eval_result.get("reason", "No reason provided.")
-                gemini_logger.info(f"RESULT: {verdict} — {reason}")
-                
-                if "✅ Hit" in verdict: gemini_hits += 1
-                elif "⚠️ Partial" in verdict: gemini_partials += 1
-                elif "❌ Miss" in verdict: gemini_misses += 1
-                
-            # Soft throttle to protect free tier limit (15 RPM -> 1 request every 4s)
-            await asyncio.sleep(4)
-
-    # ── Final stats ──────────────────────────────────────────────────────────
-    logger.info("=" * 80)
-    logger.info("  VIBEFINDER MEGA STRESS SUITE v3 — COMPLETE")
-    logger.info(f"  Total prompts run    : {total}")
-    logger.info(f"  Signal lost (0 tracks): {signal_lost} ({100*signal_lost/total:.1f}%)")
-    logger.info(f"  Blocklist hits       : {blocklist_hits}")
-    logger.info(f"  Genre-as-artist noise: {genre_noise_hits}")
-    
-    if gemini_eval_queue and (gemini_hits + gemini_partials + gemini_misses) > 0:
-        total_eval = gemini_hits + gemini_partials + gemini_misses
-        
-        # Log to main console
-        logger.info("  --- GEMINI AUTO-GRADER STATS (See separate log) ---")
-        logger.info(f"  Total Evaluated : {total_eval}")
-        logger.info(f"  ✅ HITS          : {gemini_hits} ({(gemini_hits/total_eval)*100:.1f}%)")
-        logger.info(f"  ⚠️ PARTIALS      : {gemini_partials} ({(gemini_partials/total_eval)*100:.1f}%)")
-        logger.info(f"  ❌ MISSES        : {gemini_misses} ({(gemini_misses/total_eval)*100:.1f}%)")
-        
-        # Log to dedicated Gemini file
-        gemini_logger.info("\n" + "=" * 80)
-        gemini_logger.info("  FINAL GEMINI GRADING STATS")
-        gemini_logger.info("=" * 80)
-        gemini_logger.info(f"  Total Evaluated : {total_eval}")
-        gemini_logger.info(f"  ✅ HITS          : {gemini_hits} ({(gemini_hits/total_eval)*100:.1f}%)")
-        gemini_logger.info(f"  ⚠️ PARTIALS      : {gemini_partials} ({(gemini_partials/total_eval)*100:.1f}%)")
-        gemini_logger.info(f"  ❌ MISSES        : {gemini_misses} ({(gemini_misses/total_eval)*100:.1f}%)")
-        gemini_logger.info("=" * 80)
-        
-    logger.info("=" * 80)
 
 if __name__ == "__main__":
-    asyncio.run(run_batch())
+    """
+    Main entry point for batch test execution.
+    
+    Usage:
+        python testing/batch_tester_v10k_2.py
+
+    Outputs:
+        - qa_batch_<timestamp>.log - Main test results
+        - qa_batch_services_<timestamp>.log - Service status
+        - qa_batch_metrics_<timestamp>.log - Detailed metrics
+        - qa_batch_gemini_<timestamp>.log - AI grading results
+        - analysis_reports/batch_analysis_<timestamp>.json - Comprehensive report
+    """
+    try:
+        main_logger.info("\nStarting batch test suite execution...\n")
+        asyncio.run(run_batch())
+        main_logger.info("Batch test completed successfully!")
+        main_logger.info("Check analysis_reports/ folder for detailed reports")
+    except KeyboardInterrupt:
+        main_logger.warning("\nTest interrupted by user")
+    except Exception as e:
+        main_logger.error(f"\nBatch test failed with error: {e}", exc_info=True)

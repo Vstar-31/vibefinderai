@@ -33,5 +33,31 @@ backend/qa_batch_results.log
 backend/vibefinder_engine.log
 backend/vibefinder_engine.log
 *.log
+
+# Generated analysis artifacts (batch tester + analyzers)
+analysis_reports/*
+!analysis_reports/.gitkeep
+backend/analysis_reports/*
+!backend/analysis_reports/.gitkeep
+
+# Generated report files outside report folders
+backend/qa_batch_*.log
+backend/qa_batch_gemini_*.log
+backend/qa_batch_metrics_*.log
+backend/qa_batch_services_*.log
+backend/qa_batch_v10k_3.log
+backend/analysis_run.log
+
+# Generated batch/analyzer data artifacts
+backend/prompt_level_results_*.jsonl
+backend/gemini_graded_*.jsonl
+backend/gemini_graded_summary_*.json
+backend/gemini_grader_live_*.log
+backend/batch_analysis_*.json
+backend/CONSOLIDATED_ANALYSIS_*.json
+backend/ANALYSIS_MASTER_REPORT.txt
+backend/INDEX_ANALYSIS.txt
+backend/VIBE_ANALYSIS_DETAILED.txt
+backend/PROBLEM_PROMPTS_ANALYSIS.txt
 DEPLOYMENT_GUIDE.md
 monetisation.md

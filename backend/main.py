@@ -19,6 +19,7 @@ import sys
 import time
 import hashlib
 import httpx
+import contextlib
 from core.vibe_engine import LANGUAGE_TAG_MAP
 
 # ---------------------------------------------------------
@@ -74,6 +75,29 @@ async def _get_http_session():
                 connector_owner=True,
             )
     return _HTTP_SESSION
+
+
+# ── External API throttle controls (protect backend from upstream rate limits) ─
+LASTFM_MIN_INTERVAL_SECONDS = float(os.getenv("LASTFM_MIN_INTERVAL_SECONDS", "0.35"))
+LASTFM_MAX_CONCURRENT = int(os.getenv("LASTFM_MAX_CONCURRENT", "3"))
+ITUNES_MAX_CONCURRENT = int(os.getenv("ITUNES_MAX_CONCURRENT", "6"))
+
+_LASTFM_SEMAPHORE = asyncio.Semaphore(max(1, LASTFM_MAX_CONCURRENT))
+_ITUNES_SEMAPHORE = asyncio.Semaphore(max(1, ITUNES_MAX_CONCURRENT))
+_LASTFM_RATE_LOCK = asyncio.Lock()
+_LASTFM_NEXT_ALLOWED_AT = 0.0
+
+
+async def _respect_lastfm_rate_limit() -> None:
+    """Token-bucket style spacing to keep Last.fm request rate conservative."""
+    global _LASTFM_NEXT_ALLOWED_AT
+    async with _LASTFM_RATE_LOCK:
+        now = asyncio.get_running_loop().time()
+        wait_for = _LASTFM_NEXT_ALLOWED_AT - now
+        if wait_for > 0:
+            await asyncio.sleep(wait_for)
+        now = asyncio.get_running_loop().time()
+        _LASTFM_NEXT_ALLOWED_AT = now + max(0.0, LASTFM_MIN_INTERVAL_SECONDS)
 
 # Import our modularized vibe engine
 from core import vibe_engine
@@ -1082,15 +1106,37 @@ async def _fetch_with_retry(url: str, label: str, timeout: int = 5, max_retries:
     if _AIOHTTP_AVAILABLE:
         session = await _get_http_session()
         timeout_cfg = _aiohttp.ClientTimeout(total=timeout)
+        label_lower = label.lower()
+        is_lastfm = "last.fm" in label_lower or "lastfm" in label_lower
+        is_itunes = "itunes" in label_lower
+
+        sem = None
+        if is_lastfm:
+            sem = _LASTFM_SEMAPHORE
+        elif is_itunes:
+            sem = _ITUNES_SEMAPHORE
+
         for attempt in range(max_retries):
             try:
-                async with session.get(url, timeout=timeout_cfg) as resp:
-                    if resp.status == 200:
-                        return await resp.json(content_type=None)
-                    if resp.status == 429:
-                        await asyncio.sleep(1.5)
-                    else:
-                        logger.warning(f"[Retry {attempt+1}] {label} — HTTP {resp.status}")
+                if is_lastfm:
+                    await _respect_lastfm_rate_limit()
+
+                guard = sem if sem is not None else contextlib.nullcontext()
+                async with guard:
+                    async with session.get(url, timeout=timeout_cfg) as resp:
+                        if resp.status == 200:
+                            return await resp.json(content_type=None)
+                        if resp.status == 429:
+                            if is_lastfm:
+                                backoff = min(4.0, 1.5 * (attempt + 1))
+                                logger.warning(
+                                    f"[Retry {attempt+1}/{max_retries}] {label} — HTTP 429 (rate limited). Backing off {backoff:.1f}s"
+                                )
+                                await asyncio.sleep(backoff)
+                            else:
+                                await asyncio.sleep(1.5)
+                        else:
+                            logger.warning(f"[Retry {attempt+1}] {label} — HTTP {resp.status}")
             except asyncio.TimeoutError:
                 logger.warning(f"[Retry {attempt+1}/{max_retries}] {label} — timeout after {timeout}s")
                 if attempt < max_retries - 1:
