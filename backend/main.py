@@ -501,6 +501,12 @@ COMMON_WORDS_BLACKLIST = {
     "wave", "beat", "sound", "noise", "vibe", "energy", "mood",
     "summer", "winter", "spring", "autumn", "rain", "snow", "wind",
     "live", "dead", "born", "young", "old", "fast", "slow",
+    # ── v6.0: context nouns that the artist/song scanner false-fires on ──────
+    # These appear in Hinglish/casual prompts as scene descriptors, not artist names.
+    # "loop ke liye" = "for the driving loop" — loop is NOT an artist.
+    "loop", "mix", "set", "jam", "flow", "groove", "drop", "bounce",
+    "blend", "cut", "run", "session", "playlist", "queue",
+    "ke", "liye", "ke liye", "chahiye", "thoda",
 }
 
 # Tracks that appeared in 10%+ of all QA results regardless of prompt.
@@ -1467,9 +1473,19 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
             energy = feat.get("energy")
             if energy is not None:
                 if bpm_knob > 60:
-                    # High BPM knob = user wants energetic tracks
+                    # High BPM knob = user wants energetic tracks.
+                    # v6.0: When bpm_focus >= 80 (e.g. "screaming bops", explicit
+                    # high-energy request), energy scoring weight doubles so that
+                    # low-energy tracks (like Jason Mraz "I'm Yours" at ~76BPM/0.3
+                    # energy) can't sneak into the result via other score bonuses.
                     energy_strength = (bpm_knob - 50) / 50.0
+                    if bpm_knob >= 80:
+                        energy_strength *= 2.0  # Double weight — energy is mandatory at this knob
                     score += energy * 25 * energy_strength
+                    # Hard floor: actively penalise low-energy tracks when knob is maxed
+                    if bpm_knob >= 80 and energy < 0.45:
+                        low_energy_penalty = (0.45 - energy) * 40 * energy_strength
+                        score -= low_energy_penalty
                 elif bpm_knob < 40:
                     # Low BPM knob = user wants chill/low-energy
                     energy_strength = (50 - bpm_knob) / 50.0
@@ -1509,7 +1525,10 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
                 if fast_hit:
                     score += 30 * bpm_strength
                 elif slow_hit:
-                    score -= 20 * bpm_strength
+                    # v6.0: When knob is maxed, slow-marker tracks get a hard penalty
+                    # so acoustic/lofi tracks can't win on other bonuses alone.
+                    penalty_mult = 2.0 if bpm_knob >= 80 else 1.0
+                    score -= 20 * bpm_strength * penalty_mult
             elif bpm_knob < 40:
                 bpm_strength = (50 - bpm_knob) / 50.0
                 if slow_hit:
@@ -1949,6 +1968,33 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     _dominant = vibe_data.get("dominant_vibe", "")
     active_vibe_for_tags = _dominant
 
+    # ── v6.0: DIRECT GENRE TAG (highest priority below explicit artist lock) ──
+    # When vibe_engine's pre-pass found an explicit genre term (e.g. "bhojpuri",
+    # "arabic trap", "turbofolk"), use it as the primary Last.fm tag directly.
+    # This bypasses the VIBE_TAG_MATRIX lookup entirely, which is what was causing
+    # bhojpuri → "desi hip hop" and turbofolk → "Dance Pop" misroutes.
+    _direct_tag = vibe_data.get("direct_genre_tag")
+    _direct_lang = vibe_data.get("direct_genre_lang")
+
+    # ── v6.0: DISCOVERY NICHENESS BOOST ──────────────────────────────────────
+    # "underground gems only", "hidden gems", "thoda niche" etc. extracted by
+    # the pre-pass — apply as a bonus on top of the user's nicheness knob.
+    _discovery_boost = int(vibe_data.get("discovery_nicheness_boost", 0))
+    if _discovery_boost:
+        _boosted_nicheness = min(95, request.nicheness + _discovery_boost)
+        if _boosted_nicheness != request.nicheness:
+            logger.info(f"[v6.0] Discovery modifier boost: nicheness {request.nicheness} → {_boosted_nicheness}")
+            request = request.model_copy(update={"nicheness": _boosted_nicheness})
+
+    # ── v6.0: Bhojpuri keyword → language upgrade ────────────────────────────
+    # If the vibe_engine detected bhojpuri genre but the user left language=Hindi
+    # (or Any), upgrade the effective language to "Bhojpuri" so LANGUAGE_TAG_MAP
+    # routes to the bhojpuri pool instead of "desi hip hop".
+    if _direct_tag and "bhojpuri" in _direct_tag and _lang in ("Hindi", "Any"):
+        _lang = "Bhojpuri"
+        request = request.model_copy(update={"language": "Bhojpuri"})
+        logger.info("[v6.0] Bhojpuri keyword detected — language upgraded to Bhojpuri")
+
     if detected_artist and vibe_data.get("confidence", 0) < 0.10:
         logger.info(f"Entity lock active but NLP confidence near-zero. Forcing artist discography fetch for '{detected_artist}'.")
         vibe_data["dominant_vibe"] = "artist_driven"
@@ -1961,6 +2007,17 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         # Also override the genres list that gets sent to the frontend — otherwise
         # the displayed genre tags still show the NLP-detected vibe's genres (P38 bug)
         vibe_data["genres"] = [request.override_genre.title()]
+    elif _direct_tag and not request.override_genre:
+        # Direct genre tag from vibe_engine pre-pass — use verbatim as Last.fm tag
+        target_genre = _direct_tag
+        # If the genre map suggested a language and user had "Any", accept it
+        if _direct_lang and _lang == "Any":
+            _lang = _direct_lang
+            request = request.model_copy(update={"language": _direct_lang})
+            logger.info(f"[v6.0] Direct genre language hint applied: {_direct_lang}")
+        # Update genres list so frontend shows the matched genre tag
+        vibe_data["genres"] = [_direct_tag.title()]
+        logger.info(f"[v6.0] Direct Genre Tag override: '{vibe_data.get('matched_keywords', [])}' → tag='{target_genre}'")
     elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
         sec_vibe_name = vibe_data["secondary_vibe"]
         active_vibe_for_tags = sec_vibe_name # We pivoted!

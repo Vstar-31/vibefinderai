@@ -1197,6 +1197,317 @@ SYNONYMS: dict[str, list[str]] = {
     "sunny disposition": ["happy"],
     "whistling": ["happy", "indie_folk"],
     "clapping": ["happy", "indie_folk"],
+
+    # ── v6.0: batch-tester prompt gap fills ──────────────────────────────────
+    # "exam over relief, summer vacation, carefree, windows down, screaming bops"
+    "screaming bops":      ["hype", "happy"],
+    "screaming bop":       ["hype", "happy"],
+    "bops":                ["hype", "happy"],
+    "windows down":        ["happy", "hype"],
+    "exam over":           ["happy", "euphoric"],
+    "exam relief":         ["happy", "euphoric"],
+    "relief":              ["happy", "calm"],
+    "carefree":            ["happy", "chill"],
+    "sunroof":             ["happy", "hype"],
+    # Hinglish scene descriptors from Jaipur seeds
+    "nahargarh":           ["calm", "chill"],
+    "patrika gate":        ["calm", "chill"],
+    "c-scheme":            ["focus", "chill"],
+    "jawahar circle":      ["chill", "dark"],
+    "bapu bazaar":         ["chill", "soulful"],
+    "raja park":           ["chill", "happy"],
+    # Additional batch seed energy signals
+    "gully boy":           ["hype", "desi"],
+    "mass dance":          ["hype", "party"],
+    "village party":       ["hype", "party"],
+    "loud beats":          ["hype", "party"],
+    "turbofolk":           ["party", "hype"],
+    "accordion edm":       ["party", "hype"],
+    "sigma":               ["hype", "focus"],
+    "patrick bateman":     ["hype", "dark"],
+    "phonk walk":          ["hype", "dark"],
+    "slowed and reverb":   ["chill", "heartbreak"],
+    "slowed reverb":       ["chill", "heartbreak"],
+    "late-night loop":     ["chill", "dark"],
+    "long drive":          ["chill", "dreamy"],
+    "getting ready":       ["hype", "party"],
+    "skibidi":             ["hyperpop", "hype"],
+    "brain rot":           ["hyperpop", "hype"],
+    # Artists missing from VIBE_MAP that appear in batch seeds
+    "phoebe bridgers":     ["indie_folk", "heartbreak"],
+    "mitski":              ["indie_folk", "heartbreak"],
+    "girl in red":         ["indie_folk", "heartbreak"],
+    "tyler childers":      ["country", "indie_folk"],
+    "american football":   ["indie_folk", "heartbreak"],
+    "kavinsky":            ["retro", "dark"],
+    "klangkuenstler":      ["industrial", "party"],
+    "nettspend":           ["hyperpop", "hype"],
+    "peso pluma":          ["hype", "party"],
+    "molchat doma":        ["dark", "industrial"],
+    "gogol bordello":      ["party", "rock"],
+    "headhunterz":         ["hype", "euphoric"],
+    "angerfist":           ["intense", "hype"],
+    "in flames":           ["intense", "rock"],
+    "nightwish":           ["cinematic", "intense"],
+    "mayhem":              ["dark", "intense"],
+    "dj maphorisa":        ["party", "tropical"],
+    "kabza de small":      ["party", "tropical"],
+    "cruel santino":       ["chill", "tropical"],
+    "hassan shakosh":      ["party", "hype"],
+    "hamza el din":        ["soulful", "calm"],
+    "altin gun":           ["soulful", "rock"],
+    "pnl":                 ["dark", "hype"],
+    "lim young-woong":     ["soulful", "retro"],
+    "bandmanrill":         ["party", "hype"],
+
+    # ── v6.0: Full 250-prompt batch gap analysis ──────────────────────────────
+
+    # Time of day / night signals
+    "2 baje":              ["heartbreak", "dark"],
+    "2 baje raat":         ["heartbreak", "dark"],
+    "3am":                 ["dark", "chill"],
+    "3 am":                ["dark", "chill"],
+    "raat ke 2 baje":      ["heartbreak", "dark"],
+    "raat ki chai":        ["focus", "calm"],
+    "late night long drive":["chill", "dreamy"],
+    "late night coding":   ["focus", "dark"],
+    "dark ide":            ["focus", "dark"],
+
+    # Hindi emotional phrases
+    "dil toota":           ["heartbreak"],
+    "dil toota hai":       ["heartbreak"],
+    "akela baitha":        ["heartbreak", "dark"],
+    "tere bina":           ["heartbreak", "romantic"],
+    "pehli baarish":       ["romantic", "calm"],
+    "monsoon magic":       ["romantic", "calm"],
+    "petrichor":           ["calm", "romantic"],
+    "purani yaadein":      ["retro", "heartbreak"],
+    "bhalobasa":           ["romantic", "soulful"],
+    "saudade":             ["heartbreak", "soulful"],
+    "melancholic longing": ["heartbreak", "dreamy"],
+
+    # Desi cultural/social scenes
+    "shaadi wali raat":    ["party", "hype"],
+    "sangeet night":       ["party", "hype"],
+    "bhajan":              ["soulful", "calm"],
+    "bhajan clubbing":     ["party", "euphoric"],
+    "garba remix":         ["party", "euphoric"],
+    "navratri":            ["party", "euphoric"],
+    "tabla meets edm":     ["party", "euphoric"],
+    "tabla and piano":     ["chill", "soulful"],
+    "tabla background":    ["focus", "chill"],
+    "sitar samples":       ["chill", "focus"],
+    "timepass":            ["happy", "chill"],
+    "desi dj":             ["party", "hype"],
+    "bollywood classics":  ["retro", "happy"],
+    "viral song":          ["hype", "happy"],
+    "reels":               ["hype", "happy"],
+    "sandalwood":          ["romantic", "cinematic"],   # Kannada film industry
+    "jat vibes":           ["hype", "desi"],
+    "srk":                 ["romantic", "cinematic"],
+    "arms wide open":      ["euphoric", "romantic"],
+    "kuthu":               ["party", "hype"],
+    "kuthu beats":         ["party", "hype"],
+    "mass folk edm":       ["party", "hype"],
+    "tumbi":               ["soulful", "indie_folk"],
+    "lollypop lagelu":     ["party", "hype"],
+    "dholak beats":        ["party", "hype"],
+    "old bollywood vocals":["retro", "soulful"],
+    "lavani dance":        ["party", "hype"],
+    "tagore":              ["soulful", "calm"],
+    "tagore poetry":       ["soulful", "calm"],
+    "philosophical":       ["focus", "soulful"],
+    "faiz":                ["soulful", "dark"],
+    "faiz ahmad faiz":     ["soulful", "dark"],
+    "dimly lit":           ["dark", "soulful"],
+    "chai and cigarette":  ["chill", "dark"],
+    "represent":           ["hype", "intense"],
+    "mumbai streets":      ["hype", "intense"],
+    "rocky bhai":          ["intense", "cinematic"],
+
+    # English emotion / context phrases
+    "beast mode":          ["hype", "intense"],
+    "beast mode activated":["hype", "intense"],
+    "emotional wreck":     ["heartbreak"],
+    "army feels":          ["heartbreak", "euphoric"],
+    "self love summer":    ["happy", "euphoric"],
+    "depression era":      ["heartbreak", "dark"],
+    "finally okay":        ["happy", "calm"],
+    "hopeful sad":         ["heartbreak", "dreamy"],
+    "summer grief":        ["heartbreak", "dreamy"],
+    "midnight anxiety":    ["dark", "heartbreak"],
+    "overthinking":        ["dark", "heartbreak"],
+    "heartbreak high":     ["heartbreak", "dark"],
+    "heartbreak tequila":  ["heartbreak", "party"],
+    "existential dread":   ["dark", "intense"],
+    "car cry":             ["heartbreak", "dreamy"],
+    "post concert":        ["euphoric", "happy"],
+    "concert high":        ["euphoric", "happy"],
+    "ears ringing":        ["euphoric", "happy"],
+    "empowerment pop":     ["hype", "happy"],
+    "glow up anthem":      ["hype", "happy"],
+    "revenge era":         ["hype", "intense"],
+    "confidence walk":     ["hype", "happy"],
+    "flirty pop":          ["happy", "party"],
+    "bubbly pop":          ["happy", "party"],
+    "hype boy":            ["hype", "happy"],
+
+    # Scene / atmosphere descriptors
+    "rave festival":       ["euphoric", "hype"],
+    "warehouse rave":      ["industrial", "hype"],
+    "spiritual high":      ["euphoric", "chill"],
+    "arms up":             ["euphoric", "hype"],
+    "laser show":          ["hype", "euphoric"],
+    "strobe lights":       ["industrial", "hype"],
+    "neon lights":         ["dark", "retro"],
+    "neon grid":           ["retro", "industrial"],
+    "neon nostalgia":      ["retro", "dreamy"],
+    "outrun aesthetic":    ["retro", "dark"],
+    "leather jackets":     ["rock", "retro"],
+    "seattle flannel":     ["rock", "intense"],
+    "4 on the floor":      ["party", "industrial"],
+    "dark sweat":          ["industrial", "party"],
+    "goa beach":           ["chill", "euphoric"],
+    "coconut toddy":       ["chill", "tropical"],
+    "kingston":            ["chill", "reggae"],
+    "kingston vibes":      ["chill", "tropical"],
+    "ipanema":             ["calm", "soulful"],
+    "ipanema beach":       ["calm", "tropical"],
+    "favela":              ["party", "intense"],
+    "favela party":        ["party", "hype"],
+    "beach bonfire":       ["chill", "tropical"],
+    "island vibes":        ["chill", "tropical"],
+    "surf trash":          ["rock", "happy"],
+    "solo trip":           ["chill", "dreamy"],
+    "himachal":            ["calm", "dreamy"],
+    "evening breeze":      ["calm", "chill"],
+    "bangalore weather":   ["chill", "calm"],
+    "matcha latte":        ["calm", "focus"],
+    "cool evening":        ["chill", "calm"],
+    "bihu festival":       ["party", "happy"],
+    "harvest celebration": ["party", "happy"],
+    "old delhi":           ["soulful", "cinematic"],
+
+    # Genre/style descriptors not yet mapped
+    "introspective rap":   ["hype", "dark"],
+    "baduizm":             ["soulful", "chill"],
+    "rhodes piano":        ["soulful", "chill"],
+    "ok computer":         ["dark", "industrial"],
+    "yellow era":          ["dreamy", "heartbreak"],
+    "blonde era":          ["soulful", "chill"],
+    "espresso":            ["happy", "hype"],
+    "synth brass":         ["retro", "euphoric"],
+    "80s synth":           ["retro", "dark"],
+    "80s montage":         ["retro", "euphoric"],
+    "80s arcade":          ["retro", "euphoric"],
+    "dusty samples":       ["chill", "retro"],
+    "rare vinyl":          ["chill", "retro"],
+    "vinyl find":          ["chill", "retro"],
+    "wall of sound":       ["dreamy", "intense"],
+    "twinkly guitars":     ["indie_folk", "heartbreak"],
+    "screaming in a basement": ["rock", "intense"],
+    "screaming vocals":    ["intense", "rock"],
+    "double bass pedals":  ["intense", "rock"],
+    "odd time signatures": ["rock", "focus"],
+    "funky bassline":      ["soulful", "party"],
+    "motown":              ["soulful", "retro"],
+    "brass section":       ["soulful", "party"],
+    "political groove":    ["soulful", "intense"],
+    "fire dance":          ["intense", "party"],
+    "passionate clapping": ["intense", "party"],
+    "fast footwork":       ["party", "intense"],
+    "ukulele":             ["calm", "happy"],
+    "wild violin":         ["party", "intense"],
+    "cantina":             ["party", "retro"],
+    "cantina drinking":    ["party", "retro"],
+    "drinking songs":      ["party", "happy"],
+    "drinking beer":       ["party", "country"],
+    "drinking beer outside": ["party", "country"],
+    "pub night":           ["party", "happy"],
+    "drunk party":         ["party", "hype"],
+    "jump up":             ["party", "hype"],
+    "whistles blowing":    ["party", "euphoric"],
+    "steel pan":           ["party", "tropical"],
+    "cowboy coffee":       ["country", "calm"],
+    "skanking":            ["party", "rock"],
+    "ska":                 ["party", "rock"],
+    "gypsy punk":          ["party", "rock"],
+    "hakken":              ["intense", "hype"],
+    "hakken dance":        ["intense", "hype"],
+    "ballroom":            ["cinematic", "calm"],
+    "ballroom dance":      ["cinematic", "calm"],
+    "accordion distortion":["party", "rock"],
+    "eastern bloc":        ["dark", "retro"],
+    "perreo":              ["party", "hype"],
+    "dramatic romantic":   ["romantic", "cinematic"],
+    "dramatic rock":       ["intense", "dark"],
+    "oriental pop":        ["soulful", "dreamy"],
+    "arabesk":             ["soulful", "heartbreak"],
+    "desert instruments":  ["soulful", "calm"],
+    "spiritual trance":    ["euphoric", "soulful"],
+    "divine connection":   ["euphoric", "soulful"],
+    "hypnotic rhythm":     ["euphoric", "chill"],
+    "french touch":        ["party", "retro"],
+    "bass slapping":       ["party", "funk"],
+    "gothenburg":          ["intense", "rock"],
+    "melodic death":       ["intense", "rock"],
+    "icy glacier":         ["ambient", "dreamy"],
+    "power walk":          ["hype", "intense"],
+    "goosebumps moment":   ["cinematic", "intense"],
+    "choir swelling":      ["cinematic", "euphoric"],
+    "huge orchestration":  ["cinematic", "euphoric"],
+    "dragons":             ["cinematic", "intense"],
+    "trailer music":       ["cinematic", "intense"],
+    "two steps from hell": ["cinematic", "intense"],
+    "running to school":   ["hype", "happy"],
+    "anime protagonist":   ["hype", "euphoric"],
+    "hatsune miku":        ["hyperpop", "happy"],
+    "stray kids":          ["hype", "intense"],
+    "queer":               ["indie_folk", "happy"],
+    "queer love":          ["indie_folk", "romantic"],
+    "screaming in a basement": ["rock", "intense"],
+    "no sleep till sunrise": ["euphoric", "hype"],
+    "summer grief":        ["heartbreak", "dreamy"],
+    "ahjumma dance":       ["retro", "party"],
+    "ahjumma":             ["retro", "party"],
+    "trinidadian":         ["chill", "tropical"],
+    "tiktok dance":        ["hype", "party"],
+    "bed squeak":          ["party", "hype"],
+    "table meets edm":     ["party", "euphoric"],
+    "past paper":          ["focus", "dark"],
+    "pre exam":            ["focus", "dark"],
+    "energy drink":        ["hype", "focus"],
+    "bug fixing":          ["focus", "dark"],
+    "scratch":             ["retro", "hype"],
+    "scratch dj":          ["retro", "hype"],
+    "cairo nights":        ["dark", "hype"],
+    "middle eastern bass": ["hype", "dark"],
+    "oscilloscope":        ["ambient", "industrial"],
+    "acoustic indie covers": ["indie_folk", "calm"],
+    "acoustic serenading": ["romantic", "calm"],
+    "acoustic guitar trap": ["heartbreak", "chill"],
+    "serenading":          ["romantic", "calm"],
+    "loud then quiet":     ["intense", "heartbreak"],
+    "pit":                 ["intense", "rock"],
+    "moshpit":             ["intense", "rock"],
+    "open up the pit":     ["intense", "rock"],
+    "breakdown":           ["intense", "rock"],
+    "bass face":           ["hype", "intense"],
+    "groovy night":        ["party", "soulful"],
+    "cheesy but good":     ["party", "retro"],
+    "cowbell":             ["retro", "hype"],
+    "cowbell melody":      ["retro", "hype"],
+    "car edit":            ["hype", "dark"],
+    "fuzzy synths":        ["dreamy", "rock"],
+    "baduizm era":         ["soulful", "chill"],
+    "q-dance":             ["hype", "euphoric"],
+    "salsa cubana":        ["party", "soulful"],
+    "colombian":           ["party", "soulful"],
+    "lil peep":            ["heartbreak", "dark"],
+    "yung lean":           ["dreamy", "dark"],
+    "sad boy":             ["heartbreak", "dark"],
+    "missed her call":     ["heartbreak"],
+    "thai funk":           ["soulful", "chill"],
 }
 
 # ─── NEGATION WORDS ───────────────────────────────────────────────────────────
@@ -1438,6 +1749,514 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
 #  THE GRAND VIBE MAP — V4.2 FULL DATASET w/ MEGA GENRES & DECADES
 # =============================================================================
 # =============================================================================
+# =============================================================================
+#  DIRECT GENRE MAP  v1.0
+#  Pre-pass dict: maps explicit genre/subgenre terms in the user's prompt
+#  directly to a Last.fm tag and a recommended vibe, bypassing keyword scoring.
+#
+#  WHY: The vibe scoring pipeline routes everything through emotional/mood
+#  keywords. Genre-specific terms like "bhojpuri", "turbofolk", "arabic trap"
+#  have zero coverage in VIBE_MAP and are silently ignored — the engine then
+#  falls back on generic words like "dance", "loud" and confidently returns
+#  the wrong thing. This pre-pass catches them before any scoring happens.
+#
+#  HOW: analyze_vibe_algorithm calls _extract_direct_genre() as Step -1.
+#  If a match is found, the result dict gets:
+#    - direct_genre_tag: str  → Last.fm tag to use as primary search tag
+#    - direct_genre_vibe: str → vibe to override/anchor (still runs scoring)
+#    - direct_genre_confidence: float → confidence floor (0.70 default)
+#  main.py uses direct_genre_tag as the primary Last.fm fetch tag when set,
+#  skipping the normal tag-matrix lookup entirely.
+#
+#  KEY:    genre term (lowercase, may be multi-word)
+#  VALUE:  {"tag": Last.fm tag, "vibe": vibe anchor, "lang": language hint|None}
+# =============================================================================
+
+DIRECT_GENRE_MAP: dict[str, dict] = {
+
+    # ── SOUTH ASIAN REGIONAL ──────────────────────────────────────────────────
+    "bhojpuri":            {"tag": "bhojpuri",          "vibe": "party",      "lang": "Hindi"},
+    "bhojpuri folk":       {"tag": "bhojpuri",          "vibe": "party",      "lang": "Hindi"},
+    "bhojpuri folk fusion":{"tag": "bhojpuri",          "vibe": "party",      "lang": "Hindi"},
+    "bhojpuri dance":      {"tag": "bhojpuri",          "vibe": "hype",       "lang": "Hindi"},
+    "bhojpuri mass":       {"tag": "bhojpuri",          "vibe": "hype",       "lang": "Hindi"},
+    "haryanvi":            {"tag": "haryanvi",           "vibe": "hype",       "lang": "Hindi"},
+    "rajasthani folk":     {"tag": "rajasthani folk",   "vibe": "soulful",    "lang": "Hindi"},
+    "maithili":            {"tag": "maithili",           "vibe": "soulful",    "lang": "Hindi"},
+    "chhattisgarhi":       {"tag": "chhattisgarhi",     "vibe": "soulful",    "lang": "Hindi"},
+    "kumaoni":             {"tag": "pahari folk",        "vibe": "calm",       "lang": "Hindi"},
+    "pahari folk":         {"tag": "pahari folk",        "vibe": "calm",       "lang": "Hindi"},
+    "bihari folk":         {"tag": "bhojpuri",          "vibe": "party",      "lang": "Hindi"},
+    "lok geet":            {"tag": "lok geet",           "vibe": "soulful",    "lang": "Hindi"},
+    "hindustani classical":{"tag": "hindustani classical","vibe":"focus",      "lang": "Hindi"},
+    "hindustani neo-classical":{"tag":"hindustani classical","vibe":"focus",   "lang": "Hindi"},
+    "carnatic":            {"tag": "carnatic",           "vibe": "focus",      "lang": "Tamil"},
+    "carnatic fusion":     {"tag": "carnatic fusion",   "vibe": "focus",      "lang": "Tamil"},
+    "carnatic jazz":       {"tag": "carnatic jazz",      "vibe": "soulful",    "lang": "Any"},
+    "tamil indie":         {"tag": "tamil indie",        "vibe": "indie_folk", "lang": "Tamil"},
+    "kollywood indie":     {"tag": "tamil indie",        "vibe": "indie_folk", "lang": "Tamil"},
+    "telugu melodic":      {"tag": "telugu melodic",    "vibe": "dreamy",     "lang": "Telugu"},
+    "telugu indie":        {"tag": "telugu indie",       "vibe": "indie_folk", "lang": "Telugu"},
+    "marathi indie":       {"tag": "marathi indie",      "vibe": "indie_folk", "lang": "Marathi"},
+    "marathi lavani":      {"tag": "lavani",             "vibe": "party",      "lang": "Marathi"},
+    "lavani":              {"tag": "lavani",             "vibe": "party",      "lang": "Marathi"},
+    "garba":               {"tag": "garba",              "vibe": "party",      "lang": "Marathi"},
+    "dandiya":             {"tag": "dandiya",            "vibe": "party",      "lang": "Marathi"},
+    "bihu":                {"tag": "bihu",               "vibe": "party",      "lang": "Assamese"},
+    "bihu folk":           {"tag": "bihu folk",          "vibe": "soulful",    "lang": "Assamese"},
+    "manipuri folk":       {"tag": "manipuri folk",      "vibe": "calm",       "lang": "Any"},
+    "punjabi rnb":         {"tag": "punjabi rnb",        "vibe": "romantic",   "lang": "Punjabi"},
+    "punjabi folk":        {"tag": "punjabi folk",       "vibe": "soulful",    "lang": "Punjabi"},
+    "qawwali":             {"tag": "qawwali",            "vibe": "soulful",    "lang": "Urdu"},
+    "qawwali fusion":      {"tag": "qawwali fusion",    "vibe": "soulful",    "lang": "Urdu"},
+    "sufi rock":           {"tag": "sufi rock",          "vibe": "intense",    "lang": "Hindi"},
+    "sufi pop":            {"tag": "sufi pop",           "vibe": "soulful",    "lang": "Urdu"},
+    "bollywood lofi":      {"tag": "bollywood lofi",    "vibe": "chill",      "lang": "Hindi"},
+    "hindi lofi":          {"tag": "hindi lofi",         "vibe": "chill",      "lang": "Hindi"},
+    "desi lofi":           {"tag": "hindi lofi",         "vibe": "chill",      "lang": "Hindi"},
+    "desi hip hop":        {"tag": "desi hip hop",       "vibe": "hype",       "lang": "Hindi"},
+    "hindi rap":           {"tag": "desi hip hop",       "vibe": "hype",       "lang": "Hindi"},
+    "gully rap":           {"tag": "desi hip hop",       "vibe": "hype",       "lang": "Hindi"},
+    "hindi indie":         {"tag": "hindi indie",        "vibe": "indie_folk", "lang": "Hindi"},
+    "hindi chill":         {"tag": "hindi chill",        "vibe": "chill",      "lang": "Hindi"},
+    "hindi acoustic":      {"tag": "hindi acoustic",    "vibe": "calm",       "lang": "Hindi"},
+    "old bollywood":       {"tag": "old bollywood",     "vibe": "retro",      "lang": "Hindi"},
+    "bollywood dance":     {"tag": "bollywood dance",   "vibe": "party",      "lang": "Hindi"},
+    "bollywood edm":       {"tag": "bollywood edm",     "vibe": "party",      "lang": "Hindi"},
+    "bollywood remix":     {"tag": "bollywood dance",   "vibe": "party",      "lang": "Hindi"},
+    "kollywood bgm":       {"tag": "kollywood bgm",     "vibe": "cinematic",  "lang": "Tamil"},
+    "kollywood action":    {"tag": "kollywood action",  "vibe": "intense",    "lang": "Tamil"},
+    "tollywood mass":      {"tag": "tollywood mass",    "vibe": "intense",    "lang": "Telugu"},
+    "tollywood romantic":  {"tag": "tollywood romantic","vibe": "romantic",   "lang": "Telugu"},
+    "kannada bgm":         {"tag": "kannada bgm",        "vibe": "cinematic",  "lang": "Kannada"},
+    "kannada mass":        {"tag": "kannada mass",       "vibe": "intense",    "lang": "Kannada"},
+    "malayalam sad":       {"tag": "malayalam sad songs","vibe":"heartbreak",  "lang": "Malayalam"},
+    "bengali rock":        {"tag": "bengali rock",       "vibe": "rock",       "lang": "Bengali"},
+    "bengali indie":       {"tag": "bengali indie",      "vibe": "indie_folk", "lang": "Bengali"},
+    "rabindra sangeet":    {"tag": "rabindra sangeet",  "vibe": "soulful",    "lang": "Bengali"},
+    "ghazal":              {"tag": "ghazal",             "vibe": "soulful",    "lang": "Urdu"},
+
+    # ── BALKAN / EASTERN EUROPEAN ─────────────────────────────────────────────
+    "turbofolk":           {"tag": "turbofolk",          "vibe": "party",      "lang": "Any"},
+    "turbo folk":          {"tag": "turbofolk",          "vibe": "party",      "lang": "Any"},
+    "serbian turbofolk":   {"tag": "turbofolk",          "vibe": "party",      "lang": "Any"},
+    "balkan brass":        {"tag": "balkan brass",       "vibe": "party",      "lang": "Any"},
+    "balkan beats":        {"tag": "balkan beats",       "vibe": "party",      "lang": "Any"},
+    "balkan club":         {"tag": "balkan beats",       "vibe": "party",      "lang": "Any"},
+    "balkan music":        {"tag": "balkan",             "vibe": "party",      "lang": "Any"},
+    "manele":              {"tag": "manele",             "vibe": "party",      "lang": "Any"},
+    "chalga":              {"tag": "chalga",             "vibe": "party",      "lang": "Any"},
+    "mahraganat":          {"tag": "mahraganat",         "vibe": "party",      "lang": "Arabic"},
+    "shaabi":              {"tag": "shaabi",             "vibe": "party",      "lang": "Arabic"},
+    "mizmar":              {"tag": "mizmar",             "vibe": "party",      "lang": "Arabic"},
+    "disco polo":          {"tag": "disco polo",         "vibe": "party",      "lang": "Any"},
+    "hardbass":            {"tag": "hardbass",           "vibe": "hype",       "lang": "Any"},
+    "russian hardbass":    {"tag": "hardbass",           "vibe": "hype",       "lang": "Any"},
+    "soviet post-punk":    {"tag": "russian post-punk",  "vibe": "dark",       "lang": "Any"},
+    "russian post-punk":   {"tag": "russian post-punk",  "vibe": "dark",       "lang": "Any"},
+    "molchat doma":        {"tag": "russian post-punk",  "vibe": "dark",       "lang": "Any"},
+    "anatolian rock":      {"tag": "anatolian rock",     "vibe": "rock",       "lang": "Any"},
+    "gnawa":               {"tag": "gnawa",              "vibe": "soulful",    "lang": "Arabic"},
+
+    # ── ARABIC / MIDDLE EASTERN ───────────────────────────────────────────────
+    "arabic trap":         {"tag": "arabic trap",        "vibe": "hype",       "lang": "Arabic"},
+    "arabic drill":        {"tag": "arabic trap",        "vibe": "hype",       "lang": "Arabic"},
+    "egyptian drill":      {"tag": "arabic trap",        "vibe": "hype",       "lang": "Arabic"},
+    "khaleeji":            {"tag": "khaleeji",           "vibe": "chill",      "lang": "Arabic"},
+    "khaleeji pop":        {"tag": "khaleeji",           "vibe": "happy",      "lang": "Arabic"},
+    "arabic pop":          {"tag": "arabic pop",         "vibe": "happy",      "lang": "Arabic"},
+    "arabic rnb":          {"tag": "arabic rnb",         "vibe": "romantic",   "lang": "Arabic"},
+    "levantine pop":       {"tag": "arabic pop",         "vibe": "happy",      "lang": "Arabic"},
+
+    # ── AFRICAN ───────────────────────────────────────────────────────────────
+    "afro house":          {"tag": "afro house",         "vibe": "party",      "lang": "Afrobeats"},
+    "gqom":                {"tag": "gqom",               "vibe": "party",      "lang": "Afrobeats"},
+    "amapiano":            {"tag": "amapiano",           "vibe": "party",      "lang": "Afrobeats"},
+    "alte":                {"tag": "alte",               "vibe": "chill",      "lang": "Afrobeats"},
+    "afrobeats":           {"tag": "afrobeats",          "vibe": "party",      "lang": "Afrobeats"},
+    "afrobeat":            {"tag": "afrobeat",           "vibe": "soulful",    "lang": "Afrobeats"},
+    "highlife":            {"tag": "highlife",           "vibe": "happy",      "lang": "Afrobeats"},
+    "juju":                {"tag": "juju music",         "vibe": "soulful",    "lang": "Afrobeats"},
+    "bongo flava":         {"tag": "bongo flava",        "vibe": "party",      "lang": "Afrobeats"},
+
+    # ── LATIN ─────────────────────────────────────────────────────────────────
+    "latin trap":          {"tag": "latin trap",         "vibe": "hype",       "lang": "Spanish"},
+    "corridos tumbados":   {"tag": "corridos tumbados",  "vibe": "hype",       "lang": "Spanish"},
+    "corrido":             {"tag": "corrido",            "vibe": "intense",    "lang": "Spanish"},
+    "narcocorrido":        {"tag": "corrido",            "vibe": "dark",       "lang": "Spanish"},
+    "ranchera":            {"tag": "ranchera",           "vibe": "soulful",    "lang": "Spanish"},
+    "mariachi":            {"tag": "mariachi",           "vibe": "soulful",    "lang": "Spanish"},
+    "cumbia sonidera":     {"tag": "cumbia sonidera",    "vibe": "party",      "lang": "Spanish"},
+    "cumbia":              {"tag": "cumbia",             "vibe": "party",      "lang": "Spanish"},
+    "vallenato":           {"tag": "vallenato",          "vibe": "soulful",    "lang": "Spanish"},
+    "tango":               {"tag": "tango",              "vibe": "romantic",   "lang": "Spanish"},
+    "merengue":            {"tag": "merengue",           "vibe": "party",      "lang": "Spanish"},
+    "bachata":             {"tag": "bachata",            "vibe": "romantic",   "lang": "Spanish"},
+    "chicha":              {"tag": "chicha",             "vibe": "party",      "lang": "Spanish"},
+    "zamba":               {"tag": "zamba",              "vibe": "soulful",    "lang": "Spanish"},
+    "flamenco":            {"tag": "flamenco",           "vibe": "intense",    "lang": "Spanish"},
+    "baile funk":          {"tag": "baile funk",         "vibe": "party",      "lang": "Portuguese"},
+    "funk carioca":        {"tag": "baile funk",         "vibe": "party",      "lang": "Portuguese"},
+    "pagode":              {"tag": "pagode",             "vibe": "happy",      "lang": "Portuguese"},
+    "forro":               {"tag": "forró",              "vibe": "party",      "lang": "Portuguese"},
+    "sertanejo":           {"tag": "sertanejo",          "vibe": "soulful",    "lang": "Portuguese"},
+    "mpb":                 {"tag": "mpb",                "vibe": "soulful",    "lang": "Portuguese"},
+    "fado":                {"tag": "fado",               "vibe": "heartbreak", "lang": "Portuguese"},
+    "soca":                {"tag": "soca",               "vibe": "party",      "lang": "Any"},
+    "calypso":             {"tag": "calypso",            "vibe": "happy",      "lang": "Any"},
+    "reggaeton":           {"tag": "reggaeton",          "vibe": "party",      "lang": "Spanish"},
+
+    # ── EAST ASIAN ────────────────────────────────────────────────────────────
+    "city pop":            {"tag": "city pop",           "vibe": "chill",      "lang": "Japanese"},
+    "japanese city pop":   {"tag": "city pop",           "vibe": "chill",      "lang": "Japanese"},
+    "j-ballad":            {"tag": "j-ballad",           "vibe": "heartbreak", "lang": "Japanese"},
+    "j-pop":               {"tag": "j-pop",              "vibe": "happy",      "lang": "Japanese"},
+    "j-rock":              {"tag": "j-rock",             "vibe": "rock",       "lang": "Japanese"},
+    "j-hip hop":           {"tag": "j-hip hop",          "vibe": "hype",       "lang": "Japanese"},
+    "visual kei":          {"tag": "visual kei",         "vibe": "dark",       "lang": "Japanese"},
+    "vocaloid":            {"tag": "vocaloid",           "vibe": "hyperpop",   "lang": "Japanese"},
+    "anime ost":           {"tag": "anime",              "vibe": "cinematic",  "lang": "Japanese"},
+    "anime opening":       {"tag": "anime",              "vibe": "hype",       "lang": "Japanese"},
+    "k-indie":             {"tag": "k-indie",            "vibe": "indie_folk", "lang": "Korean"},
+    "korean indie":        {"tag": "k-indie",            "vibe": "indie_folk", "lang": "Korean"},
+    "k-pop ballad":        {"tag": "k-pop ballad",       "vibe": "heartbreak", "lang": "Korean"},
+    "korean ballad":       {"tag": "k-pop ballad",       "vibe": "heartbreak", "lang": "Korean"},
+    "trot":                {"tag": "trot",               "vibe": "retro",      "lang": "Korean"},
+
+    # ── ELECTRONIC SUBGENRES ──────────────────────────────────────────────────
+    "uk garage":           {"tag": "uk garage",          "vibe": "party",      "lang": "English"},
+    "drum and bass":       {"tag": "drum and bass",      "vibe": "intense",    "lang": "English"},
+    "dnb":                 {"tag": "drum and bass",      "vibe": "intense",    "lang": "English"},
+    "jungle":              {"tag": "jungle",             "vibe": "intense",    "lang": "English"},
+    "future garage":       {"tag": "future garage",      "vibe": "dreamy",     "lang": "English"},
+    "grime":               {"tag": "grime",              "vibe": "hype",       "lang": "English"},
+    "uk drill":            {"tag": "uk drill",           "vibe": "dark",       "lang": "English"},
+    "drill":               {"tag": "drill",              "vibe": "dark",       "lang": "English"},
+    "afro house":          {"tag": "afro house",         "vibe": "party",      "lang": "English"},
+    "melodic house":       {"tag": "melodic house",      "vibe": "chill",      "lang": "English"},
+    "deep house":          {"tag": "deep house",         "vibe": "chill",      "lang": "English"},
+    "tech house":          {"tag": "tech house",         "vibe": "party",      "lang": "English"},
+    "hard techno":         {"tag": "hard techno",        "vibe": "industrial", "lang": "English"},
+    "industrial techno":   {"tag": "industrial techno",  "vibe": "industrial", "lang": "English"},
+    "psytrance":           {"tag": "psytrance",          "vibe": "euphoric",   "lang": "English"},
+    "goa trance":          {"tag": "goa trance",         "vibe": "euphoric",   "lang": "Any"},
+    "hardstyle":           {"tag": "hardstyle",          "vibe": "hype",       "lang": "English"},
+    "jumpstyle":           {"tag": "jumpstyle",          "vibe": "hype",       "lang": "English"},
+    "gabber":              {"tag": "gabber",             "vibe": "intense",    "lang": "English"},
+    "dubstep":             {"tag": "dubstep",            "vibe": "intense",    "lang": "English"},
+    "brostep":             {"tag": "brostep",            "vibe": "intense",    "lang": "English"},
+    "lofi hip hop":        {"tag": "lofi hip hop",       "vibe": "focus",      "lang": "English"},
+    "lofi house":          {"tag": "lofi house",         "vibe": "chill",      "lang": "English"},
+    "jazz hop":            {"tag": "jazz hop",           "vibe": "chill",      "lang": "English"},
+    "jazz fusion":         {"tag": "jazz fusion",        "vibe": "soulful",    "lang": "Any"},
+    "nu jazz":             {"tag": "nu jazz",            "vibe": "soulful",    "lang": "Any"},
+    "indie electronica":   {"tag": "indie electronic",   "vibe": "chill",      "lang": "English"},
+    "chillwave":           {"tag": "chillwave",          "vibe": "dreamy",     "lang": "English"},
+    "vaporwave":           {"tag": "vaporwave",          "vibe": "dreamy",     "lang": "Any"},
+    "mallsoft":            {"tag": "mallsoft",           "vibe": "dreamy",     "lang": "Any"},
+    "synthwave":           {"tag": "synthwave",          "vibe": "retro",      "lang": "English"},
+    "outrun":              {"tag": "outrun",             "vibe": "retro",      "lang": "English"},
+    "retrowave":           {"tag": "retrowave",          "vibe": "retro",      "lang": "English"},
+    "darkwave":            {"tag": "darkwave",           "vibe": "dark",       "lang": "English"},
+    "future funk":         {"tag": "future funk",        "vibe": "party",      "lang": "Any"},
+    "nu disco":            {"tag": "nu disco",           "vibe": "party",      "lang": "English"},
+    "italo disco":         {"tag": "italo disco",        "vibe": "retro",      "lang": "Any"},
+    "eurodance":           {"tag": "eurodance",          "vibe": "party",      "lang": "English"},
+    "pluggnb":             {"tag": "pluggnb",            "vibe": "chill",      "lang": "English"},
+    "plugg":               {"tag": "pluggnb",            "vibe": "chill",      "lang": "English"},
+    "cloud rap":           {"tag": "cloud rap",          "vibe": "dreamy",     "lang": "English"},
+    "emo rap":             {"tag": "emo rap",            "vibe": "heartbreak", "lang": "English"},
+    "hyperpop":            {"tag": "hyperpop",           "vibe": "hyperpop",   "lang": "English"},
+    "glitchcore":          {"tag": "glitchcore",         "vibe": "hyperpop",   "lang": "English"},
+    "jersey club":         {"tag": "jersey club",        "vibe": "party",      "lang": "English"},
+    "drift phonk":         {"tag": "drift phonk",        "vibe": "hype",       "lang": "English"},
+    "phonk":               {"tag": "phonk",              "vibe": "hype",       "lang": "English"},
+    "trap metal":          {"tag": "trap metal",         "vibe": "intense",    "lang": "English"},
+    "ambient drone":       {"tag": "drone",              "vibe": "ambient",    "lang": "Any"},
+    "idm":                 {"tag": "idm",                "vibe": "focus",      "lang": "English"},
+    "math rock":           {"tag": "math rock",          "vibe": "rock",       "lang": "English"},
+    "midwest emo":         {"tag": "midwest emo",        "vibe": "heartbreak", "lang": "English"},
+    "emo":                 {"tag": "emo",                "vibe": "heartbreak", "lang": "English"},
+    "post-punk":           {"tag": "post-punk",          "vibe": "dark",       "lang": "English"},
+    "post punk":           {"tag": "post-punk",          "vibe": "dark",       "lang": "English"},
+    "shoegaze":            {"tag": "shoegaze",           "vibe": "dreamy",     "lang": "English"},
+    "grunge":              {"tag": "grunge",             "vibe": "intense",    "lang": "English"},
+    "metalcore":           {"tag": "metalcore",          "vibe": "intense",    "lang": "English"},
+    "black metal":         {"tag": "black metal",        "vibe": "dark",       "lang": "English"},
+    "melodic death metal": {"tag": "melodic death metal","vibe": "intense",    "lang": "English"},
+    "power metal":         {"tag": "power metal",        "vibe": "cinematic",  "lang": "English"},
+    "folk punk":           {"tag": "folk punk",          "vibe": "rock",       "lang": "English"},
+    "celtic punk":         {"tag": "celtic punk",        "vibe": "party",      "lang": "English"},
+    "celtic folk":         {"tag": "celtic folk",        "vibe": "indie_folk", "lang": "English"},
+    "sea shanty":          {"tag": "sea shanty",         "vibe": "indie_folk", "lang": "English"},
+    "ska punk":            {"tag": "ska punk",           "vibe": "party",      "lang": "English"},
+    "bedroom pop":         {"tag": "bedroom pop",        "vibe": "indie_folk", "lang": "English"},
+    "indie pop":           {"tag": "indie pop",          "vibe": "indie_folk", "lang": "English"},
+    "indie folk":          {"tag": "indie folk",         "vibe": "indie_folk", "lang": "English"},
+    "indie sad":           {"tag": "indie sad",          "vibe": "heartbreak", "lang": "English"},
+    "dark cabaret":        {"tag": "dark cabaret",       "vibe": "dark",       "lang": "Any"},
+    "neo soul":            {"tag": "neo soul",           "vibe": "soulful",    "lang": "English"},
+    "boom bap":            {"tag": "boom bap",           "vibe": "hype",       "lang": "English"},
+    "old school hip hop":  {"tag": "boom bap",           "vibe": "retro",      "lang": "English"},
+    "g-funk":              {"tag": "g-funk",             "vibe": "chill",      "lang": "English"},
+    "sadcore":             {"tag": "sadcore",            "vibe": "heartbreak", "lang": "English"},
+    "dark folk":           {"tag": "dark folk",          "vibe": "indie_folk", "lang": "English"},
+    "folk rock":           {"tag": "folk rock",          "vibe": "indie_folk", "lang": "English"},
+    "americana":           {"tag": "americana",          "vibe": "country",    "lang": "English"},
+    "country pop":         {"tag": "country pop",        "vibe": "country",    "lang": "English"},
+    "pop punk":            {"tag": "pop punk",           "vibe": "rock",       "lang": "English"},
+    "garage rock":         {"tag": "garage rock",        "vibe": "rock",       "lang": "English"},
+    "surf rock":           {"tag": "surf rock",          "vibe": "happy",      "lang": "English"},
+    "psychedelic rock":    {"tag": "psychedelic rock",   "vibe": "dreamy",     "lang": "English"},
+    "psychedelic pop":     {"tag": "psychedelic pop",    "vibe": "dreamy",     "lang": "English"},
+    "dream pop":           {"tag": "dream pop",          "vibe": "dreamy",     "lang": "English"},
+    "gothic":              {"tag": "gothic",             "vibe": "dark",       "lang": "English"},
+    "darkcore":            {"tag": "darkcore",           "vibe": "dark",       "lang": "English"},
+    "chicago house":       {"tag": "chicago house",      "vibe": "party",      "lang": "English"},
+    "french house":        {"tag": "french house",       "vibe": "party",      "lang": "French"},
+    "french rap":          {"tag": "french rap",         "vibe": "hype",       "lang": "French"},
+    "chanson":             {"tag": "chanson",            "vibe": "romantic",   "lang": "French"},
+    "waltz":               {"tag": "waltz",              "vibe": "cinematic",  "lang": "Any"},
+    "classical crossover": {"tag": "classical crossover","vibe": "cinematic",  "lang": "Any"},
+    "epic orchestral":     {"tag": "epic",               "vibe": "cinematic",  "lang": "Any"},
+    "epic":                {"tag": "epic",               "vibe": "cinematic",  "lang": "Any"},
+    "dark academia":       {"tag": "neoclassical",       "vibe": "focus",      "lang": "Any"},
+    "royalcore":           {"tag": "classical crossover","vibe": "cinematic",  "lang": "Any"},
+    "cottage core":        {"tag": "indie folk",         "vibe": "calm",       "lang": "English"},
+    "cottagecore":         {"tag": "indie folk",         "vibe": "calm",       "lang": "English"},
+    "pirate":              {"tag": "sea shanty",         "vibe": "indie_folk", "lang": "English"},
+    "dancehall":           {"tag": "dancehall",          "vibe": "party",      "lang": "English"},
+    "dub":                 {"tag": "dub",                "vibe": "chill",      "lang": "English"},
+    "lovers rock":         {"tag": "lovers rock",        "vibe": "romantic",   "lang": "English"},
+    "reggae":              {"tag": "reggae",             "vibe": "chill",      "lang": "English"},
+    "opm":                 {"tag": "opm",                "vibe": "soulful",    "lang": "Any"},
+    "dangdut":             {"tag": "dangdut",            "vibe": "party",      "lang": "Any"},
+    "thai funk":           {"tag": "thai funk",          "vibe": "soulful",    "lang": "Any"},
+    "harana":              {"tag": "opm",                "vibe": "romantic",   "lang": "Any"},
+    "bossa nova":          {"tag": "bossa nova",         "vibe": "calm",       "lang": "Portuguese"},
+    "hindustani":          {"tag": "hindustani classical","vibe":"focus",       "lang": "Hindi"},
+    "ambient":             {"tag": "ambient",            "vibe": "ambient",    "lang": "Any"},
+    "drone music":         {"tag": "drone",              "vibe": "ambient",    "lang": "Any"},
+
+    # ── MISSING FROM SEED ANALYSIS ─────────────────────────────────────────────
+    # These appeared in batch_tester _SEEDS override_genre but were absent above
+    "80s pop":             {"tag": "80s",                "vibe": "retro",      "lang": "English"},
+    "acoustic":            {"tag": "acoustic",           "vibe": "calm",       "lang": "English"},
+    "acoustic pop":        {"tag": "acoustic pop",       "vibe": "calm",       "lang": "English"},
+    "ambient techno":      {"tag": "ambient techno",     "vibe": "industrial", "lang": "English"},
+    "arabesk":             {"tag": "arabesk",            "vibe": "soulful",    "lang": "Arabic"},
+    "bhangra":             {"tag": "bhangra",            "vibe": "party",      "lang": "Punjabi"},
+    "bollywood":           {"tag": "bollywood",          "vibe": "happy",      "lang": "Hindi"},
+    "bollywood romantic":  {"tag": "bollywood romantic", "vibe": "romantic",   "lang": "Hindi"},
+    "bollywood sad":       {"tag": "bollywood sad",      "vibe": "heartbreak", "lang": "Hindi"},
+    "chillhop":            {"tag": "chillhop",           "vibe": "chill",      "lang": "English"},
+    "classical":           {"tag": "classical",          "vibe": "focus",      "lang": "Any"},
+    "classical piano":     {"tag": "classical piano",    "vibe": "calm",       "lang": "Any"},
+    "cyberpunk":           {"tag": "cyberpunk",          "vibe": "industrial", "lang": "English"},
+    "dance pop":           {"tag": "dance pop",          "vibe": "party",      "lang": "English"},
+    "delhi indie":         {"tag": "delhi indie",        "vibe": "indie_folk", "lang": "English"},
+    "drone":               {"tag": "drone",              "vibe": "ambient",    "lang": "Any"},
+    "ethereal wave":       {"tag": "ethereal wave",      "vibe": "dreamy",     "lang": "Any"},
+    "experimental":        {"tag": "experimental",       "vibe": "industrial", "lang": "Any"},
+    "folk":                {"tag": "folk",               "vibe": "indie_folk", "lang": "English"},
+    # Tamil/Kollywood dance variants
+    "kuthu":               {"tag": "kollywood dance",    "vibe": "party",      "lang": "Tamil"},
+    "kuthu beats":         {"tag": "kollywood dance",    "vibe": "party",      "lang": "Tamil"},
+    "mass folk edm":       {"tag": "kollywood dance",    "vibe": "party",      "lang": "Tamil"},
+    "kollywood":           {"tag": "kollywood",          "vibe": "happy",      "lang": "Tamil"},
+    "hawaiian reggae":     {"tag": "hawaiian reggae",    "vibe": "chill",      "lang": "English"},
+    "hindi sad":           {"tag": "bollywood sad",      "vibe": "heartbreak", "lang": "Hindi"},
+    "hip-hop":             {"tag": "hip-hop",            "vibe": "hype",       "lang": "English"},
+    "indie rock":          {"tag": "indie rock",         "vibe": "rock",       "lang": "English"},
+    "japanese ambient":    {"tag": "japanese ambient",   "vibe": "ambient",    "lang": "Japanese"},
+    "k-pop":               {"tag": "k-pop",              "vibe": "happy",      "lang": "Korean"},
+    "kannada":             {"tag": "kannada",            "vibe": "happy",      "lang": "Kannada"},
+    "kollywood dance":     {"tag": "kollywood dance",    "vibe": "party",      "lang": "Tamil"},
+    "kollywood sad":       {"tag": "kollywood sad",      "vibe": "heartbreak", "lang": "Tamil"},
+    "lofi":                {"tag": "lofi",               "vibe": "chill",      "lang": "Any"},
+    "malayalam":           {"tag": "malayalam",          "vibe": "happy",      "lang": "Malayalam"},
+    "marathi folk":        {"tag": "marathi folk",       "vibe": "party",      "lang": "Marathi"},
+    "pop":                 {"tag": "pop",                "vibe": "happy",      "lang": "English"},
+    "punjabi sad":         {"tag": "punjabi sad",        "vibe": "heartbreak", "lang": "Punjabi"},
+    "punjabi trap":        {"tag": "punjabi trap",       "vibe": "hype",       "lang": "Punjabi"},
+    "sad":                 {"tag": "sad",                "vibe": "heartbreak", "lang": "Any"},
+    "salsa":               {"tag": "salsa",              "vibe": "party",      "lang": "Spanish"},
+    "soul":                {"tag": "soul",               "vibe": "soulful",    "lang": "English"},
+    "tollywood":           {"tag": "tollywood",          "vibe": "happy",      "lang": "Telugu"},
+    "trance":              {"tag": "trance",             "vibe": "euphoric",   "lang": "English"},
+    "trap":                {"tag": "trap",               "vibe": "hype",       "lang": "English"},
+}
+
+# Keep a compiled lookup for faster multi-word matching (longest match wins)
+_DIRECT_GENRE_KEYS_SORTED = sorted(DIRECT_GENRE_MAP.keys(), key=len, reverse=True)
+
+
+def _extract_direct_genre(text: str) -> dict | None:
+    """
+    Scan the prompt for any explicit genre term from DIRECT_GENRE_MAP.
+    Returns the matching entry dict (with added 'matched_term' key) or None.
+    Longest-match wins: "arabic trap" beats "trap" if both are present.
+    """
+    lower = text.lower()
+    for term in _DIRECT_GENRE_KEYS_SORTED:
+        # word-boundary safe: check as whole word/phrase
+        if re.search(rf'(?<![a-z]){re.escape(term)}(?![a-z])', lower):
+            entry = dict(DIRECT_GENRE_MAP[term])
+            entry["matched_term"] = term
+            return entry
+    return None
+
+
+# =============================================================================
+#  DISCOVERY MODIFIER PATTERNS  v1.0
+#  Detects phrases that mean "give me niche/underground content" rather than
+#  being genre or vibe signals. These must be stripped from the scoring text
+#  so they don't trigger false vibe scores (e.g. "underground" → industrial).
+#
+#  Returns a nicheness boost value (0-30 pts to add to request.nicheness).
+# =============================================================================
+
+# Phrases that mean "I want niche content" — NOT genre descriptors
+_DISCOVERY_MODIFIER_PATTERN = re.compile(
+    r'\b('
+    r'underground\s+gems?'
+    r'|underground\s+only'
+    r'|underground\s+finds?'
+    r'|underground\s+tracks?'
+    r'|underground\s+stuff'
+    r'|underground\s+music'
+    r'|underground\s+scene'
+    r'|deep\s+cuts?'
+    r'|hidden\s+gems?'
+    r'|rare\s+finds?'
+    r'|obscure\s+(?:tracks?|music|songs?|finds?)'
+    r'|thoda\s+niche'        # Hinglish: "a little niche"
+    r'|niche\s+but\s+not\s+random'
+    r'|not\s+(?:too\s+)?mainstream'
+    r'|skip\s+(?:the\s+)?(?:generic|mainstream|popular)\s+(?:playlist|vibes?|tracks?|stuff)?'
+    r'|no\s+mainstream'
+    r'|non[-\s]?mainstream'
+    r'|fresh\s+tracks'
+    r'|not\s+overused'
+    r'|not\s+overplayed'
+    r'|less\s+known'
+    r'|lesser[-\s]known'
+    r'|low\s+key\s+(?:tracks?|gems?|finds?)'
+    r')',
+    re.IGNORECASE
+)
+
+# "underground" alone (without a genre-adjacent word) in context of asking for niche
+# This prevents "underground gems only" → industrial misfire
+_STANDALONE_UNDERGROUND_DISCOVERY = re.compile(
+    r'\bunderground\b(?!\s+(?:techno|metal|hip[\s-]?hop|rap|rock|punk|jazz|r&b|rnb|electronic|edm|house))',
+    re.IGNORECASE
+)
+
+
+def _extract_discovery_modifier(text: str) -> tuple[str, int]:
+    """
+    Detect discovery/nicheness modifier phrases in the text.
+    Returns (cleaned_text, nicheness_boost) where:
+      - cleaned_text has the discovery phrases removed (so they don't score as vibes)
+      - nicheness_boost is 0-30 extra nicheness points to add
+    """
+    cleaned = text
+    boost = 0
+
+    # Multi-word discovery phrases → strip + big boost
+    if _DISCOVERY_MODIFIER_PATTERN.search(cleaned):
+        cleaned = _DISCOVERY_MODIFIER_PATTERN.sub("", cleaned)
+        boost += 25
+
+    # Standalone "underground" not followed by a genre → strip + moderate boost
+    elif _STANDALONE_UNDERGROUND_DISCOVERY.search(cleaned):
+        cleaned = _STANDALONE_UNDERGROUND_DISCOVERY.sub("", cleaned)
+        boost += 15
+
+    return cleaned.strip(), boost
+
+
+# =============================================================================
+#  HINGLISH NORMALIZER  v1.0
+#  Maps common Hindi-English mixed-script intent words to English equivalents
+#  that the vibe engine can process.
+#
+#  These words appear constantly in Indian user prompts but are invisible to
+#  the keyword/synonym pipeline.
+# =============================================================================
+
+HINGLISH_INTENT_MAP: dict[str, str] = {
+    # "I want / I need" markers — remove or replace with neutral filler
+    "chahiye":          "",
+    "chahie":           "",
+    "chaiye":           "",
+    # Purpose markers — "ke liye" = "for" — strip entirely
+    "ke liye":          "",
+    "k liye":           "",
+    "ke lie":           "",
+    # Intensity / quantity
+    "thoda":            "little",   # "thoda sad" → "little sad"
+    "bahut":            "very",
+    "ekdum":            "totally",
+    "bilkul":           "completely",
+    "zyada":            "more",
+    "kam":              "less",
+    # Mood / state
+    "yaar":             "",         # filler, "bro"
+    "bro":              "",         # already English but common prefix to strip
+    "boss":             "",
+    "dost":             "",
+    "scene":            "",         # "jawahar circle scene ke liye" — scene is filler
+    # Conversational connectors
+    "aur":              "and",
+    "par":              "but",
+    "lekin":            "but",
+    "matlab":           "meaning",
+    "basically":        "",
+    # Common descriptors that map to moods
+    "mast":             "great",
+    "sahi":             "good",
+    "dhamaka":          "banging",
+    "zabardast":        "amazing",
+    "senti":            "emotional",
+    "pagal":            "crazy",
+    "bindaas":          "carefree",
+    "suno":             "",         # "listen" — filler
+    "sunao":            "",         # "play me" — filler
+    "lagao":            "",         # "play" — filler
+    "daal":             "",         # "put on" — filler
+    # Place filler words (Jaipur-specific from test prompts)
+    "wala":             "",
+    "waali":            "",
+    "wali":             "",
+    "ghumne":           "driving",  # "ghumne ke liye" = "for riding/exploring"
+    "drive":            "drive",    # keep
+    "loop":             "",         # "loop ke liye" = "for the loop/drive" — strip to prevent artist false-detect
+}
+
+# Compile a single-pass regex for Hinglish replacement
+_HINGLISH_PATTERN = re.compile(
+    r'\b(' + '|'.join(re.escape(k) for k in sorted(HINGLISH_INTENT_MAP.keys(), key=len, reverse=True)) + r')\b',
+    re.IGNORECASE
+)
+
+
+def _normalize_hinglish(text: str) -> str:
+    """
+    Replace Hinglish intent words with their English equivalents (or strip them).
+    Run BEFORE vibe scoring so the engine sees clean English text.
+    """
+    def _replace(m: re.Match) -> str:
+        key = m.group(1).lower()
+        return HINGLISH_INTENT_MAP.get(key, "")
+
+    result = _HINGLISH_PATTERN.sub(_replace, text)
+    # Clean up multiple spaces left by stripping
+    result = re.sub(r'\s{2,}', ' ', result).strip()
+    return result
+
+
 # LANGUAGE TAG MAP
 # Maps (language, dominant_vibe) → Last.fm tag to use instead of genres[0]
 # Ensures language-tagged prompts get the right regional pool.
@@ -1452,7 +2271,7 @@ LANGUAGE_TAG_MAP: dict[str, dict[str, str | None]] = {
         "chill":          "hindi lofi",
         "happy":          "bollywood",
         "party":          "bollywood dance",
-        "hype":           "desi hip hop",
+        "hype":           "desi hip hop",    # overridden to "bhojpuri" when bhojpuri keyword present
         "desi":           "bollywood",
         "soulful":        "ghazal",
         "retro":          "old bollywood",   # P17 fix: 90s Bollywood/Kumar Sanu
@@ -1462,6 +2281,19 @@ LANGUAGE_TAG_MAP: dict[str, dict[str, str | None]] = {
         "rock":           "hindi rock",
         "dark":           "hindi dark",
         "cinematic":      "bollywood bgm",
+    },
+    # Bhojpuri: first-class language — routes to bhojpuri pool regardless of vibe
+    "Bhojpuri": {
+        "default":        "bhojpuri",
+        "party":          "bhojpuri",
+        "hype":           "bhojpuri",
+        "happy":          "bhojpuri",
+        "romantic":       "bhojpuri romantic",
+        "heartbreak":     "bhojpuri sad",
+        "soulful":        "bhojpuri folk",
+        "folk":           "bhojpuri folk",
+        "calm":           "bhojpuri folk",
+        "retro":          "bhojpuri",
     },
     "Punjabi": {
         "default":        "punjabi",
@@ -2390,7 +3222,7 @@ VIBE_MAP: dict[str, dict] = {
         "keywords": [
             "mechanical", "gritty", "metallic", "distorted", "noise", "cyber", 
             "cyberpunk", "glitch", "static", "wires", "machine", "factory", 
-            "cold", "hard", "sharp", "aggressive", "underground", "concrete", 
+            "cold", "hard", "sharp", "aggressive", "concrete", 
             "brutalist", "darkness", "echo", "reverb", "clank", "hiss",
         ],
         "context": [
@@ -2914,10 +3746,41 @@ def _intensity_multiplier(text: str, match_start: int, window_chars: int = 35) -
 
 def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int = 50, bpm_focus: int = 50) -> dict:
     """
-    Vibe Analysis Engine v5.0 — QA Regression Fix + Desi Expansion Edition
-    27 vibe categories. Fixes: fallback over-triggering, indie folk/country confusion,
-    intense misfires, euphoric monopoly, new desi sub-vibes.
+    Vibe Analysis Engine v6.0 — Smart Pre-Pass Edition
+    27 vibe categories + direct genre extraction + discovery modifier handling
+    + Hinglish normalisation.
+
+    New in v6.0:
+      STEP -2: Hinglish normalisation — strips intent filler words (ke liye,
+               chahiye, thoda, loop, etc.) so the scoring pipeline sees clean text.
+      STEP -1: Direct genre extraction — explicit genre terms (bhojpuri, turbofolk,
+               arabic trap, etc.) bypass keyword scoring entirely and inject a
+               direct Last.fm tag + vibe anchor into the result.
+      STEP 0:  Discovery modifier extraction — "underground gems only", "hidden gems",
+               "thoda niche" etc. are stripped before scoring (prevents "underground"
+               → industrial misfire) and converted into a nicheness boost.
     """
+
+    # ── STEP -2: HINGLISH NORMALISATION ───────────────────────────────────────
+    # Run before anything else. Strips Hinglish filler (ke liye, chahiye, loop,
+    # thoda, etc.) and replaces common Hindi words with English equivalents.
+    # Also removes "bro" / "yaar" / conversational openers.
+    text = _normalize_hinglish(text)
+
+    # ── STEP -1: DIRECT GENRE PRE-PASS ────────────────────────────────────────
+    # Check for an explicit genre/subgenre term in the prompt.
+    # If found, we:
+    #   a) Record it in direct_genre_result (returned in the dict for main.py)
+    #   b) Anchor the dominant vibe to the genre's mapped vibe (with high confidence)
+    #   c) Still run the full scoring pipeline so mood keywords also contribute
+    direct_genre_result = _extract_direct_genre(text)
+
+    # ── STEP 0: DISCOVERY MODIFIER EXTRACTION ─────────────────────────────────
+    # Phrases like "underground gems only", "hidden gems", "thoda niche" are
+    # nicheness modifiers, NOT genre/vibe signals. Strip them from the text before
+    # scoring so they don't trigger false vibe scores (e.g. "underground" → industrial).
+    # Returns (cleaned_text, nicheness_boost) — boost is stored in result for main.py.
+    text, discovery_nicheness_boost = _extract_discovery_modifier(text)
 
     lower_text = text.lower()
     tokens = _tokenize(text)
@@ -2929,10 +3792,18 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
     gen_mult = genre_focus / 50.0
     bpm_mult = bpm_focus / 50.0
 
-    # ── STEP 0: ANTI-VIBE DETECTION ──────────────────────────────────────────
+    # If we have a direct genre hit, pre-seed that vibe with a strong score so
+    # it wins even if the prompt has few other keyword signals.
+    if direct_genre_result:
+        _dg_vibe = direct_genre_result.get("vibe", "")
+        if _dg_vibe and _dg_vibe in VIBE_MAP:
+            scores[_dg_vibe] += 18.0   # Strong anchor — beats any single keyword match
+            matched_tokens.append(f"genre:{direct_genre_result['matched_term']}")
+
+    # ── STEP 0b: ANTI-VIBE DETECTION ─────────────────────────────────────────
     anti_vibes = _detect_anti_vibes(lower_text)
 
-    # ── STEP 0b: "LIKE X BUT Y" MODIFIER BOOST ───────────────────────────────
+    # ── STEP 0c: "LIKE X BUT Y" MODIFIER BOOST ───────────────────────────────
     modifier_boosts = _extract_modifier_boost(lower_text)
     for vibe, boost_val in modifier_boosts.items():
         scores[vibe] += boost_val
@@ -3084,6 +3955,11 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
         "matched_keywords": unique_matches,
         "secondary_vibe": secondary_vibe,
         "secondary_confidence": secondary_confidence,
+        # v6.0: direct genre tag for main.py to use as primary Last.fm search tag
+        "direct_genre_tag": direct_genre_result.get("tag") if direct_genre_result else None,
+        "direct_genre_lang": direct_genre_result.get("lang") if direct_genre_result else None,
+        # v6.0: extra nicheness boost from discovery modifier phrases
+        "discovery_nicheness_boost": discovery_nicheness_boost,
     }
 
 
