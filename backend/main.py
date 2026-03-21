@@ -175,11 +175,6 @@ except Exception as _sem_err:
 # ---------------------------------------------------------
 db = Prisma()
 
-
-def get_db() -> Prisma:
-    """FastAPI dependency wrapper for shared Prisma client."""
-    return db
-
 # ── In-memory feature indexes (populated on startup) ─────────────────────────
 # Keyed by "title_lower|artist_lower" → audio feature dict
 TRACK_FEATURE_INDEX: dict[str, dict] = {}
@@ -1117,6 +1112,118 @@ VIBE_TAG_MATRIX: dict[str, dict[str, list[str]]] = {
         "Any":        ["country", "americana"],
     },
 }
+
+# ── v6.3: Patch VIBE_TAG_MATRIX with new language entries ─────────────────────
+# Vietnamese, Thai, Indonesian, Filipino — previously fell through to "Any" generics
+# Also fills remaining blank language slots across key vibes
+_VTM_PATCH: dict[str, dict[str, list[str]]] = {
+    "happy": {
+        "Vietnamese": ["v-pop", "nhac tre", "v-pop upbeat"],
+        "Thai":       ["t-pop", "thai pop", "thai upbeat"],
+        "Indonesian": ["pop indonesia", "dangdut pop"],
+        "Marathi":    ["marathi pop", "marathi songs"],
+        "Turkish":    ["türk pop", "turkish pop"],
+    },
+    "party": {
+        "Vietnamese": ["vinahouse", "v-pop dance", "nhac san"],
+        "Thai":       ["thai edm", "t-pop dance", "thai club"],
+        "Indonesian": ["dangdut koplo", "pop indonesia dance"],
+        "Marathi":    ["marathi dance", "marathi party"],
+        "Turkish":    ["türk dansı", "turkish dance"],
+    },
+    "hype": {
+        "Vietnamese": ["v-pop hype", "vietnamese rap", "viet rap"],
+        "Thai":       ["thai rap", "thai hip hop", "t-pop hype"],
+        "Indonesian": ["rap indonesia", "hip hop indonesia"],
+        "Marathi":    ["marathi rap", "marathi hip hop"],
+        "Turkish":    ["türkçe rap", "turkish rap"],
+    },
+    "heartbreak": {
+        "Vietnamese": ["v-pop buon", "nhac buon", "vietnamese sad"],
+        "Thai":       ["thai sad songs", "t-pop sad", "thai heartbreak"],
+        "Indonesian": ["pop indonesia sedih", "lagu sedih indonesia"],
+        "Marathi":    ["marathi sad songs"],
+        "Turkish":    ["türk acı şarkılar", "arabesk"],
+    },
+    "romantic": {
+        "Vietnamese": ["nhac tình cảm", "v-pop romantic", "nhac vang"],
+        "Thai":       ["thai love songs", "t-pop romantic"],
+        "Indonesian": ["pop romantis indonesia", "lagu cinta indonesia"],
+        "Marathi":    ["marathi love songs"],
+        "Turkish":    ["türk aşk şarkıları", "türk romantik"],
+        "Urdu":       ["ghazal romantic", "urdu love songs"],
+    },
+    "calm": {
+        "Vietnamese": ["nhac thư giãn", "vietnamese acoustic"],
+        "Thai":       ["thai acoustic", "thai calm"],
+        "Indonesian": ["pop indonesia tenang", "indonesian acoustic"],
+        "Marathi":    ["marathi acoustic", "marathi soft songs"],
+        "Turkish":    ["türk akustik", "türk halk müziği"],
+    },
+    "chill": {
+        "Vietnamese": ["vietnamese lofi", "v-pop chill"],
+        "Thai":       ["thai lofi", "t-pop chill"],
+        "Indonesian": ["indonesian lofi", "pop indonesia chill"],
+        "Marathi":    ["marathi chill"],
+        "Turkish":    ["türk lofi"],
+    },
+    "soulful": {
+        "Vietnamese": ["nhac vang", "bolero viet nam", "vietnamese classic"],
+        "Thai":       ["thai classic", "luk thung", "mor lam"],
+        "Indonesian": ["dangdut classic", "keroncong"],
+        "Marathi":    ["marathi natya sangeet", "marathi bhavgeet"],
+        "Turkish":    ["türk sanat müziği", "arabesk"],
+    },
+    "dreamy": {
+        "Vietnamese": ["v-pop dreamy", "vietnamese indie"],
+        "Thai":       ["thai indie", "t-pop dreamy"],
+        "Indonesian": ["indie indonesia", "pop indonesia dreamy"],
+        "Marathi":    ["marathi indie"],
+    },
+    "indie_folk": {
+        "Vietnamese": ["nhạc dân gian", "vietnamese folk"],
+        "Thai":       ["thai folk", "t-pop indie"],
+        "Indonesian": ["folk indonesia", "indie pop indonesia"],
+        "Marathi":    ["marathi folk", "marathi lavani"],
+        "Turkish":    ["türk halk müziği", "türk folk"],
+    },
+    "focus": {
+        "Vietnamese": ["vietnamese instrumental", "v-pop lo-fi"],
+        "Thai":       ["thai instrumental", "thai study music"],
+        "Indonesian": ["musik instrumental indonesia"],
+        "Marathi":    ["marathi instrumental"],
+    },
+    "dark": {
+        "Vietnamese": ["vietnamese dark", "nhac buon"],
+        "Thai":       ["thai dark pop", "thai emo"],
+        "Indonesian": ["pop indonesia gelap", "rock indonesia"],
+        "Turkish":    ["türk rock karanlık", "türk metal"],
+    },
+    "rock": {
+        "Indonesian": ["rock indonesia", "indie rock indonesia", "grunge indonesia"],
+        "Thai":       ["thai rock", "thai metal"],
+        "Vietnamese": ["rock viet", "nhac rock viet"],
+        "Turkish":    ["türk rock", "türk alternative"],
+        "Marathi":    ["marathi rock"],
+    },
+    "cinematic": {
+        "Vietnamese": ["nhac phim viet", "vietnamese ost"],
+        "Thai":       ["thai ost", "thai film music"],
+        "Indonesian": ["ost indonesia", "film musik indonesia"],
+        "Turkish":    ["türk film müziği"],
+    },
+}
+
+# Apply patch — add missing language entries to existing vibes
+for _vibe, _lang_entries in _VTM_PATCH.items():
+    if _vibe in VIBE_TAG_MATRIX:
+        for _lang, _tags in _lang_entries.items():
+            if _lang not in VIBE_TAG_MATRIX[_vibe]:
+                VIBE_TAG_MATRIX[_vibe][_lang] = _tags
+    # If vibe doesn't exist in matrix yet, add it
+    else:
+        VIBE_TAG_MATRIX[_vibe] = _lang_entries
+# ── END VIBE_TAG_MATRIX PATCH ─────────────────────────────────────────────────
 
 
 def get_vibe_tags(dominant_vibe: str, language: str, fallback_tag: str, secondary_vibe: str | None = None) -> list[str]:
@@ -2305,10 +2412,52 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     if vibe_data.get("confidence", 0.0) < 0.25 and not detected_artist and not request.override_genre:
         is_fallback = True
         logger.warning(f"Engine Confidence Critical ({vibe_data.get('confidence')} < 0.25). Triggering Fallback Protocol!")
-        vibe_data["dominant_vibe"] = "Direct Search" 
-        vibe_data["secondary_vibe"] = "Fallback Mode"
-        raw_pool = await fetch_lastfm_track_search(request.text, limit=100)
-        logger.info(f"Fallback Search returned {len(raw_pool)} tracks.")
+
+        # ── v6.3: LANGUAGE-AWARE LOW-CONF FALLBACK ──────────────────────────────
+        # Previously always fired generic Direct Search which returned Western results
+        # even for Tamil/Korean/Japanese/Hindi prompts.
+        # Now routes to the language's most popular generic tag first.
+        _lang_fallback_tags: dict[str, list[str]] = {
+            "Japanese":   ["j-pop", "city pop", "japanese pop"],
+            "Korean":     ["k-pop", "k-indie", "korean pop"],
+            "Tamil":      ["kollywood", "tamil pop", "tamil film music"],
+            "Telugu":     ["tollywood", "telugu film music"],
+            "Kannada":    ["kannada", "sandalwood"],
+            "Malayalam":  ["malayalam film music", "mollywood"],
+            "Hindi":      ["bollywood", "hindi pop"],
+            "Bengali":    ["bengali modern", "bengali film songs"],
+            "Punjabi":    ["punjabi pop", "bhangra"],
+            "Urdu":       ["ghazal", "urdu pop"],
+            "Arabic":     ["arabic pop", "khaleeji"],
+            "Spanish":    ["latin pop", "reggaeton"],
+            "Portuguese": ["mpb", "brazilian pop"],
+            "French":     ["variété française", "french pop"],
+            "Afrobeats":  ["afrobeats", "afropop"],
+        }
+        _fallback_lang = _lang or "Any"
+        _lang_tags = _lang_fallback_tags.get(_fallback_lang)
+
+        if _lang_tags:
+            # Language detected — use language-specific generic tags, NOT Direct Search
+            logger.info(f"[LangFallback] Low conf for lang={_fallback_lang} — using tags {_lang_tags}")
+            vibe_data["dominant_vibe"] = _lang_tags[0].replace(" ", "_")
+            vibe_data["secondary_vibe"] = "Fallback Mode"
+            _fallback_results = await asyncio.gather(
+                *[fetch_lastfm_tracks(tag, limit=80) for tag in _lang_tags],
+                return_exceptions=True
+            )
+            raw_pool = []
+            for _r in _fallback_results:
+                if isinstance(_r, list):
+                    raw_pool.extend(_r)
+            logger.info(f"[LangFallback] Language fallback pool: {len(raw_pool)} tracks.")
+        else:
+            # No language or English — original Direct Search path
+            vibe_data["dominant_vibe"] = "Direct Search"
+            vibe_data["secondary_vibe"] = "Fallback Mode"
+            raw_pool = await fetch_lastfm_track_search(request.text, limit=100)
+            logger.info(f"Fallback Search returned {len(raw_pool)} tracks.")
+        # ── END LANGUAGE-AWARE FALLBACK ──────────────────────────────────────────
 
         # v8.0: 3-STAGE DIRECT SEARCH FALLBACK — fires when primary search yields 0
         if not raw_pool:
@@ -2725,7 +2874,12 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                     else _dominant_vibe_check if _dominant_vibe_check in _THIN_VIBE_ARTISTS
                     else None
                 )
-                if _thin_key and len(raw_pool) < 40:
+                # ── EARLY THIN POOL CASCADE (v6.3) ─────────────────────────────────────────
+                # Previously fired only at <40 tracks (effectively "almost empty").
+                # Now fires at <30% of requested track_limit so we supplement early
+                # rather than right before the 404 cliff.
+                _thin_threshold = max(40, int(request.track_limit * 3.0))  # ~30% of a 5-20 track request = effectively 15-60, capped at 40 minimum
+                if _thin_key and len(raw_pool) < _thin_threshold:
                     _supplement_artists = _THIN_VIBE_ARTISTS[_thin_key]
                     logger.warning(
                         f"Thin pool for vibe '{_dominant_vibe_check}' (key='{_thin_key}', {len(raw_pool)} tracks). "
