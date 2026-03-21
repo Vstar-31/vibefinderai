@@ -97,7 +97,13 @@ def _ensure_main_symbols_loaded():
 
 # â”€â”€ ENVIRONMENT & CONFIGURATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 from dotenv import load_dotenv
-load_dotenv()
+
+# load_dotenv() with no args searches CWD — misses backend/.env when the script
+# is run from the project root or testing/ subfolder. Always load from BACKEND_DIR.
+_env_path = BACKEND_DIR / ".env"
+load_dotenv(dotenv_path=_env_path, override=False)
+# Also try CWD .env as a secondary source (doesn't override already-set vars)
+load_dotenv(override=False)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
@@ -802,41 +808,15 @@ def _heuristic_relevance(response_payload: dict, prompt_payload: dict) -> dict:
     }
 
 
-class TokenManager:
-    """
-    Thread-safe JWT token manager that auto-refreshes on 401 or expiry.
-
-    Problem it solves: A single token acquired at startup expires after ~30-60 min.
-    At 11s avg latency × 20k prompts ÷ 8 concurrency, a batch run takes 7+ hours.
-    Without refresh, everything after minute 30 returns 401 → vibe=unknown → 98.7% failure.
-
-    Solution: refresh eagerly every REFRESH_INTERVAL_SECONDS, and also on first 401.
-    All concurrent workers share one manager; asyncio.Lock prevents thundering-herd
-    re-auth when many workers detect 401 simultaneously.
-    """
-
-    REFRESH_INTERVAL_SECONDS: int = 25 * 60  # refresh 5 min before typical 30-min expiry
-
-    def __init__(self, session: "aiohttp.ClientSession"):
-        self._session = session
-        self._token: Optional[str] = None
-        self._acquired_at: float = 0.0
-        self._lock = asyncio.Lock()
-        self._credentials: dict = {}  # filled after first successful auth
-
-    async def _register_user(self, email: str, username: str, password: str) -> int:
+async def _ensure_api_token(session: "aiohttp.ClientSession") -> str:
+    async def _register_user(email: str, username: str, password: str) -> int:
         payload = {"email": email, "username": username, "password": password}
-        async with self._session.post(
-            f"{BACKEND_BASE_URL}/auth/register", json=payload, timeout=aiohttp.ClientTimeout(total=15)
-        ) as resp:
+        async with session.post(f"{BACKEND_BASE_URL}/auth/register", json=payload, timeout=15) as resp:
             return resp.status
 
-    async def _fetch_token(self, username: str, password: str) -> str:
+    async def _get_token(username: str, password: str) -> str:
         form_data = {"username": username, "password": password}
-        async with self._session.post(
-            f"{BACKEND_BASE_URL}/auth/token", data=form_data,
-            timeout=aiohttp.ClientTimeout(total=20),
-        ) as resp:
+        async with session.post(f"{BACKEND_BASE_URL}/auth/token", data=form_data, timeout=20) as resp:
             if resp.status != 200:
                 body = await resp.text()
                 raise RuntimeError(f"Auth failed for '{username}' ({resp.status}): {body[:300]}")
@@ -846,82 +826,29 @@ class TokenManager:
                 raise RuntimeError("Auth token missing in response")
             return token
 
-    async def _acquire(self) -> str:
-        """Perform initial registration + login. Sets self._credentials."""
-        last_error: Optional[Exception] = None
+    last_error = None
+    for attempt in range(1, AUTH_RETRY_ATTEMPTS + 1):
+        try:
+            reg_status = await _register_user(BATCH_TEST_EMAIL, BATCH_TEST_USERNAME, BATCH_TEST_PASSWORD)
+            if reg_status == 201:
+                main_logger.info(f"[PHASE 1.6] Batch user registered: {BATCH_TEST_USERNAME}")
 
-        for attempt in range(1, AUTH_RETRY_ATTEMPTS + 1):
-            try:
-                reg_status = await self._register_user(
-                    BATCH_TEST_EMAIL, BATCH_TEST_USERNAME, BATCH_TEST_PASSWORD
-                )
-                if reg_status == 201:
-                    main_logger.info(f"[Auth] Batch user registered: {BATCH_TEST_USERNAME}")
-                self._credentials = {
-                    "username": BATCH_TEST_USERNAME,
-                    "password": BATCH_TEST_PASSWORD,
-                }
-                return await self._fetch_token(BATCH_TEST_USERNAME, BATCH_TEST_PASSWORD)
-            except Exception as exc:
-                last_error = exc
-                main_logger.warning(f"[Auth] Token attempt {attempt}/{AUTH_RETRY_ATTEMPTS} failed: {exc}")
-                if attempt < AUTH_RETRY_ATTEMPTS:
-                    await asyncio.sleep(AUTH_RETRY_DELAY_SECONDS)
+            return await _get_token(BATCH_TEST_USERNAME, BATCH_TEST_PASSWORD)
+        except Exception as e:
+            last_error = e
+            main_logger.warning(f"[PHASE 1.6] Token attempt {attempt}/{AUTH_RETRY_ATTEMPTS} failed: {e}")
+            if attempt < AUTH_RETRY_ATTEMPTS:
+                await asyncio.sleep(AUTH_RETRY_DELAY_SECONDS)
 
-        # Fallback: fresh per-run user avoids stale-password collisions.
-        suffix = datetime.now().strftime("%H%M%S")
-        fallback_user = f"{BATCH_TEST_USERNAME}_{suffix}"
-        fallback_email = BATCH_TEST_EMAIL.replace("@", f"+{suffix}@")
-        main_logger.info(f"[Auth] Falling back to fresh batch user: {fallback_user}")
-        reg_status = await self._register_user(fallback_email, fallback_user, BATCH_TEST_PASSWORD)
-        if reg_status not in (200, 201):
-            raise RuntimeError(f"Fallback register failed ({reg_status}); last error: {last_error}")
-        self._credentials = {"username": fallback_user, "password": BATCH_TEST_PASSWORD}
-        return await self._fetch_token(fallback_user, BATCH_TEST_PASSWORD)
-
-    async def _refresh(self) -> None:
-        """Re-login using stored credentials. Called under lock."""
-        creds = self._credentials
-        if not creds:
-            # First call — do full acquire
-            self._token = await self._acquire()
-        else:
-            try:
-                self._token = await self._fetch_token(creds["username"], creds["password"])
-            except Exception as exc:
-                main_logger.warning(f"[Auth] Token refresh failed ({exc}), re-acquiring...")
-                self._token = await self._acquire()
-        self._acquired_at = asyncio.get_event_loop().time()
-        main_logger.info("[Auth] Token refreshed successfully.")
-
-    async def get_token(self) -> str:
-        """Return a valid token. Refreshes if expired or not yet acquired."""
-        now = asyncio.get_event_loop().time()
-        if (
-            self._token is None
-            or (now - self._acquired_at) >= self.REFRESH_INTERVAL_SECONDS
-        ):
-            async with self._lock:
-                # Re-check under lock (another coroutine may have refreshed while we waited)
-                now = asyncio.get_event_loop().time()
-                if (
-                    self._token is None
-                    or (now - self._acquired_at) >= self.REFRESH_INTERVAL_SECONDS
-                ):
-                    await self._refresh()
-        return self._token  # type: ignore[return-value]
-
-    async def force_refresh(self) -> str:
-        """Force token refresh — called when a request returns 401."""
-        async with self._lock:
-            await self._refresh()
-        return self._token  # type: ignore[return-value]
-
-
-async def _ensure_api_token(session: "aiohttp.ClientSession") -> str:
-    """Legacy helper kept for backwards compat — returns initial token via TokenManager."""
-    mgr = TokenManager(session)
-    return await mgr.get_token()
+    # Fallback: create a fresh per-run user to avoid stale-password collisions.
+    suffix = datetime.now().strftime("%H%M%S")
+    fallback_username = f"{BATCH_TEST_USERNAME}_{suffix}"
+    fallback_email = BATCH_TEST_EMAIL.replace("@", f"+{suffix}@")
+    main_logger.info(f"[PHASE 1.6] Falling back to fresh batch user: {fallback_username}")
+    reg_status = await _register_user(fallback_email, fallback_username, BATCH_TEST_PASSWORD)
+    if reg_status not in (200, 201):
+        raise RuntimeError(f"Fallback register failed ({reg_status}); last auth error: {last_error}")
+    return await _get_token(fallback_username, BATCH_TEST_PASSWORD)
 
 
 async def _wait_for_backend_health(session: "aiohttp.ClientSession", max_wait_seconds: int) -> None:
@@ -942,77 +869,60 @@ async def _wait_for_backend_health(session: "aiohttp.ClientSession", max_wait_se
     )
 
 
-async def _analyze_prompt_via_api(
-    session: "aiohttp.ClientSession",
-    token_mgr: "TokenManager",
-    payload: dict,
-) -> dict:
-    """
-    POST to /api/vibe/analyze with automatic token refresh on 401.
+async def _analyze_prompt_via_api(session: "aiohttp.ClientSession", token: str, payload: dict) -> dict:
+    headers = {"Authorization": f"Bearer {token}"}
+    retries = 3
+    for attempt in range(1, retries + 1):
+        try:
+            async with session.post(
+                f"{BACKEND_BASE_URL}/api/vibe/analyze",
+                json=payload,
+                headers=headers,
+                timeout=60,
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
 
-    Retry budget: 3 attempts total.
-    - 5xx → wait and retry (transient server error).
-    - 401 → force-refresh token and retry once (expired JWT).
-    - 4xx other → surface error immediately (bad request, no point retrying).
-    """
-    _ERR = lambda status, detail: {  # noqa: E731
+                text = await resp.text()
+                if resp.status >= 500 and attempt < retries:
+                    await asyncio.sleep(1.0 * attempt)
+                    continue
+
+                return {
+                    "error": True,
+                    "status": resp.status,
+                    "detail": text[:500],
+                    "dominant_vibe": "unknown",
+                    "confidence": 0,
+                    "secondary_vibe": None,
+                    "genres": [],
+                    "tracks": [],
+                }
+        except Exception as e:
+            if attempt < retries:
+                await asyncio.sleep(1.0 * attempt)
+                continue
+            return {
+                "error": True,
+                "status": 599,
+                "detail": f"request_error: {str(e)[:350]}",
+                "dominant_vibe": "unknown",
+                "confidence": 0,
+                "secondary_vibe": None,
+                "genres": [],
+                "tracks": [],
+            }
+
+    return {
         "error": True,
-        "status": status,
-        "detail": detail,
+        "status": 598,
+        "detail": "analyze_retry_exhausted",
         "dominant_vibe": "unknown",
         "confidence": 0,
         "secondary_vibe": None,
         "genres": [],
         "tracks": [],
     }
-
-    per_req_timeout = aiohttp.ClientTimeout(total=90)
-    token_refreshed = False
-    retries = 3
-
-    for attempt in range(1, retries + 1):
-        token = await token_mgr.get_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        try:
-            async with session.post(
-                f"{BACKEND_BASE_URL}/api/vibe/analyze",
-                json=payload,
-                headers=headers,
-                timeout=per_req_timeout,
-            ) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-
-                text = await resp.text()
-
-                if resp.status == 401 and not token_refreshed:
-                    # Token expired mid-batch — force refresh, retry once
-                    main_logger.debug("[Auth] 401 received — refreshing token and retrying.")
-                    await token_mgr.force_refresh()
-                    token_refreshed = True
-                    continue  # retry immediately, don't count against retries
-
-                if resp.status >= 500 and attempt < retries:
-                    await asyncio.sleep(1.5 * attempt)
-                    continue
-
-                # 4xx (other than 401) or 5xx on last attempt — surface
-                return _ERR(resp.status, text[:500])
-
-        except asyncio.TimeoutError:
-            main_logger.warning(f"[Batch] Request timeout on attempt {attempt}/{retries} (90s)")
-            if attempt < retries:
-                await asyncio.sleep(2.0 * attempt)
-                continue
-            return _ERR(598, "timeout_after_90s")
-
-        except Exception as exc:
-            if attempt < retries:
-                await asyncio.sleep(1.5 * attempt)
-                continue
-            return _ERR(599, f"request_error: {str(exc)[:350]}")
-
-    return _ERR(597, "analyze_retry_exhausted")
 
 
 class MetricsCollector:
@@ -1174,9 +1084,7 @@ async def run_batch():
     main_logger.info(f"[PHASE 2] Running {total} prompts with full feature payloads...\n")
 
     connector = aiohttp.TCPConnector(limit=max(32, ANALYSIS_CONCURRENCY * 3)) if _AIOHTTP_AVAILABLE else None
-    # Per-request timeout is managed inside _analyze_prompt_via_api (90s).
-    # Session-level timeout is generous — just a safety net for the whole run.
-    session_timeout = aiohttp.ClientTimeout(total=None, connect=30) if _AIOHTTP_AVAILABLE else None
+    timeout = aiohttp.ClientTimeout(total=80) if _AIOHTTP_AVAILABLE else None
 
     if not _AIOHTTP_AVAILABLE:
         raise RuntimeError("aiohttp is required for API-driven realistic testing")
@@ -1186,19 +1094,14 @@ async def run_batch():
     sem = asyncio.Semaphore(ANALYSIS_CONCURRENCY)
     gem_sem = asyncio.Semaphore(GEMINI_CONCURRENCY)
 
-    # Track error breakdown for post-run diagnostics
-    error_counts: dict = {}
-
-    async with aiohttp.ClientSession(connector=connector, timeout=session_timeout) as session:
-        token_mgr: Optional[TokenManager] = None
-
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+        token = None
         if API_DRIVEN_MODE:
-            main_logger.info("[PHASE 1.5] Waiting for backend health endpoint (up to 120s)...")
-            await _wait_for_backend_health(session, max(BACKEND_HEALTH_WAIT_SECONDS, 120))
-            main_logger.info("[PHASE 1.6] Acquiring initial batch auth token via TokenManager...")
-            token_mgr = TokenManager(session)
-            await token_mgr.get_token()  # fail fast if auth is broken
-            main_logger.info("[PHASE 1.6] TokenManager ready (auto-refreshes every 25 min)")
+            main_logger.info("[PHASE 1.5] Waiting for backend health endpoint...")
+            await _wait_for_backend_health(session, BACKEND_HEALTH_WAIT_SECONDS)
+            main_logger.info("[PHASE 1.6] Requesting batch auth token...")
+            token = await _ensure_api_token(session)
+            main_logger.info("[PHASE 1.6] Batch auth token acquired")
 
         async def _run_one(idx: int, item: dict):
             async with sem:
@@ -1207,7 +1110,7 @@ async def run_batch():
                 t0 = time.time()
 
                 if API_DRIVEN_MODE:
-                    response_payload = await _analyze_prompt_via_api(session, token_mgr, req_payload)
+                    response_payload = await _analyze_prompt_via_api(session, token, req_payload)
                 else:
                     dominant = vibe_engine.extract_dominant_vibe(req_payload["text"].lower())
                     response_payload = {
@@ -1217,12 +1120,6 @@ async def run_batch():
                         "genres": [],
                         "tracks": [],
                     }
-
-                # Track error types for diagnostics
-                if response_payload.get("error"):
-                    status = response_payload.get("status", 0)
-                    key = f"http_{status}" if status else "unknown_error"
-                    error_counts[key] = error_counts.get(key, 0) + 1
 
                 tracks = response_payload.get("tracks", []) or []
                 engine_output = {
@@ -1270,11 +1167,13 @@ async def run_batch():
                 for offset, item in enumerate(batch)
             ]
             pending = set(tasks)
+            heartbeat_tick = 0
 
             while pending:
                 done, pending = await asyncio.wait(pending, timeout=15, return_when=asyncio.FIRST_COMPLETED)
 
                 if not done:
+                    heartbeat_tick += 1
                     main_logger.info(
                         "[HEARTBEAT] Waiting on in-flight requests | "
                         f"processed={done_count}/{total} | pending_in_batch={len(pending)} | "
@@ -1286,26 +1185,15 @@ async def run_batch():
                     try:
                         detail, latency_ms = await completed
                         metrics.record_test(detail, latency_ms)
-                    except Exception as exc:
-                        metrics.record_error(type(exc).__name__)
-                        main_logger.error(f"Prompt failed: {exc}")
+                    except Exception as e:
+                        metrics.record_error(type(e).__name__)
+                        main_logger.error(f"Prompt failed: {e}")
 
                     done_count += 1
                     if done_count % 100 == 0 or done_count == total:
-                        # Log error breakdown every 500 prompts to catch token issues early
-                        if error_counts and done_count % 500 == 0:
-                            main_logger.info(f"[DIAG] Error breakdown so far: {error_counts}")
                         main_logger.info(
                             f"[PROGRESS] {done_count}/{total} prompts processed ({(done_count/total)*100:.1f}%)"
                         )
-
-    if error_counts:
-        main_logger.info(f"[DIAG] Final error type breakdown: {error_counts}")
-        if error_counts.get("http_401", 0) > 50:
-            main_logger.error(
-                "[DIAG] HIGH 401 COUNT — TokenManager may not have refreshed in time. "
-                "Check REFRESH_INTERVAL_SECONDS and token expiry on the server."
-            )
 
     duration = time.time() - start_time
     summary = metrics.get_summary()

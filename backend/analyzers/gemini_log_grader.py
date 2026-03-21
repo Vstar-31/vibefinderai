@@ -37,7 +37,10 @@ except ImportError as exc:
     raise RuntimeError("aiohttp is required for gemini_log_grader.py") from exc
 
 
-load_dotenv()
+# Always load from backend/.env (script lives in backend/analyzers/ → parent.parent)
+_script_env = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=_script_env, override=False)
+load_dotenv(override=False)  # CWD fallback
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:

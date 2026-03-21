@@ -1895,6 +1895,12 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                 if not a.name or not re.search(r"\w", a.name):  # skip dot/symbol-only names like "..." or "!!!"
                     continue
                 artist_name = _normalize_for_matching(a.name)
+                # v6.1 Fix: Short artist names that are common English words cause false locks.
+                # "Scene" locks on "music scene, Delhi", "Loop" locks on "loop ke liye" etc.
+                # Apply COMMON_WORDS_BLACKLIST to artist-name matching (previously only applied
+                # to song-title standalone matching).
+                if len(artist_name) <= 6 and artist_name in COMMON_WORDS_BLACKLIST:
+                    continue
                 _prompt_norm = _normalize_for_matching(request.text)
                 artist_pattern = rf'\b{re.escape(artist_name)}\b'
                 if re.search(artist_pattern, _prompt_norm):
@@ -2008,16 +2014,33 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         # the displayed genre tags still show the NLP-detected vibe's genres (P38 bug)
         vibe_data["genres"] = [request.override_genre.title()]
     elif _direct_tag and not request.override_genre:
-        # Direct genre tag from vibe_engine pre-pass — use verbatim as Last.fm tag
-        target_genre = _direct_tag
-        # If the genre map suggested a language and user had "Any", accept it
-        if _direct_lang and _lang == "Any":
-            _lang = _direct_lang
-            request = request.model_copy(update={"language": _direct_lang})
-            logger.info(f"[v6.0] Direct genre language hint applied: {_direct_lang}")
-        # Update genres list so frontend shows the matched genre tag
-        vibe_data["genres"] = [_direct_tag.title()]
-        logger.info(f"[v6.0] Direct Genre Tag override: '{vibe_data.get('matched_keywords', [])}' → tag='{target_genre}'")
+        # Direct genre tag from vibe_engine pre-pass — use verbatim as Last.fm tag.
+        # v6.1 Fix: "generic" direct tags (pop, rock, folk, sad, ambient) matched from broad
+        # words like "bubbly pop" or "sad vibes" should NOT override language-specific routing
+        # when the user has a non-English language set. A Korean user asking for "pop" wants
+        # k-pop, not global pop charts. Let the LANGUAGE_TAG_MAP win for generic terms.
+        _GENERIC_TAGS = {
+            "pop", "rock", "folk", "sad", "ambient", "classical", "acoustic",
+            "hip-hop", "soul", "reggae", "dance", "electronic", "alternative",
+        }
+        _lang_map_check = vibe_engine.LANGUAGE_TAG_MAP.get(_lang, {})
+        _lang_override = _lang_map_check.get(_dominant) or _lang_map_check.get("default")
+
+        if _direct_tag in _GENERIC_TAGS and _lang not in ("English", "Any") and _lang_override:
+            # Generic tag + non-English language → let language map win
+            target_genre = _lang_override
+            logger.info(f"[v6.1] Generic direct tag '{_direct_tag}' yielded to language map: {_lang} → {target_genre}")
+        else:
+            # Specific genre tag — use directly
+            target_genre = _direct_tag
+            # If the genre map suggested a language and user had "Any", accept it
+            if _direct_lang and _lang == "Any":
+                _lang = _direct_lang
+                request = request.model_copy(update={"language": _direct_lang})
+                logger.info(f"[v6.0] Direct genre language hint applied: {_direct_lang}")
+            # Update genres list so frontend shows the matched genre tag
+            vibe_data["genres"] = [_direct_tag.title()]
+            logger.info(f"[v6.0] Direct Genre Tag override: '{vibe_data.get('matched_keywords', [])}' → tag='{target_genre}'")
     elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
         sec_vibe_name = vibe_data["secondary_vibe"]
         active_vibe_for_tags = sec_vibe_name # We pivoted!
