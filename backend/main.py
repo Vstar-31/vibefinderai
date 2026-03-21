@@ -175,6 +175,10 @@ except Exception as _sem_err:
 # ---------------------------------------------------------
 db = Prisma()
 
+def get_db() -> Prisma:
+    """FastAPI dependency provider for the shared Prisma client."""
+    return db
+
 # ── In-memory feature indexes (populated on startup) ─────────────────────────
 # Keyed by "title_lower|artist_lower" → audio feature dict
 TRACK_FEATURE_INDEX: dict[str, dict] = {}
