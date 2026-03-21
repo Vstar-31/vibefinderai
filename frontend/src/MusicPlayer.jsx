@@ -214,15 +214,19 @@ export default function MusicPlayer({
         if (d.event === "onStateChange") {
           const state = d.info;
           if (state === 1) {
-            // Playing
+            // Playing — start elapsed timer and request duration
             setIsPlaying(true);
             startRef.current = Date.now();
             clearInterval(tickRef.current);
             tickRef.current = setInterval(() => {
               const secs = elapsedBase.current + (Date.now() - startRef.current) / 1000;
               setElapsed(secs);
-              if (duration > 0) {} // duration set separately
             }, 500);
+            // Ask YouTube to send duration via infoDelivery
+            const _ifr = iframeRef.current;
+            if (_ifr?.src?.includes("youtube.com")) {
+              try { _ifr.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "getVideoDuration", args: [] }), "https://www.youtube.com"); } catch {}
+            }
           } else if (state === 2) {
             // Paused — save elapsed so resume is accurate
             setIsPlaying(false);
@@ -252,14 +256,20 @@ export default function MusicPlayer({
           } else if (state === 3) {
             // Buffering — keep isPlaying true visually
           }
-        } else if (d.event === "infoDelivery" && d.info?.duration) {
-          setDuration(d.info.duration);
+        } else if (d.event === "infoDelivery") {
+          if (d.info?.duration) setDuration(d.info.duration);
+          // Sync elapsed to YouTube's actual position to prevent client-timer drift
+          if (d.info?.currentTime !== undefined && d.info.currentTime > 0) {
+            elapsedBase.current = d.info.currentTime;
+            if (startRef.current) startRef.current = Date.now();
+            setElapsed(d.info.currentTime);
+          }
         }
       } catch {}
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [useYT, duration]); // eslint-disable-line
+  }, [useYT]); // eslint-disable-line — duration removed: caused stale re-subscriptions
 
   /* ════════════════════════════════════════════════════════════
      Load track into iframe
@@ -440,8 +450,18 @@ export default function MusicPlayer({
       <>
         {useYT && (
           <iframe ref={iframeRef} src="about:blank" title="yt-player"
-            style={{ position: "fixed", bottom: -300, right: -300, width: 160, height: 90, border: "none", pointerEvents: "none", zIndex: -1 }}
             allow="autoplay; encrypted-media"
+            onLoad={() => {
+              const iframe = iframeRef.current;
+              if (!iframe?.src?.includes("youtube.com")) return;
+              try {
+                iframe.contentWindow?.postMessage(
+                  JSON.stringify({ event: "listening", id: 1 }),
+                  "https://www.youtube.com"
+                );
+              } catch {}
+            }}
+            style={{ position: "fixed", bottom: -300, right: -300, width: 160, height: 90, border: "none", pointerEvents: "none", zIndex: -1 }}
           />
         )}
         <div style={{ position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 200, display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", background: "linear-gradient(135deg, #120900, #0a0500)", border: `1px solid ${activeColor}55`, borderRadius: 40, boxShadow: `0 8px 32px rgba(0,0,0,0.8)`, backdropFilter: "blur(12px)", maxWidth: "90vw" }}>
@@ -471,6 +491,20 @@ export default function MusicPlayer({
           src="about:blank"
           title="vf-yt-player"
           allow="autoplay; encrypted-media"
+          onLoad={() => {
+            // ── FIX: send "listening" after every src change ──────────────
+            // YouTube's postMessage API only dispatches onStateChange /
+            // infoDelivery events AFTER the parent sends this handshake.
+            // Without it the iframe plays but the parent is completely blind.
+            const iframe = iframeRef.current;
+            if (!iframe?.src?.includes("youtube.com")) return;
+            try {
+              iframe.contentWindow?.postMessage(
+                JSON.stringify({ event: "listening", id: 1 }),
+                "https://www.youtube.com"
+              );
+            } catch {}
+          }}
           style={{
             position: "fixed",
             bottom: -300, right: -300,

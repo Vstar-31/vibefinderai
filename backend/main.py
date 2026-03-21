@@ -175,6 +175,11 @@ except Exception as _sem_err:
 # ---------------------------------------------------------
 db = Prisma()
 
+
+def get_db() -> Prisma:
+    """FastAPI dependency wrapper for shared Prisma client."""
+    return db
+
 # ── In-memory feature indexes (populated on startup) ─────────────────────────
 # Keyed by "title_lower|artist_lower" → audio feature dict
 TRACK_FEATURE_INDEX: dict[str, dict] = {}
@@ -1198,6 +1203,9 @@ class VibeRequest(BaseModel):
     excluded_tracks:   list[dict] | None = None  # tracks to exclude (remove + retry)
     liked_artists:     list[str]  | None = None  # Phase 8: boost these artists in scoring
     dismiss_detected_artist: bool = False  # User dismissed the artist lock tag — skip entity injection
+    # ── Phase 9: Conversational refinement ──────────────────────────────────
+    refinement_of: str | None = None          # original prompt being refined
+    refinement_instruction: str | None = None  # e.g. "more underground", "only Hindi"
 
 class TrackInfo(BaseModel):
     title: str
@@ -1219,6 +1227,32 @@ class VibeResponse(BaseModel):
     detected_artist: str | None = None
     detected_song: str | None = None
     tracks: list[TrackInfo] = []
+    # ── Phase 9: Explanation layer ───────────────────────────────────────────
+    confidence_label: str = "exploring"       # "nailed it" | "best guess" | "exploring"
+    vibe_story: str | None = None             # 2-sentence Gemini explanation (async)
+    direct_genre_tag: str | None = None       # Last.fm tag used, for UI display
+    refinement_available: bool = True
+
+
+class VibeStoryRequest(BaseModel):
+    prompt: str
+    dominant_vibe: str
+    genres: list[str]
+    matched_keywords: list[str]
+    language: str = "Any"
+    tracks: list[dict] = []
+    confidence: float = 0.5
+
+
+class PromptHistoryItem(BaseModel):
+    id: str
+    prompt: str
+    dominant_vibe: str
+    genres: list[str]
+    confidence: float
+    confidence_label: str
+    track_count: int
+    created_at: str
 
 class FeedbackRequest(BaseModel):
     """
@@ -1993,6 +2027,13 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     
     logger.info(f"--- NEW REQUEST: Analyzing Vibe ---")
     logger.info(f"Prompt: '{request.text}' | Limit: {request.track_limit}")
+
+    # ── Phase 9: Conversational refinement merge ─────────────────────────────
+    if request.refinement_of and request.refinement_instruction:
+        _merged = f"{request.refinement_of}, {request.refinement_instruction}"
+        logger.info(f"[Refinement] '{request.refinement_of[:35]}' + '{request.refinement_instruction}' → '{_merged[:55]}'")
+        request = request.model_copy(update={"text": _merged})
+    # ─────────────────────────────────────────────────────────────────────────
     
     # 1. NLP Core Analysis
     # Normalize typos before vibe detection
@@ -2809,8 +2850,136 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         
     vibe_data["tracks"] = final_tracks
     vibe_data["request_id"] = vibe_request_id or "unlogged"
+
+    # ── Phase 9: Confidence label + explanation fields ───────────────────────
+    _conf = float(vibe_data.get("confidence", 0.0))
+    if _conf >= 0.70:
+        vibe_data["confidence_label"] = "nailed it"
+    elif _conf >= 0.50:
+        vibe_data["confidence_label"] = "best guess"
+    else:
+        vibe_data["confidence_label"] = "exploring"
+    if "direct_genre_tag" not in vibe_data:
+        vibe_data["direct_genre_tag"] = None
+    vibe_data["refinement_available"] = True
+    vibe_data["vibe_story"] = None  # populated async via /api/vibe/story
+    # ─────────────────────────────────────────────────────────────────────────
+
     logger.info(f"--- SUCCESS: Returning {len(final_tracks)} tracks to client ---")
     return vibe_data
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 9: VIBE STORY — 2-sentence AI explanation of results
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_VIBE_STORY_PROMPT = """You are VibeFinderAI's explanation engine. Write exactly 2 sentences:
+1. What musical territory the user is in (name the vibe, genre, era if relevant)
+2. Why these specific tracks fit — what the engine listened for
+
+Tone: warm, knowledgeable, like a friend who knows a lot about music.
+No preamble, no "Sure!" or "Great choice!". Just 2 sentences. Under 60 words total.
+
+Example: "You're deep in late-night Tamil melodic territory — Anirudh and Sid Sriram's dreamy film ballads fit perfectly here. We leaned into tracks with that slow, reverb-heavy piano and falsetto quality rather than the big-beat Kollywood sound."
+
+Return only the 2 sentences. No quotes, no JSON, no markdown."""
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+@app.post("/api/vibe/story")
+async def generate_vibe_story(req: VibeStoryRequest, token: str = Depends(oauth2_scheme)):
+    """Phase 9: Async vibe explanation via Gemini. Returns {story: str|null}."""
+    if not GEMINI_API_KEY:
+        return {"story": None}
+
+    top_tracks_str = ", ".join(
+        f"{t.get('title','')}" for t in req.tracks[:3] if t.get("title")
+    )
+    user_msg = (
+        f'User prompt: "{req.prompt}"\n'
+        f'Language: {req.language}\n'
+        f'Vibe: {req.dominant_vibe} ({req.confidence:.0%} confidence)\n'
+        f'Genres: {", ".join(req.genres[:3])}\n'
+        f'Signals: {", ".join(req.matched_keywords[:5])}\n'
+        f'Top tracks: {top_tracks_str or "see genres"}\n'
+        f'Write the 2-sentence vibe story:'
+    )
+    _url = (
+        f"https://generativelanguage.googleapis.com/v1/models/"
+        f"gemini-2.0-flash-lite:generateContent?key={GEMINI_API_KEY}"
+    )
+    payload = {
+        "contents": [{"role": "user", "parts": [
+            {"text": _VIBE_STORY_PROMPT}, {"text": user_msg}
+        ]}],
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 120},
+    }
+    try:
+        import aiohttp as _aio
+        async with _aio.ClientSession(timeout=_aio.ClientTimeout(total=6)) as sess:
+            async with sess.post(_url, json=payload,
+                                 headers={"Content-Type": "application/json"}) as resp:
+                if resp.status != 200:
+                    return {"story": None}
+                raw = await resp.json()
+                story = raw["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"\'')
+                return {"story": story}
+    except Exception as e:
+        logger.warning(f"[VibeStory] {e}")
+        return {"story": None}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 9: PROMPT HISTORY — last N searches for the current user
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/vibe/history")
+async def get_vibe_history(
+    limit: int = 10,
+    token: str = Depends(oauth2_scheme),
+    db: Prisma = Depends(get_db),
+):
+    """Phase 9: Returns last {limit} vibe requests for the current user."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        rows = await db.viberequest.find_many(
+            where={"userId": user_id},
+            order={"createdAt": "desc"},
+            take=min(limit, 20),
+        )
+    except Exception as e:
+        logger.error(f"[History] DB: {e}")
+        return {"history": []}
+
+    import json as _j
+    history = []
+    for row in rows:
+        conf = float(row.confidence or 0.0)
+        label = "nailed it" if conf >= 0.70 else "best guess" if conf >= 0.50 else "exploring"
+        try:
+            genres = _j.loads(row.genres or "[]")
+        except Exception:
+            genres = []
+        try:
+            track_count = len(_j.loads(row.returnedTracks or "[]"))
+        except Exception:
+            track_count = 0
+        history.append({
+            "id": row.id,
+            "prompt": row.promptText or "",
+            "dominant_vibe": row.dominantVibe or "unknown",
+            "genres": genres[:3],
+            "confidence": round(conf, 2),
+            "confidence_label": label,
+            "track_count": track_count,
+            "created_at": row.createdAt.isoformat() if row.createdAt else "",
+        })
+    return {"history": history}
 
 
 @app.post("/api/feedback", status_code=201)

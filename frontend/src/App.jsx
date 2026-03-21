@@ -3,6 +3,10 @@ import PlaylistPanel from "./PlaylistPanel.jsx";
 import ServicesPanel from "./ServicesPanel.jsx";
 import MusicPlayer from "./MusicPlayer.jsx";
 import AudiophilePanel from "./AudiophilePanel.jsx";
+import ConfidenceBadge from "./components/ConfidenceBadge.jsx";
+import VibeStory from "./components/VibeStory.jsx";
+import RefinementBar from "./components/RefinementBar.jsx";
+import PromptHistory from "./components/PromptHistory.jsx";
 
 /* ─── API CONFIGURATION ─────────────────────────────────────── */
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
@@ -659,6 +663,7 @@ export default function App({ onNavigate }) {
   const [lastPrompt, setLastPrompt]   = useState("");
   const [result, setResult]           = useState(null);
   const [loading, setLoading]         = useState(false);
+  const [historyRefresh, setHistoryRefresh] = useState(0); // Phase 9: triggers PromptHistory refresh
   const [error, setError]             = useState("");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isLoginView, setIsLoginView] = useState(true);
@@ -826,7 +831,8 @@ export default function App({ onNavigate }) {
   };
 
   const analyzeVibe = async (config = {}) => {
-    if (!prompt.trim()) return;
+    const effectivePrompt = config.overrideText || prompt;
+    if (!effectivePrompt.trim()) return;
     try {
       setLoading(true); setError(""); setIsSkeletonLoading(true);
       if (config.targetSecondary !== undefined) setLoadReason("pivot");
@@ -841,7 +847,7 @@ export default function App({ onNavigate }) {
           if (config.targetSecondary !== undefined) finalSecondary = config.targetSecondary;
           if (config.targetGenre !== undefined) finalGenre = config.targetGenre;
       } else {
-          if (prompt !== lastPrompt) {
+          if (effectivePrompt !== lastPrompt) {
               finalSecondary = false;
               if (!showOverrides) {
                   finalGenre = "";
@@ -853,13 +859,13 @@ export default function App({ onNavigate }) {
       setUseSecondaryVibe(finalSecondary);
       setOverrideGenre(finalGenre);
       setOverrideArtist(finalArtist);
-      setLastPrompt(prompt);
+      setLastPrompt(effectivePrompt);
 
       const res = await fetch(buildApiUrl("/api/vibe/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
-          text: prompt,
+          text: effectivePrompt,
           artist_focus: Math.round(knobs.artist),
           nicheness: Math.round(knobs.nicheness),
           bpm_focus: Math.round(knobs.bpm),
@@ -873,6 +879,9 @@ export default function App({ onNavigate }) {
           liked_artists: Object.entries(tasteProfile.likedArtists)
             .filter(([, count]) => count >= 2)
             .map(([artist]) => artist),
+          // Phase 9: pass refinement fields if this is a refine call
+          refinement_of: config.refinement_of || null,
+          refinement_instruction: config.refinement_instruction || null,
         }),
       });
 
@@ -894,6 +903,8 @@ export default function App({ onNavigate }) {
           return [entry, ...filtered].slice(0, 8);
         });
       }
+      // Phase 9: trigger prompt history panel refresh
+      setHistoryRefresh(prev => prev + 1);
       setIsSkeletonLoading(false);
       setSelectedTracks(new Set());
       setSelectionMode(false);
@@ -1625,6 +1636,16 @@ export default function App({ onNavigate }) {
                   <ConfidenceMeter value={useSecondaryVibe ? result.secondary_confidence : result.confidence} vibeColor={activeColor} />
                   <div style={S.cardSub}>Confidence: {Math.round((useSecondaryVibe ? result.secondary_confidence : result.confidence) * 100)}%</div>
 
+                  {/* Phase 9: Confidence badge — nailed it / best guess / exploring */}
+                  {result.confidence_label && (
+                    <div style={{ marginTop: "8px" }}>
+                      <ConfidenceBadge
+                        label={result.confidence_label}
+                        confidence={useSecondaryVibe ? result.secondary_confidence : result.confidence}
+                      />
+                    </div>
+                  )}
+
                   {(result.secondary_vibe || useSecondaryVibe) &&
                    result.dominant_vibe !== 'Direct Search' &&
                    (useSecondaryVibe || (result.secondary_confidence || 0) >= 0.50) && (
@@ -1716,6 +1737,15 @@ export default function App({ onNavigate }) {
                       <span style={{ fontSize: "8px", color: "rgba(217,160,60,0.6)", letterSpacing: "0.08em", marginTop: "2px" }}>
                         Re-fetching with genre filter…
                       </span>
+                    )}
+
+                    {/* Phase 9: AI vibe story — fires async after results load */}
+                    {result && !useSecondaryVibe && (
+                      <VibeStory
+                        prompt={prompt}
+                        response={result}
+                        token={token}
+                      />
                     )}
                   </div>
                 </div>
@@ -2392,6 +2422,40 @@ export default function App({ onNavigate }) {
                     </button>
                   ))}
                 </div>
+              )}
+
+              {/* Phase 9: Conversational refinement bar */}
+              {result && !loading && (
+                <RefinementBar
+                  originalPrompt={prompt}
+                  currentVibe={result.dominant_vibe}
+                  currentLanguage={language}
+                  onRefine={(refinement) => {
+                    const merged = `${refinement.refinement_of}, ${refinement.refinement_instruction}`;
+                    setPrompt(merged);
+                    analyzeVibe({
+                      overrideText: merged,
+                      refinement_of: refinement.refinement_of,
+                      refinement_instruction: refinement.refinement_instruction,
+                    });
+                  }}
+                  style={{ marginTop: "16px" }}
+                />
+              )}
+
+              {/* Phase 9: Recent searches history */}
+              {token && (
+                <PromptHistory
+                  token={token}
+                  onRerun={(p) => {
+                    setPrompt(p);
+                    // Pass text directly — React state update is async so prompt
+                    // wouldn't be updated yet when analyzeVibe reads it
+                    analyzeVibe({ overrideText: p });
+                  }}
+                  refreshTrigger={historyRefresh}
+                  style={{ marginTop: "8px" }}
+                />
               )}
 
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "28px", opacity: 0.4 }}>
