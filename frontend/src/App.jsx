@@ -1751,6 +1751,25 @@ export default function App({ onNavigate }) {
                 </div>
               </div>
 
+              {/* ── Phase 9: REFINE THIS — sits above the playlist so users see it immediately ── */}
+              {result && !loading && (
+                <RefinementBar
+                  originalPrompt={prompt}
+                  currentVibe={result.dominant_vibe}
+                  currentLanguage={language}
+                  activeColor={activeColor}
+                  onRefine={(refinement) => {
+                    const merged = `${refinement.refinement_of}, ${refinement.refinement_instruction}`;
+                    setPrompt(merged);
+                    analyzeVibe({
+                      overrideText: merged,
+                      refinement_of: refinement.refinement_of,
+                      refinement_instruction: refinement.refinement_instruction,
+                    });
+                  }}
+                />
+              )}
+
               {/* ── GENERATED PLAYLIST UI ── */}
               {result.tracks && result.tracks.length > 0 && (
                 <div className="panel-card screws" style={{ padding: "24px", marginTop: "16px" }}>
@@ -2422,25 +2441,6 @@ export default function App({ onNavigate }) {
                     </button>
                   ))}
                 </div>
-              )}
-
-              {/* Phase 9: Conversational refinement bar */}
-              {result && !loading && (
-                <RefinementBar
-                  originalPrompt={prompt}
-                  currentVibe={result.dominant_vibe}
-                  currentLanguage={language}
-                  onRefine={(refinement) => {
-                    const merged = `${refinement.refinement_of}, ${refinement.refinement_instruction}`;
-                    setPrompt(merged);
-                    analyzeVibe({
-                      overrideText: merged,
-                      refinement_of: refinement.refinement_of,
-                      refinement_instruction: refinement.refinement_instruction,
-                    });
-                  }}
-                  style={{ marginTop: "16px" }}
-                />
               )}
 
               {/* Phase 9: Recent searches history */}
