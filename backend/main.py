@@ -507,32 +507,186 @@ COMMON_WORDS_BLACKLIST = {
     "loop", "mix", "set", "jam", "flow", "groove", "drop", "bounce",
     "blend", "cut", "run", "session", "playlist", "queue",
     "ke", "liye", "ke liye", "chahiye", "thoda",
+    # ── v6.2: wrong-lock artists identified from 85k track analysis ──────────
+    # Short/common words that are ALSO band names — the entity scanner
+    # false-locks on the word in the prompt, flooding results with that band.
+    # "texture" → locks to Belgian band Texture (25 wrong locks)
+    # "future" → locks to rapper Future (9 wrong locks)
+    # "song" → locks to band Song (pollutes Kannada/Telugu results)
+    # "on" → locks to band On (appears in "everyone on the floor")
+    # "rain" → already in blacklist but verify
+    # "slow" → already in blacklist
+    "texture", "future", "p.o.p", "pop", "on",
+    # Contextual words misread as artists in non-English prompts
+    "film", "rock", "sad", "dance", "classic", "art", "soul",
+    "fusion", "acoustic", "ambient", "indie", "folk", "jazz",
+    "house", "trap", "bass", "vocal", "vocals", "instrumental",
 }
 
 # Tracks that appeared in 10%+ of all QA results regardless of prompt.
 # These get a score penalty in the scoring engine so they don't dominate every playlist.
 TRACK_BLOCKLIST: set[str] = {
     "trap queen|fetty wap",
-    "circumambient|grimes",        # appears in almost every dark result
-    "slow|my bloody valentine",    # leads every dreamy result
-    "slowdive|slowdive",           # same pool monopoly
-    "moanin'|art blakey & the jazz messengers",  # leads every soulful result
+    "circumambient|grimes",
+    "slow|my bloody valentine",
+    "slowdive|slowdive",
+    "moanin'|art blakey & the jazz messengers",
     "time moves slow|badbadnotgood",
     # v5.0 additions from QA analysis
-    "4 am (adam k & soha mix)|kaskade",  # monopolizes euphoric results
-    "finished symphony (deadmau5 remix)|hybrid",  # monopolizes euphoric
-    "silhouettes - original radio edit|avicii",    # monopolizes euphoric
-    "strobe (radio edit)|deadmau5",                # monopolizes euphoric  
-    "brazil (2nd edit)|deadmau5",                  # monopolizes euphoric
-    "to the hellfire|lorna shore",                 # monopolizes intense
-    "you only live once|suicide silence",          # monopolizes intense
-    "pray for plagues|bring me the horizon",       # monopolizes intense
-    "country girl (shake it for me)|luke bryan",   # monopolizes country
-    "take me home, country roads|john denver",     # monopolizes country
-    "she's country|jason aldean",                  # monopolizes country
+    "4 am (adam k & soha mix)|kaskade",
+    "finished symphony (deadmau5 remix)|hybrid",
+    "silhouettes - original radio edit|avicii",
+    "strobe (radio edit)|deadmau5",
+    "brazil (2nd edit)|deadmau5",
+    "to the hellfire|lorna shore",
+    "you only live once|suicide silence",
+    "pray for plagues|bring me the horizon",
+    "country girl (shake it for me)|luke bryan",
+    "take me home, country roads|john denver",
+    "she's country|jason aldean",
+    # v6.2 MEGA EXPANSION — top 88 cross-prompt polluters from 85k track analysis
+    # Scene/Loop/Texture bands: appear in 14-21 regional tags, never correct
+    "wts ottos - remix|scene",          # 523x
+    "witch|scene",                      # 200x
+    "a warm hug|scene",                 # 199x
+    "moderato|scene",                   # 198x
+    "僕の右手|scene",                   # 170x
+    "zuster|scene",                     # 158x
+    "de schaduw van het kruis|scene",   # 143x
+    "planet girl|scene",               # 142x
+    "universal deluge|scene",           # 106x
+    "revelation|scene",                 # 116x
+    "bioluminescence|scene",            # 103x
+    "brand|scene",                      # 92x
+    "dhvani|scene",                     # 80x
+    "long stones shelter|scene",        # 80x
+    "thief of fire|loop",               # 228x
+    "eolian|loop",                      # 206x
+    "spinning|loop",                    # 185x
+    "interference|loop",                # 179x
+    "fermion|loop",                     # 148x
+    "precession|loop",                  # 148x
+    "cinnamon girl|loop",               # 119x
+    "looking at you|loop",              # 143x
+    "as if|loop",                       # 107x
+    "the nail will burn (remastered)|loop",  # 104x
+    "i'll take you there|loop",         # 101x
+    "crawling heart|loop",              # 97x
+    "rocket usa|loop",                  # 88x
+    "calathea club|texture",            # 94x
+    # Western pop flooding non-English tags
+    "physical|dua lipa",                # 498x
+    "you (ha ha ha)|charli xcx",        # 485x
+    "stay away|charli xcx",             # 276x
+    "nuclear seasons|charli xcx",       # 275x
+    "butterfly effect|travis scott",    # 276x
+    "antidote|travis scott",            # 194x
+    "skinny love|bon iver",             # 283x
+    "holocene|bon iver",                # 259x
+    "bank account|21 savage",           # 252x
+    "redrum|21 savage",                 # 174x
+    "starships|nicki minaj",            # 236x
+    "wokeuplikethis*|playboi carti",    # 223x
+    "magnolia|playboi carti",           # 181x
+    "love is a losing game|amy winehouse",  # 199x
+    "rehab|amy winehouse",              # 189x
+    "you know i'm no good|amy winehouse",   # 93x
+    "loud|mac miller",                  # 199x
+    "donald trump|mac miller",          # 184x
+    "troublemaker|taio cruz",           # 197x
+    "like a g6|far east movement",      # 178x
+    "cherry-coloured funk|cocteau twins",   # 172x
+    "myth|beach house",                 # 168x
+    "space song|beach house",           # 147x
+    "so what|miles davis",              # 162x
+    "solar|miles davis",                # 132x
+    "feel so close|calvin harris",      # 159x
+    "summer|calvin harris",             # 121x
+    "enter sandman|metallica",          # 154x
+    "master of puppets|metallica",      # 145x
+    "all the things she said|t.a.t.u.", # 151x
+    "we can't stop|miley cyrus",        # 144x
+    "ho hey|the lumineers",             # 141x
+    "i will wait|mumford & sons",       # 134x
+    "all i ever wanted|basshunter",     # 131x
+    "promiscuous|nelly furtado",        # 129x
+    "my favorite things|john coltrane", # 125x
+    "i'm old fashioned - remastered 2003/rudy van gelder edition|john coltrane",  # 92x
+    "overkill|motörhead",               # 123x
+    "ace of spades|motörhead",          # 123x
+    "fast|demi lovato",                 # 121x
+    "when you sleep|my bloody valentine",   # 119x
+    "tubthumping|chumbawamba",          # 117x
+    "(don't fear) the reaper|blue öyster cult",  # 116x
+    "the house of wolves|bring me the horizon",  # 114x
+    "call me maybe|carly rae jepsen",   # 113x
+    "mykonos|fleet foxes",              # 107x
+    "white winter hymnal|fleet foxes",  # 105x
+    "seek bromance - avicii vocal edit|tim berg",  # 106x
+    "god is a woman|ariana grande",     # 105x
+    "blowin' in the wind|bob dylan",    # 105x
+    "only shallow|my bloody valentine", # 104x
+    "little lion man|mumford & sons",   # 104x
+    "happy|pharrell williams",          # 100x
+    "yes|lmfao",                        # 99x
+    "sunset soon forgotten|iron & wine",  # 97x
+    "umbrella|rihanna",                 # 96x
+    "dragula|rob zombie",               # 94x
+    "chop suey!|system of a down",      # 93x
+    "oroborus|gojira",                  # 184x
+    "before i forget|slipknot",         # 189x
+    "stupidisco|junior jack",           # 343x — floods Bhojpuri/dance tags
+    "stereo love|edward maya",          # 254x — floods romantic tags
+    "i'm yours|jason mraz",             # 171x — floods chill/bpm tags
+    "jackie and wilson|hozier",         # 161x — floods indie folk
 }
-# ---------------------------------------------------------
-# Pydantic Models
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LANGUAGE ARTIST BLOCKLIST v1.0
+# Artists confirmed (from 85k track analysis) to pollute regional tag pools.
+# These artists appear in 5-21 non-English Last.fm tags where they don't belong.
+# Applied during filter_and_score_tracks when language is non-English.
+#
+# TIERS:
+#   universal  = block in ALL non-English/non-Any results
+#   indie_tags = block when genre contains 'indie', 'folk', 'acoustic'
+#   pop_tags   = block when genre contains 'pop', 'dance', 'party'
+# ─────────────────────────────────────────────────────────────────────────────
+LANGUAGE_ARTIST_BLOCKLIST: dict[str, set[str]] = {
+    # Artists that contaminate ALL regional pools regardless of genre
+    "universal": {
+        # The 'Scene' and 'Loop' bands — Last.fm has them tagged with everything
+        "scene", "loop", "texture",
+        # 'Song' = K-pop group whose tracks (named 01, 02, 04...) flood Kannada/Telugu/Malayalam
+        "song",
+        # 'P.O.P' = Thai pop artist incorrectly tagged in Japanese city pop
+        "p.o.p",
+        # Hyper-mainstream Western pop that floods every non-English tag
+        "dua lipa", "charli xcx", "carly rae jepsen", "pharrell williams",
+        "lizzo", "miley cyrus", "taio cruz", "lmfao", "far east movement",
+        "basshunter", "nelly furtado", "chumbawamba", "t.a.t.u.",
+        # Doja Cat — floods Marathi/Hindi results via dance/pop tags
+        "doja cat",
+        # Western hip-hop that floods trap-adjacent tags globally
+        "travis scott", "playboi carti", "21 savage", "mac miller",
+        # Western rock/metal flooding Indian/Arabic tags via 'sufi rock', 'flamenco' etc
+        "metallica", "slipknot", "gojira", "bring me the horizon",
+        "blue öyster cult", "system of a down", "rob zombie", "motörhead",
+        # Jazz legends flooding Indian/Arabic classical tags
+        "miles davis", "john coltrane",
+    },
+    # Block in indie/folk/acoustic regional tags
+    "indie_folk_contamination": {
+        "bon iver", "fleet foxes", "iron & wine", "mumford & sons",
+        "the lumineers", "bob dylan", "beach house", "cocteau twins",
+        "my bloody valentine", "slowdive", "hozier",
+    },
+    # Block in dance/party regional tags
+    "dance_contamination": {
+        "junior jack", "edward maya", "calvin harris", "tim berg",
+        "ariana grande", "rihanna", "nicki minaj", "amy winehouse",
+    },
+}
 # ---------------------------------------------------------
 
 
@@ -1562,6 +1716,24 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
         if track_ident_bl in TRACK_BLOCKLIST:
             score -= 40
 
+        # 7b. LANGUAGE-AWARE ARTIST FILTER (v6.2)
+        # Regional non-English results must not be flooded with Western artists
+        # that Last.fm places in thin regional tag pools as filler.
+        _req_lang = getattr(request, "language", "Any") or "Any"
+        if _req_lang not in ("English", "Any"):
+            _genres_lower = " ".join(g.lower() for g in (vibe_data.get("genres") or []))
+            # Universal block: these artists NEVER belong in regional results
+            if artist in LANGUAGE_ARTIST_BLOCKLIST["universal"]:
+                score -= 60  # nearly guaranteed exclusion
+            # Indie/folk contamination: block in indie/folk/acoustic regional tags
+            elif artist in LANGUAGE_ARTIST_BLOCKLIST["indie_folk_contamination"]:
+                if any(w in _genres_lower for w in ("indie", "folk", "acoustic", "lofi", "ambient")):
+                    score -= 55
+            # Dance/pop contamination: block in dance/party regional tags
+            elif artist in LANGUAGE_ARTIST_BLOCKLIST["dance_contamination"]:
+                if any(w in _genres_lower for w in ("dance", "pop", "party", "funk", "house", "trap")):
+                    score -= 55
+
         score += random.uniform(0, 1.5)
 
         # ── Phase 8: liked-artist boost (+8 pts) ─────────────────────────
@@ -1587,12 +1759,15 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
     artist_counts = {}
     seen_base_titles = set()
     
-    # 🚨 BRO FIX: Bug 2 - Force Artist diversity collapse at limit >= 40.
-    # Even if they crank the dial, we cap a single artist to ~60% of the playlist
-    # or max 15 tracks, so related artists STILL get a chance to shine.
+    # Artist diversity cap — even in fallback, one artist shouldn't flood results.
+    # v6.2: cap applies in ALL paths including fallback loop (previously fallback
+    # had no cap, letting Scene/Loop/Pawan Singh flood 50-track results).
     max_artist_tracks = 2
     if request.override_artist or request.artist_focus >= 80:
         max_artist_tracks = max(2, min(int(request.track_limit * 0.60), 15))
+    # Hard ceiling: no artist ever takes more than 40% of results regardless of knobs
+    hard_ceiling = max(2, int(request.track_limit * 0.40))
+    max_artist_tracks = min(max_artist_tracks, hard_ceiling)
 
     for _, t in scored_tracks:
         art = t.get("artist", "").lower()
@@ -1615,10 +1790,18 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
         if len(final_selection) >= request.track_limit:
             break
             
-    # 7. THE FALLBACK LOOP
+    # 7. THE FALLBACK LOOP — still respects the hard ceiling
+    # v6.2: previously had no artist cap, causing monopoly floods via this path
     if len(final_selection) < request.track_limit:
+        fallback_artist_counts = dict(artist_counts)  # copy current counts
         for t in skipped_for_diversity:
+            art = t.get("artist", "").lower()
+            # In fallback, allow up to hard_ceiling (not max_artist_tracks)
+            # so we get some coverage from popular artists without total flood
+            if fallback_artist_counts.get(art, 0) >= hard_ceiling:
+                continue
             final_selection.append(t)
+            fallback_artist_counts[art] = fallback_artist_counts.get(art, 0) + 1
             if len(final_selection) >= request.track_limit:
                 break
                 
@@ -1897,9 +2080,10 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                 artist_name = _normalize_for_matching(a.name)
                 # v6.1 Fix: Short artist names that are common English words cause false locks.
                 # "Scene" locks on "music scene, Delhi", "Loop" locks on "loop ke liye" etc.
+                # v6.2: expanded to len<=10 to catch "Texture" (7), "Future" (6), "Acoustic" (8) etc.
                 # Apply COMMON_WORDS_BLACKLIST to artist-name matching (previously only applied
                 # to song-title standalone matching).
-                if len(artist_name) <= 6 and artist_name in COMMON_WORDS_BLACKLIST:
+                if len(artist_name) <= 10 and artist_name in COMMON_WORDS_BLACKLIST:
                     continue
                 _prompt_norm = _normalize_for_matching(request.text)
                 artist_pattern = rf'\b{re.escape(artist_name)}\b'
