@@ -1581,6 +1581,7 @@ export default function App({ onNavigate }) {
 
           {/* ── RESULTS ─── */}
           {result && (
+            <>
             <div id="results-section" className="animate-in" style={{ scrollMarginTop: "24px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", paddingLeft: "4px" }}>
                 <div style={{ width: "24px", height: "1px", background: `${activeColor}88` }} />
@@ -1751,6 +1752,7 @@ export default function App({ onNavigate }) {
                   token={token}
                   activeColor={activeColor}
                 />
+              )}
 
               {/* ── Phase 9: REFINE THIS — sits above the playlist so users see it immediately ── */}
               {result && !loading && (
@@ -2464,7 +2466,7 @@ export default function App({ onNavigate }) {
                 <div style={{ flex: 1, height: "6px", borderRadius: "3px", background: "rgba(80,50,10,0.4)", overflow: "hidden" }}><div style={{ height: "100%", width: "100%", background: `repeating-linear-gradient(90deg, ${activeColor}33 0px, ${activeColor}33 2px, transparent 2px, transparent 10px)` }} /></div>
                 <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1px solid rgba(120,80,20,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: activeColor }} /></div>
               </div>
-            </div>
+            </>
           )}
 
         </div>
