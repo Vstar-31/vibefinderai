@@ -869,11 +869,17 @@ async def _wait_for_backend_health(session: "aiohttp.ClientSession", max_wait_se
     )
 
 
-async def _analyze_prompt_via_api(session: "aiohttp.ClientSession", token: str, payload: dict) -> dict:
-    headers = {"Authorization": f"Bearer {token}"}
+async def _analyze_prompt_via_api(
+    session: "aiohttp.ClientSession",
+    token_ref: dict,
+    payload: dict,
+    refresh_lock: "asyncio.Lock",
+) -> dict:
     retries = 3
     for attempt in range(1, retries + 1):
         try:
+            current_token = token_ref.get("value")
+            headers = {"Authorization": f"Bearer {current_token}"}
             async with session.post(
                 f"{BACKEND_BASE_URL}/api/vibe/analyze",
                 json=payload,
@@ -882,6 +888,18 @@ async def _analyze_prompt_via_api(session: "aiohttp.ClientSession", token: str, 
             ) as resp:
                 if resp.status == 200:
                     return await resp.json()
+
+                # Long runs can outlive JWTs; refresh once and retry in-place.
+                if resp.status in (401, 403) and attempt < retries:
+                    async with refresh_lock:
+                        latest = token_ref.get("value")
+                        if latest == current_token:
+                            main_logger.warning(
+                                f"[PHASE 2] Auth expired ({resp.status}); refreshing token and retrying"
+                            )
+                            token_ref["value"] = await _ensure_api_token(session)
+                    await asyncio.sleep(0.2)
+                    continue
 
                 text = await resp.text()
                 if resp.status >= 500 and attempt < retries:
@@ -1095,12 +1113,13 @@ async def run_batch():
     gem_sem = asyncio.Semaphore(GEMINI_CONCURRENCY)
 
     async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-        token = None
+        token_ref = {"value": None}
+        token_refresh_lock = asyncio.Lock()
         if API_DRIVEN_MODE:
             main_logger.info("[PHASE 1.5] Waiting for backend health endpoint...")
             await _wait_for_backend_health(session, BACKEND_HEALTH_WAIT_SECONDS)
             main_logger.info("[PHASE 1.6] Requesting batch auth token...")
-            token = await _ensure_api_token(session)
+            token_ref["value"] = await _ensure_api_token(session)
             main_logger.info("[PHASE 1.6] Batch auth token acquired")
 
         async def _run_one(idx: int, item: dict):
@@ -1110,7 +1129,12 @@ async def run_batch():
                 t0 = time.time()
 
                 if API_DRIVEN_MODE:
-                    response_payload = await _analyze_prompt_via_api(session, token, req_payload)
+                    response_payload = await _analyze_prompt_via_api(
+                        session,
+                        token_ref,
+                        req_payload,
+                        token_refresh_lock,
+                    )
                 else:
                     dominant = vibe_engine.extract_dominant_vibe(req_payload["text"].lower())
                     response_payload = {
@@ -1131,6 +1155,8 @@ async def run_batch():
                     "matched_keywords": response_payload.get("matched_keywords", []),
                     "detected_artist": response_payload.get("detected_artist"),
                     "detected_song": response_payload.get("detected_song"),
+                    "api_status": response_payload.get("status"),
+                    "api_error": response_payload.get("detail") if response_payload.get("error") else None,
                     "track_count": len(tracks),
                     "tracks": tracks,
                 }
