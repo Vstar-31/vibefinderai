@@ -2,16 +2,25 @@
  * VibeStory.jsx — VibeFinderAI Phase 9
  * Full dark aesthetic — amber/gold, DM Mono header, matches panel-card style.
  * Place in: frontend/src/components/VibeStory.jsx
+ *
+ * FIX: accepts `buildApiUrl` prop instead of hardcoding API_BASE.
+ * App.jsx passes it as: <VibeStory buildApiUrl={buildApiUrl} ... />
  */
 import React, { useEffect, useRef, useState } from "react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
-export default function VibeStory({ prompt, response, token, activeColor = "#d97706" }) {
+export default function VibeStory({ prompt, response, token, activeColor = "#d97706", buildApiUrl }) {
   const [story, setStory] = useState(null);
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
   const fetchedRef = useRef(null);
+
+  // Fallback: if buildApiUrl not passed (e.g. tests), derive from env
+  const apiUrl = buildApiUrl
+    ? buildApiUrl
+    : (path) => {
+        const base = import.meta.env.VITE_API_URL || "";
+        return base ? `${base}${path}` : path;
+      };
 
   useEffect(() => {
     if (!response || !prompt || !token) return;
@@ -21,9 +30,12 @@ export default function VibeStory({ prompt, response, token, activeColor = "#d97
 
     setStory(null); setVisible(false); setLoading(true);
 
-    fetch(`${API_BASE}/api/vibe/story`, {
+    fetch(apiUrl("/api/vibe/story"), {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
         prompt,
         dominant_vibe: response.dominant_vibe || "",
@@ -61,13 +73,23 @@ export default function VibeStory({ prompt, response, token, activeColor = "#d97
     }}>
       {loading && !story ? (
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div style={{ width: "8px", height: "8px", borderRadius: "50%", border: `1.5px solid ${activeColor}44`, borderTopColor: activeColor, animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
-          <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em" }}>
+          <div style={{
+            width: "8px", height: "8px", borderRadius: "50%",
+            border: `1.5px solid ${activeColor}44`, borderTopColor: activeColor,
+            animation: "spin 0.8s linear infinite", flexShrink: 0,
+          }} />
+          <span style={{
+            fontSize: "10px", color: "rgba(180,140,80,0.4)",
+            fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em",
+          }}>
             Reading the vibe…
           </span>
         </div>
       ) : (
-        <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.7, color: "rgba(200,170,110,0.8)", fontStyle: "italic" }}>
+        <p style={{
+          margin: 0, fontSize: "12px", lineHeight: 1.7,
+          color: "rgba(200,170,110,0.8)", fontStyle: "italic",
+        }}>
           {story}
         </p>
       )}

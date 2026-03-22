@@ -3,19 +3,12 @@ semantic_search.py
 ──────────────────
 VibeFinderAI — Semantic Fallback Engine + Audio Feature Scorer
 
-WHAT'S NEW (v2)
+WHAT'S NEW (v3)
 ---------------
-  1. blend_audio_features() — blends TrackFeatureCache data (ReccoBeats BPM,
-     energy, valence, danceability, AcousticBrainz mood scores) into the
-     final track ranking. This is what actually makes the BPM knob work.
-
-  2. score_track_with_features() — per-track scoring using cached audio
-     features. Maps energy → hype/chill vibes, valence → heartbreak/happy,
-     acousticness → indie_folk/ambient, mood_* → vibe category affinity.
-
-  3. get_thin_pool_supplement() — reads ThinPoolCache from Prisma for
-     Language×Vibe combos that historically return <20 tracks from Last.fm.
-     Called in main.py as Stage 2 fallback before the safety pool.
+  blend_audio_features() now accepts an optional feature_index parameter.
+  When main.py passes TRACK_FEATURE_INDEX (loaded at startup), no DB call
+  is made — O(1) lookup instead of a round-trip to trackfeaturecache.
+  Falls back to DB query when feature_index is None (backwards compatible).
 
 ORIGINAL PURPOSE (unchanged)
 -----------------------------
@@ -29,28 +22,6 @@ NOT training — frozen inference only. Cold start ~2s, queries <50ms.
 GRACEFUL DEGRADATION
 --------------------
 All functions return the input unchanged if the model or DB is unavailable.
-Semantic/audio scoring is additive and never blocking.
-
-USAGE
------
-  from semantic_search import (
-      rank_tracks_by_prompt,
-      semantic_ready,
-      blend_audio_features,
-      get_thin_pool_supplement,
-  )
-
-  # Semantic ranking (for low-confidence fallback path)
-  if semantic_ready():
-      tracks = rank_tracks_by_prompt(prompt, raw_pool)
-
-  # Audio feature blending (after filter_and_score_tracks)
-  tracks = await blend_audio_features(tracks, vibe, knobs, db)
-
-  # Thin pool supplement (before Stage 3 safety pool)
-  # BRO NOTE: We successfully wired this up in main.py to act as a solid 
-  # safety net for restrictive knobs and dead-end searches! 🚀
-  supplement = await get_thin_pool_supplement(language, vibe, db)
 """
 
 import json
@@ -170,8 +141,6 @@ def blend_semantic_scores(
     """
     Blend semantic_score with the heuristic 'score' from filter_and_score_tracks().
     final = (1 - w) * heuristic_norm + w * semantic_score
-    Both inputs normalised to [0, 1] before blending.
-    Tracks without semantic_score pass through unchanged.
     """
     if not tracks:
         return tracks
@@ -199,9 +168,6 @@ def blend_semantic_scores(
 
 # ─── AUDIO FEATURE BLENDING ───────────────────────────────────────────────────
 
-# Maps vibe category → which audio features should be high/low.
-# Each entry: (feature_key, target_direction, weight)
-# direction: "high" = reward high values, "low" = reward low values
 _VIBE_FEATURE_AFFINITY: dict[str, list[tuple[str, str, float]]] = {
     "hype":        [("energy", "high", 0.9), ("danceability", "high", 0.6), ("tempo", "high", 0.7)],
     "party":       [("danceability", "high", 0.9), ("energy", "high", 0.7), ("valence", "high", 0.5)],
@@ -226,7 +192,6 @@ _VIBE_FEATURE_AFFINITY: dict[str, list[tuple[str, str, float]]] = {
     "country":     [("acousticness", "high", 0.8), ("valence", "high", 0.5), ("instrumentalness", "low", 0.4)],
 }
 
-# AcousticBrainz mood keys → vibe category mapping
 _AB_MOOD_TO_VIBE: dict[str, list[str]] = {
     "moodHappy":      ["happy", "euphoric", "party", "tropical"],
     "moodSad":        ["heartbreak", "dark", "dreamy"],
@@ -247,37 +212,22 @@ def score_track_with_features(
     """
     Compute an audio-feature-based relevance score for a track.
     Returns a float [0.0, 1.0] — higher is better match for the vibe.
-
-    Parameters
-    ----------
-    track : dict
-        Track dict (title, artist, etc.)
-    cached_features : dict | None
-        Row from TrackFeatureCache (as dict) or None if not cached.
-    dominant_vibe : str
-        The vibe category, e.g. "heartbreak", "hype"
-    bpm_knob : int
-        User's BPM knob value 0–100. Low = prefer slow tracks, high = fast.
-        Maps to tempo: knob 0→~60 BPM target, 50→~110 BPM, 100→~175 BPM
     """
     if not cached_features:
-        return 0.5  # neutral if no cache — don't penalise uncached tracks
+        return 0.5
 
     score_components = []
     weights_total = 0.0
 
     vibe_affinities = _VIBE_FEATURE_AFFINITY.get(dominant_vibe, [])
 
-    # ── Audio feature affinity ────────────────────────────────────────────────
     for feature_key, direction, weight in vibe_affinities:
         raw_val = cached_features.get(feature_key)
         if raw_val is None:
             continue
 
-        # Normalise tempo to [0,1] (assume range 40–200 BPM)
         if feature_key == "tempo":
             val = max(0.0, min(1.0, (raw_val - 40) / 160))
-        # Normalise loudness from dB range [-60, 0] to [0,1]
         elif feature_key == "loudness":
             val = max(0.0, min(1.0, (raw_val + 60) / 60))
         else:
@@ -287,19 +237,16 @@ def score_track_with_features(
         score_components.append(component_score * weight)
         weights_total += weight
 
-    # ── BPM knob alignment ────────────────────────────────────────────────────
-    # Map knob 0-100 → target BPM ~60-175
+    # BPM knob alignment
     if cached_features.get("tempo") is not None:
-        target_bpm = 60 + (bpm_knob / 100) * 115  # 60 to 175 BPM
+        target_bpm = 60 + (bpm_knob / 100) * 115
         actual_bpm = cached_features["tempo"]
-        # Gaussian-like distance penalty — within ±15 BPM = strong match
-        bpm_diff = abs(actual_bpm - target_bpm)
-        bpm_score = max(0.0, 1.0 - (bpm_diff / 40))  # 40 BPM = full penalty
-        score_components.append(bpm_score * 1.2)  # higher weight for explicit BPM
+        bpm_diff   = abs(actual_bpm - target_bpm)
+        bpm_score  = max(0.0, 1.0 - (bpm_diff / 40))
+        score_components.append(bpm_score * 1.2)
         weights_total += 1.2
 
-    # ── AcousticBrainz mood alignment ─────────────────────────────────────────
-    vibes_that_like_this_mood = []
+    # AcousticBrainz mood alignment
     for mood_key, vibe_list in _AB_MOOD_TO_VIBE.items():
         if dominant_vibe in vibe_list:
             mood_val = cached_features.get(mood_key)
@@ -307,11 +254,10 @@ def score_track_with_features(
                 score_components.append(float(mood_val) * 0.6)
                 weights_total += 0.6
 
-    # ── Junk track filter (via speechiness) ──────────────────────────────────
-    # Tracks with speechiness > 0.65 are likely podcasts/spoken word/YouTube junk
+    # Junk track filter
     speechiness = cached_features.get("speechiness")
     if speechiness is not None and speechiness > 0.65:
-        return 0.0  # hard zero for junk
+        return 0.0
 
     if not score_components or weights_total == 0:
         return 0.5
@@ -323,76 +269,92 @@ async def blend_audio_features(
     tracks: list[dict],
     dominant_vibe: str,
     bpm_knob: int,
-    db,  # Prisma client instance
+    db,
     audio_weight: float = 0.4,
     heuristic_key: str = "score",
+    feature_index: Optional[dict] = None,
 ) -> list[dict]:
     """
-    Async version: fetch cached audio features from DB and blend into scores.
-
-    Call this AFTER filter_and_score_tracks() has set 'score' on each track.
-    Looks up TrackFeatureCache for each track's Spotify ID.
+    Async: blend real audio features into heuristic track scores.
 
     Parameters
     ----------
     tracks : list[dict]
-        Must have 'score' key (heuristic) and ideally 'spotify_id'.
+        Must have 'score' key (heuristic).
     dominant_vibe : str
         e.g. "heartbreak", "hype"
     bpm_knob : int
-        0–100 user knob value
+        0–100 user knob value.
     db : Prisma
-        Connected Prisma client
+        Connected Prisma client — only queried when feature_index is None.
     audio_weight : float
-        Weight for audio feature score vs heuristic score. 0.4 means
-        40% audio features, 60% heuristic. Good default balance.
+        Weight for audio feature score vs heuristic score.
+    heuristic_key : str
+        Key on each track dict for the heuristic score.
+    feature_index : dict | None
+        Pass TRACK_FEATURE_INDEX from main.py for a zero-DB-call fast path.
+        Keys: "title_lower|artist_lower" → feature dict.
+        When None, falls back to DB lookup via Spotify IDs (original behaviour).
     """
     if not tracks:
         return tracks
 
-    # Gather all Spotify IDs we need to look up
-    spotify_ids = [t.get("spotify_id") or t.get("spotifyId") for t in tracks]
-    spotify_ids = [sid for sid in spotify_ids if sid]
-
-    if not spotify_ids:
-        logger.debug("[AudioFeatures] No Spotify IDs in pool — skipping feature blend")
-        return tracks
-
-    try:
-        # Batch fetch from cache
-        cached_rows = await db.trackfeaturecache.find_many(
-            where={"spotifyId": {"in": spotify_ids}}
-        )
-        cache_map = {row.spotifyId: row.__dict__ for row in cached_rows}
-
+    # ── Resolve feature map ───────────────────────────────────────────────────
+    if feature_index is not None:
+        # Fast path: in-process index, no DB call
+        cache_map: dict[str, dict] = {}
+        for t in tracks:
+            key = f"{(t.get('title') or '').strip().lower()}|{(t.get('artist') or '').strip().lower()}"
+            feat = feature_index.get(key)
+            if feat:
+                cache_map[key] = feat
         cache_hits = len(cache_map)
-        logger.info(f"[AudioFeatures] Cache hits: {cache_hits}/{len(spotify_ids)}")
+        logger.info(f"[AudioFeatures] Index hits: {cache_hits}/{len(tracks)} (no DB call)")
+    else:
+        # Fallback: original DB lookup via Spotify IDs
+        spotify_ids = [t.get("spotify_id") or t.get("spotifyId") for t in tracks]
+        spotify_ids = [sid for sid in spotify_ids if sid]
 
-        if cache_hits == 0:
-            return tracks  # nothing to blend — don't penalise
+        if not spotify_ids:
+            logger.debug("[AudioFeatures] No Spotify IDs — skipping feature blend")
+            return tracks
 
-    except Exception as e:
-        logger.warning(f"[AudioFeatures] DB lookup failed: {e}")
+        try:
+            cached_rows = await db.trackfeaturecache.find_many(
+                where={"spotifyId": {"in": spotify_ids}}
+            )
+            cache_map = {row.spotifyId: row.__dict__ for row in cached_rows}
+            cache_hits = len(cache_map)
+            logger.info(f"[AudioFeatures] DB cache hits: {cache_hits}/{len(spotify_ids)}")
+        except Exception as e:
+            logger.warning(f"[AudioFeatures] DB lookup failed: {e}")
+            return tracks
+
+    if not cache_map:
         return tracks
 
-    # Normalise heuristic scores
+    # ── Score and blend ───────────────────────────────────────────────────────
     h_scores = [t.get(heuristic_key, 0.0) for t in tracks]
-    h_max   = max(h_scores) if h_scores else 1.0
-    h_min   = min(h_scores) if h_scores else 0.0
-    h_range = (h_max - h_min) or 1.0
+    h_max    = max(h_scores) if h_scores else 1.0
+    h_min    = min(h_scores) if h_scores else 0.0
+    h_range  = (h_max - h_min) or 1.0
 
     result = []
     for t in tracks:
         t = t.copy()
-        sid = t.get("spotify_id") or t.get("spotifyId")
-        cached = cache_map.get(sid) if sid else None
 
-        h_norm = (t.get(heuristic_key, 0.0) - h_min) / h_range
+        if feature_index is not None:
+            key = f"{(t.get('title') or '').strip().lower()}|{(t.get('artist') or '').strip().lower()}"
+            cached = cache_map.get(key)
+        else:
+            sid    = t.get("spotify_id") or t.get("spotifyId")
+            cached = cache_map.get(sid) if sid else None
+
+        h_norm  = (t.get(heuristic_key, 0.0) - h_min) / h_range
         a_score = score_track_with_features(t, cached, dominant_vibe, bpm_knob)
 
-        # If junk (audio score = 0.0), hard exclude
         if a_score == 0.0 and cached is not None:
-            continue  # filter junk track entirely
+            continue  # hard-exclude junk tracks
 
         blended = (1.0 - audio_weight) * h_norm + audio_weight * a_score
         t["audio_score"]   = round(a_score, 3)
@@ -400,11 +362,13 @@ async def blend_audio_features(
         result.append(t)
 
     result.sort(key=lambda t: t.get("blended_score", 0.0), reverse=True)
-    logger.info(
-        f"[AudioFeatures] Blended {len(result)} tracks. "
-        f"Top: '{result[0].get('title')}' (blended={result[0].get('blended_score', 0):.3f})"
-        if result else "[AudioFeatures] Empty result after blending"
-    )
+    if result:
+        logger.info(
+            f"[AudioFeatures] Blended {len(result)} tracks. "
+            f"Top: '{result[0].get('title')}' (blended={result[0].get('blended_score', 0):.3f})"
+        )
+    else:
+        logger.info("[AudioFeatures] Empty result after blending")
     return result
 
 
@@ -419,33 +383,16 @@ async def get_thin_pool_supplement(
     """
     Fetch pre-cached tracks from ThinPoolCache for Language×Vibe combos
     that historically return few results from Last.fm.
-
-    Returns a list of track dicts, or empty list if no cache entry exists
-    or the cache has expired.
-
-    Call this in main.py BEFORE the Stage 3 safety pool (dream pop / indie pop).
-
-    Known thin combos (from 10k QA batch):
-      Japanese|ambient, Japanese|heartbreak, Japanese|dark,
-      Korean|Direct, Tamil|Direct, Hindi|Direct, Arabic|Direct,
-      Afrobeats|Direct, Portuguese|Direct, Any|Direct
     """
     language = language or "Any"
 
-    # Bug 3 Fix: Route highly restrictive/starved sub-vibes to broader pools
-    # so they don't dead-end in the ThinPoolCache with 0 tracks.
-    # "chill_mainstream" and "niche_ambient_slow" are knob presets that produce
-    # near-empty pools because their BPM/nicheness constraints are too tight.
-    # Routing them to their parent vibe gets a real pool instead of a cache miss.
     _FALLBACK_ROUTING: dict[str, str] = {
         "chill_mainstream": "chill",
         "niche_ambient_slow": "ambient",
     }
     mapped_vibe = _FALLBACK_ROUTING.get(dominant_vibe, dominant_vibe)
     if mapped_vibe != dominant_vibe:
-        logger.info(
-            f"[ThinPool] Restrictive vibe '{dominant_vibe}' → routed to broader pool '{mapped_vibe}'"
-        )
+        logger.info(f"[ThinPool] Restrictive vibe '{dominant_vibe}' → routed to broader pool '{mapped_vibe}'")
 
     cache_key = f"{language}|{mapped_vibe}"
 
@@ -457,11 +404,9 @@ async def get_thin_pool_supplement(
             logger.debug(f"[ThinPool] No cache for '{cache_key}'")
             return []
 
-        # Check expiry
-        now = datetime.now(timezone.utc)
+        now     = datetime.now(timezone.utc)
         expires = row.expiresAt
         if expires.tzinfo is None:
-            from datetime import timezone
             expires = expires.replace(tzinfo=timezone.utc)
 
         if now > expires:
@@ -488,11 +433,7 @@ async def refresh_thin_pool_cache(
     db,
     ttl_days: int = 7,
 ) -> None:
-    """
-    Write or update a ThinPoolCache entry.
-    Call this from enrich_thin_pools.py (offline) or when a thin pool
-    is detected at query time and new tracks are found via LB/MB fallback.
-    """
+    """Write or update a ThinPoolCache entry."""
     from datetime import datetime, timezone, timedelta
 
     cache_key  = f"{language}|{dominant_vibe}"

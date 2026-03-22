@@ -4,18 +4,26 @@ set -e
 echo "=== VibeFinderAI Backend Startup ==="
 
 # ── Prisma: only re-generate if schema changed or binaries missing ─────────
-# On Render, the Prisma binary is cached at a stable path after first install.
-# Re-running 'prisma generate' every boot wastes ~60s. We skip it if:
-#   1. The Prisma binary already exists in the cache
-#   2. The schema hasn't changed since last generate (checked via hash)
+# Uses python3 for hashing instead of md5sum/md5 which differ between Linux
+# (md5sum) and macOS (md5 -q) build environments on Render.
 
 PRISMA_CACHE_DIR="${HOME}/.cache/prisma-python/binaries"
 SCHEMA_HASH_FILE=".prisma_schema_hash"
-CURRENT_HASH=$(md5sum schema.prisma 2>/dev/null | cut -d' ' -f1 || echo "none")
+
+# python3 is guaranteed present in any environment running our FastAPI app
+CURRENT_HASH=$(python3 -c "
+import hashlib, sys
+try:
+    data = open('schema.prisma', 'rb').read()
+    print(hashlib.sha256(data).hexdigest())
+except FileNotFoundError:
+    print('none')
+")
+
 CACHED_HASH=$(cat "$SCHEMA_HASH_FILE" 2>/dev/null || echo "")
 PRISMA_BINARY_EXISTS=$(find "$PRISMA_CACHE_DIR" -name "query-engine*" 2>/dev/null | head -1)
 
-if [ -n "$PRISMA_BINARY_EXISTS" ] && [ "$CURRENT_HASH" = "$CACHED_HASH" ]; then
+if [ -n "$PRISMA_BINARY_EXISTS" ] && [ "$CURRENT_HASH" = "$CACHED_HASH" ] && [ "$CURRENT_HASH" != "none" ]; then
     echo "[Prisma] Binary cached and schema unchanged — skipping generate (saves ~60s)"
 else
     echo "[Prisma] Installing CLI and generating client..."
