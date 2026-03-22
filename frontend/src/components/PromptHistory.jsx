@@ -1,151 +1,62 @@
 /**
- * PromptHistory.jsx
- * VibeFinderAI Phase 9 — Recent searches panel
+ * PromptHistory.jsx — VibeFinderAI Phase 9
+ * Dark amber hardware aesthetic — DM Mono, amber/gold, panel-card style.
  * Place in: frontend/src/components/PromptHistory.jsx
- *
- * Fetches the last 10 vibe requests from GET /api/vibe/history
- * and displays them as a collapsible panel with one-click re-run.
- *
- * Usage:
- *   <PromptHistory
- *     token={authToken}
- *     onRerun={(prompt) => handleSubmit(prompt)}
- *     refreshTrigger={lastRequestId}   // increment to force refresh
- *   />
  */
-
 import React, { useEffect, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const VIBE_COLORS = {
-  party:      "#D85A30",
-  hype:       "#BA7517",
-  heartbreak: "#D4537E",
-  romantic:   "#D4537E",
-  chill:      "#1D9E75",
-  calm:       "#1D9E75",
-  focus:      "#378ADD",
-  dreamy:     "#7F77DD",
-  dark:       "#5F5E5A",
-  intense:    "#A32D2D",
-  rock:       "#993C1D",
-  indie_folk: "#3B6D11",
-  soulful:    "#854F0B",
-  euphoric:   "#7F77DD",
-  happy:      "#639922",
-  retro:      "#888780",
-  cinematic:  "#534AB7",
-  ambient:    "#0F6E56",
-  hyperpop:   "#993556",
-  default:    "#888780",
+  party: "#d97706", hype: "#b45309", heartbreak: "#be185d", romantic: "#db2777",
+  chill: "#059669", calm: "#10b981", focus: "#3b82f6", dreamy: "#7c3aed",
+  dark: "#4b5563", intense: "#dc2626", rock: "#b45309", indie_folk: "#16a34a",
+  soulful: "#d97706", euphoric: "#7c3aed", happy: "#16a34a", retro: "#6b7280",
+  cinematic: "#6d28d9", ambient: "#0d9488", hyperpop: "#db2777", default: "rgba(180,140,80,0.6)",
 };
 
-const LABEL_ICONS = {
-  "nailed it":  "●",
-  "best guess": "◐",
-  "exploring":  "○",
-};
+const LABEL_DOTS = { "nailed it": "●", "best guess": "◐", "exploring": "○" };
 
-function HistoryItem({ item, onRerun }) {
-  const dotColor = VIBE_COLORS[item.dominant_vibe] || VIBE_COLORS.default;
-  const icon = LABEL_ICONS[item.confidence_label] || "○";
+function HistoryRow({ item, onRerun, activeColor }) {
+  const col = VIBE_COLORS[item.dominant_vibe] || VIBE_COLORS.default;
+  const dot = LABEL_DOTS[item.confidence_label] || "○";
 
-  const timeAgo = (isoStr) => {
-    if (!isoStr) return "";
-    const diff = Date.now() - new Date(isoStr).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
+  const timeAgo = iso => {
+    if (!iso) return "";
+    const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+    if (m < 1) return "now";
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
   };
 
   return (
     <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: "10px",
-        padding: "10px 0",
-        borderTop: "0.5px solid var(--color-border-tertiary, rgba(0,0,0,0.08))",
-        cursor: "pointer",
-      }}
       onClick={() => onRerun(item.prompt)}
-      title="Click to re-run this search"
+      title={`Re-run: "${item.prompt}"`}
+      style={{
+        display: "flex", alignItems: "center", gap: "10px",
+        padding: "7px 0",
+        borderTop: "1px solid rgba(120,80,20,0.15)",
+        cursor: "pointer", transition: "background 0.1s",
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = "rgba(120,80,20,0.06)"}
+      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
     >
-      {/* Vibe dot */}
-      <span
-        style={{
-          fontSize: "10px",
-          color: dotColor,
-          marginTop: "3px",
-          flexShrink: 0,
-          width: "12px",
-          textAlign: "center",
-        }}
-      >
-        {icon}
-      </span>
-
-      {/* Prompt + meta */}
+      <span style={{ fontSize: "9px", color: col, width: "10px", textAlign: "center", flexShrink: 0 }}>{dot}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: "13px",
-            color: "var(--color-text-primary, #000)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
+        <div style={{ fontSize: "11px", color: "rgba(220,190,140,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {item.prompt}
         </div>
-        <div
-          style={{
-            fontSize: "11px",
-            color: "var(--color-text-tertiary, #888)",
-            marginTop: "2px",
-            display: "flex",
-            gap: "8px",
-            alignItems: "center",
-          }}
-        >
-          <span style={{ color: dotColor, fontWeight: 500 }}>
-            {item.dominant_vibe.replace("_", " ")}
-          </span>
-          {item.genres[0] && (
-            <>
-              <span style={{ opacity: 0.4 }}>·</span>
-              <span>{item.genres[0]}</span>
-            </>
-          )}
-          <span style={{ opacity: 0.4 }}>·</span>
-          <span>{item.track_count} tracks</span>
-          <span style={{ opacity: 0.4 }}>·</span>
-          <span>{timeAgo(item.created_at)}</span>
+        <div style={{ fontSize: "9px", color: "rgba(120,80,20,0.6)", fontFamily: "'DM Mono', monospace", marginTop: "2px", display: "flex", gap: "6px" }}>
+          <span style={{ color: col }}>{item.dominant_vibe.replace("_", " ")}</span>
+          {item.genres[0] && <><span>·</span><span>{item.genres[0]}</span></>}
+          <span>·</span><span>{item.track_count}trk</span>
+          <span>·</span><span>{timeAgo(item.created_at)}</span>
         </div>
       </div>
-
-      {/* Re-run arrow */}
-      <span
-        style={{
-          fontSize: "12px",
-          color: "var(--color-text-tertiary, #888)",
-          flexShrink: 0,
-          marginTop: "2px",
-          opacity: 0,
-          transition: "opacity 0.15s",
-        }}
-        className="rerun-arrow"
-      >
-        ↗
-      </span>
-
-      <style>{`
-        div:hover > .rerun-arrow { opacity: 1 !important; }
-      `}</style>
+      <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.3)", flexShrink: 0 }}>↗</span>
     </div>
   );
 }
@@ -155,89 +66,48 @@ export default function PromptHistory({ token, onRerun, refreshTrigger, style = 
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const fetchHistory = async () => {
+  const fetch_ = async () => {
     if (!token) return;
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/vibe/history?limit=10`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) return;
-      const data = await res.json();
-      setHistory(data.history || []);
-    } catch (_) {
-      // Silently fail
-    } finally {
-      setLoading(false);
-    }
+      if (res.ok) setHistory((await res.json()).history || []);
+    } catch (_) {}
+    finally { setLoading(false); }
   };
 
-  // Fetch on mount and when a new request completes
-  useEffect(() => {
-    fetchHistory();
-  }, [token, refreshTrigger]);
+  useEffect(() => { fetch_(); }, [token, refreshTrigger]);
 
   if (history.length === 0 && !loading) return null;
 
   return (
-    <div style={{ marginTop: "20px", ...style }}>
-      {/* Toggle header */}
+    <div style={{ marginTop: "10px", ...style }}>
       <button
-        onClick={() => {
-          setOpen((v) => !v);
-          if (!open) fetchHistory();
-        }}
+        onClick={() => { setOpen(v => !v); if (!open) fetch_(); }}
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          background: "none",
-          border: "none",
-          padding: "0",
-          cursor: "pointer",
-          color: "var(--color-text-secondary, #555)",
-          fontSize: "12px",
-          fontWeight: 500,
-          fontFamily: "inherit",
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
+          display: "flex", alignItems: "center", gap: "6px",
+          background: "none", border: "none", padding: "0", cursor: "pointer",
+          color: "rgba(120,80,20,0.5)", fontFamily: "'DM Mono', monospace",
+          fontSize: "9px", letterSpacing: "0.2em", textTransform: "uppercase",
         }}
       >
-        <span style={{ fontSize: "10px", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>
-          ▶
-        </span>
+        <span style={{ fontSize: "8px", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
         Recent searches
         {history.length > 0 && (
-          <span
-            style={{
-              fontSize: "10px",
-              padding: "1px 7px",
-              borderRadius: "99px",
-              background: "var(--color-background-secondary, rgba(0,0,0,0.06))",
-              color: "var(--color-text-tertiary, #888)",
-            }}
-          >
+          <span style={{ fontSize: "8px", padding: "1px 6px", borderRadius: "3px", background: "rgba(120,80,20,0.15)", color: "rgba(180,140,80,0.5)" }}>
             {history.length}
           </span>
         )}
       </button>
 
-      {/* History list */}
       {open && (
-        <div style={{ marginTop: "8px" }}>
+        <div style={{ marginTop: "6px" }}>
           {loading && history.length === 0 ? (
-            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary, #888)", padding: "8px 0" }}>
-              Loading…
-            </div>
+            <div style={{ fontSize: "10px", color: "rgba(120,80,20,0.4)", fontFamily: "'DM Mono', monospace", padding: "6px 0" }}>Loading…</div>
           ) : (
-            history.map((item) => (
-              <HistoryItem key={item.id} item={item} onRerun={onRerun} />
-            ))
-          )}
-          {history.length === 0 && !loading && (
-            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary, #888)", padding: "8px 0" }}>
-              No recent searches yet.
-            </div>
+            history.map(item => <HistoryRow key={item.id} item={item} onRerun={onRerun} />)
           )}
         </div>
       )}

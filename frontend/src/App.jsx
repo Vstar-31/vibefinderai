@@ -1738,18 +1738,19 @@ export default function App({ onNavigate }) {
                         Re-fetching with genre filter…
                       </span>
                     )}
-
-                    {/* Phase 9: AI vibe story — fires async after results load */}
-                    {result && !useSecondaryVibe && (
-                      <VibeStory
-                        prompt={prompt}
-                        response={result}
-                        token={token}
-                      />
-                    )}
                   </div>
                 </div>
               </div>
+            </div>
+
+              {/* Phase 9: AI vibe story — full-width below the 3-card grid */}
+              {result && !useSecondaryVibe && (
+                <VibeStory
+                  prompt={prompt}
+                  response={result}
+                  token={token}
+                  activeColor={activeColor}
+                />
 
               {/* ── Phase 9: REFINE THIS — sits above the playlist so users see it immediately ── */}
               {result && !loading && (
