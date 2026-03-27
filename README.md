@@ -1,206 +1,230 @@
-# VibeFinderAI — Product Documentation
+# VibeFinderAI
 
-***
+VibeFinderAI is an AI-powered, vibe-first music discovery platform.
+Instead of searching by artist or genre only, users describe a feeling or scene in natural language and get a playable recommendation set with controls for artist similarity, nicheness, BPM, language, and service integrations.
 
-## What is VibeFinderAI?
+Production frontend: https://vibefinderai.netlify.app/
+Production backend: https://vibefinderai.onrender.com/
 
-**VibeFinderAI** is an AI-powered music discovery platform that finds songs matching a *feeling, mood, or scene* — not just a genre or artist name. Instead of searching for "pop" or "hip-hop," you describe an experience in plain language — like *"late night drive through rain-slicked streets, Travis Scott on the radio"* — and the engine analyzes your description and returns a curated playlist of tracks that match that exact vibe. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+## Latest Project Status (March 2026)
 
-The interface is designed with an aesthetic inspired by audio hardware and synthesizers — complete with rotary knobs, oscilloscope animations, and a dark studio-panel visual theme — making it feel like operating a professional audio intelligence machine.
+- Monorepo with React + Vite frontend and FastAPI backend
+- Supabase PostgreSQL via Prisma Python client
+- Multi-service integrations: Spotify, YouTube, Last.fm, Deezer, SoundCloud, Apple
+- Built-in analytics dashboard with token-gated metrics endpoints
+- Semantic ranking fallback system tuned for low-memory Render deployment
+- Persistent YouTube search caching backed by DB thin-pool cache
 
-***
+## Repository Layout
 
-## Core Concept: Vibe-Based Discovery
+- `frontend/` - React UI (Vite + Tailwind v4)
+- `backend/` - FastAPI API server, recommendation engine, analytics routes, service OAuth routes
+- `backend/core/` - core vibe engine and ranking logic
+- `backend/routes/` - auth, analytics, playlist, Spotify, services, Apple, metrics auth
+- `backend/analyzers/` - semantic + sentiment analyzers and reporting utilities
+- `backend/data/` - configs and enrichment scripts
+- `analysis_reports/` - test and batch analysis artifacts
+- `run_archives/` - archived run logs
+- `tobeanalysed/` - input/result scratch and checkpoint files for batch workflows
 
-Traditional music apps let you search by artist, song, or genre. VibeFinderAI takes a fundamentally different approach: **describe the emotional and situational context** of what you want to listen to, and the AI figures out what matches. This is particularly powerful for moods, activities, or scenes that don't map neatly to a single genre.
+See `filesystem.md` for a broader structural reference.
 
-***
+## Tech Stack
 
-## How It Works — Step by Step
+### Frontend
 
-### Step 1: Connect / Authenticate
-At the top of the interface is the **OSC (Oscillator/Access)** input field alongside a **DISCONNECT** button. This handles the session authentication, connecting your instance to the AI engine before you can run an analysis. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+- React 19
+- Vite 7
+- Tailwind CSS 4
+- ESLint 9
 
-### Step 2: Describe the Vibe
-The large central text field — labeled **"Describe the Vibe // ACOUSTIC DESCRIPTOR INPUT"** — is where you type your mood, scene, or experience in natural language. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+### Backend
 
-Example prompt shown in the interface:
-> *"Late night drive through rain-slicked streets, Travis Scott on the radio..."*
+- Python 3.12
+- FastAPI + Uvicorn
+- Prisma (Python)
+- JWT auth (`PyJWT` + `python-jose` for metrics auth)
+- `httpx` and `aiohttp` for external API access
+- `slowapi` rate limiting (when available)
 
-You can mention:
-- Moods (chill, dark, euphoric, melancholic)
-- Artists you like as a reference point
-- Scenes or activities (studying, working out, a night drive, heartbreak)
-- Atmospheric descriptions (rainy, dreamy, nostalgic)
+### Data and Infrastructure
 
-### Step 3: Tune the Knobs (Optional)
-Three rotary knobs at the top of the panel let you fine-tune the acoustic parameters: [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+- Supabase PostgreSQL
+- Render deployment for backend
+- Netlify deployment for frontend
 
-| Knob | Function |
-|------|----------|
-| **ARTIST** | How closely the results should resemble a specific artist's sound |
-| **NICHENESS** | Controls how obscure or mainstream the track recommendations should be — turn it up for deep cuts, down for popular hits |
-| **BPM** | Sets the target energy level / tempo range for the results |
+## Core Capabilities
 
-### Step 4: Select Language
-A **LANGUAGE** dropdown lets you filter results by the language of the songs. Supported options include: [vibefinderai.netlify](https://vibefinderai.netlify.app/)
-- Any Language (default)
-- Hindi, Punjabi, Tamil, Telugu, Kannada, Malayalam, Bengali, Urdu *(extensive Indian language support)*
-- English, Korean, Japanese, Spanish, Portuguese, French, Arabic
-- **Afrobeats** (genre-language hybrid filter)
+- Natural-language vibe analysis and recommendation generation
+- Optional Gemini enhancement path when configured (`GEMINI_API_KEY`)
+- Language-aware vibe tagging
+- Track feedback loop (thumbs up/down)
+- Playlist and social-style persistence flows
+- OAuth flows for connected services
+- Real-time analytics snapshots and live metrics
 
-### Step 5: Set Track Count
-Choose how many songs you want in your generated playlist: **5, 10, 20, or 50 tracks**. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+## Analytics System
 
-### Step 6: Run Analysis
-Click the **RUN ANALYSIS** button to send your vibe description to the AI engine. The button activates only once you've typed something in the descriptor field.
+Analytics is integrated and active in the backend.
 
-***
+Key endpoints:
 
-## Results — What You Get
+- `POST /api/metrics/auth` - exchange passphrase for 7-day metrics token
+- `GET /api/analytics/dashboard` - aggregate dashboard snapshot
+- `GET /api/analytics/live` - lightweight live stats
+- `GET /api/analytics/vibes` - vibe distribution
+- `GET /api/analytics/export` - CSV export
 
-After analysis completes, the interface transitions to a detailed results view:
+See:
 
-### Analysis Complete Panel
+- `ANALYTICS.md`
+- `ANALYTICS_OVERVIEW.md`
+- `ANALYTICS_INTEGRATION.md`
+- `ANALYTICS_ARCHITECTURE.txt`
 
-#### Dominant Vibe Card
-The AI classifies your description into a **Dominant Vibe** — a single emotional label like *"chill"*, *"hype"*, *"melancholic"*, etc. — along with a **Confidence score** (e.g., 53%). If the AI detects an overlapping mood, it surfaces a **Secondary Signature** with an option to *"Pivot Engine to: [secondary vibe]"* for alternative results. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+## Quick Start
 
-#### Target Tempo Card
-Displays the matched **BPM range** (e.g., *70–100 BPM*) and describes the rhythmic feel, such as *"Rhythmic Pulse"*. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+### Prerequisites
 
-#### Engine State / Genre Tags
-A panel of clickable genre tags representing the AI's interpretation of your vibe — such as **NEO-SOUL, INDIE R&B, CHILLWAVE, LO-FI HIP HOP, VAPORWAVE, PLUGGNB, JAZZ HOP, TRIP HOP, YACHT ROCK, BALEARIC BEAT, DOWNTEMPO, CHILLSTEP, LOUNGE**. Clicking a genre applies a **hard filter** to narrow results. Locked artist references (e.g., *LOCKED: TRAVIS SCOTT*) show when the AI anchored its analysis to a specific artist you mentioned. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+- Node.js 20+
+- Python 3.12+
+- pip
+- Prisma CLI available through backend setup scripts
+- Supabase/PostgreSQL connection strings
 
-### Generated Playlist
-The main playlist section lists all matched tracks, each with:
-- **Album artwork thumbnail**
-- **Track title** and **Artist name**
-- **👍 / 👎 feedback buttons** — to rate whether a suggestion was a good match (for future refinement)
-- **"Play All" button** — queues all results with embeds (full-length songs on YouTube or available platforms) in the floating MusicPlayer
-- **"Play" button** *(appears when YouTube is connected)* — launches the floating MusicPlayer with just that single track for full-length playback via YouTube embeds
-- **"Preview" button** — plays a 30-second iTunes preview clip inline without launching the player
-- **Service action buttons** (YouTube, Spotify, etc.) — connects to those services or opens tracks directly
-- For standalone testing, a **"Save to YouTube Playlist"** action creates a new playlist on the connected YouTube account [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+### 1) Install dependencies
 
-### Neural Match Breakdown
-A set of hashtag-style keywords extracted from your input — for example: `#late night` `#late night drive` `#night drive` `#rain` `#travis scott` — showing exactly which semantic concepts the AI used to match your vibe. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+From repo root:
 
-***
+```bash
+npm install
+cd frontend && npm install
+cd ../backend && pip install -r requirements.txt
+```
 
-## Pro Mode — Manual Overrides
+Or use root helper script:
 
-Clicking **MANUAL OVERRIDES // PRO MODE** expands an advanced control panel: [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+```bash
+npm run install:all
+```
 
-| Control | What It Does |
-|--------|--------------|
-| **Force Artist Bypass** | Lock the results to a specific artist's discography or sound profile (e.g., type "Deftones") regardless of vibe |
-| **Force Genre Bypass** | Lock results to a specific genre (e.g., "shoegaze") overriding the AI's genre inference |
-| **Hard-Switch to Secondary Vibe** | Toggle to force the engine to use the secondary detected vibe instead of the dominant one |
+### 2) Configure environment variables
 
-This is designed for power users who want to combine the vibe-based AI matching with manual genre/artist constraints.
+### Frontend
 
-***
+`frontend/.env.local`
 
-## Technology Stack
+```env
+VITE_API_URL=http://localhost:8000
+```
 
-VibeFinderAI is built as a modern full-stack web application:
+`frontend/.env.production`
 
-**Frontend:**
-- React with Vite (JavaScript ES6 JSX)
-- CSS animations and audio visualization (oscilloscope effects)
-- Responsive hybrid UI with hardware knob components
-- Deployed on Netlify CDN
-- MusicPlayer component for full-length track playback
+```env
+VITE_API_URL=https://vibefinderai.onrender.com
+```
 
-**Backend:**
-- FastAPI (Python) with JWT authentication + metrics token authentication
-- Prisma ORM for database management
-- LangChain orchestration for AI prompts
-- vibe_engine.py NLP engine for semantic analysis
-- Audio server with httpx async HTTP client
-- Rate limiting (slowapi) for endpoint protection
+### Backend
 
-**Database:**
-- Supabase PostgreSQL with Prisma schema
-- User authentication and social graph
-- Playlist history and feedback tracking
-- Metrics and analytics collection
+Create `backend/.env` with at least:
 
-**External APIs & Services:**
-- **Last.fm API** — Music metadata, artist info, track ISRC mapping (OAuth2)
-  - New: `/api/lastfm/proxy` endpoint for CORS-free frontend access
-- **Spotify Web API** — Track discovery and deep links (OAuth2)
-- **Deezer API** — Additional track data enrichment
-- **SoundCloud API** — Music discovery and previews
-- **YouTube API** — Full-length song embeds, OAuth2 playlist creation
-  - Features: 7-day search cache, sequential playlist additions, exponential backoff retry logic (up to 4 attempts per video on 409 errors)
-- **iTunes API** — 30-second preview clips
-- **Google Generative AI (Gemini)** — NLP enhancement for prompt analysis
+```env
+DATABASE_URL=postgresql://...
+DIRECT_URL=postgresql://...
+SECRET_KEY=replace_me
+FRONTEND_URL_PROD=http://localhost:5173
+FRONTEND_URL=https://vibefinderai.netlify.app
+BACKEND_URL=https://vibefinderai.onrender.com
 
-**Deployment:**
-- Backend: Render (OnRender) with auto-deploy on git push
-- Frontend: Netlify with auto-deploy on git push
-- Environment variables: `.env` for API keys, secrets, and configuration
-- CI/CD pipeline for automated testing and deployment
+LASTFM_API_KEY=
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
+YOUTUBE_API_KEY=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 
-***
+METRICS_PASSPHRASE=
+METRICS_SECRET=
 
-## Project Structure
+GEMINI_API_KEY=
+```
 
-See [filesystem.md](filesystem.md) for complete directory structure. Key directories:
+Note: some integrations require additional service-specific secrets (for example Last.fm shared secret, Deezer and SoundCloud OAuth credentials, Apple credentials).
 
-- `/frontend` — React app, components, styling
-- `/backend` — FastAPI server, AI engine, enrichment pipeline
-- `/backend/schema.prisma` — Database schema
-- Documentation files describe architecture and deployment
+### 3) Run in development
 
-***
+From repo root (both frontend + backend):
 
-## Development Phases
+```bash
+npm run dev
+```
 
-The project is organized into 6 development phases. See [phases.md](phases.md) for detailed breakdown:
+Or separately:
 
-1. **Phase 1**: Foundation, Monorepo, Database & JWT Auth
-2. **Phase 2**: Core Music APIs & ISRC Mapping
-3. **Phase 3**: AI Recommendation Engine (LangChain + vibe_engine)
-4. **Phase 4**: Social Graph & Community Features
-5. **Phase 5**: Audio Visualization & Hybrid UI
-6. **Phase 6**: Production Deployment & CI/CD
+```bash
+# frontend
+cd frontend
+npm run dev
 
-***
+# backend
+cd backend
+uvicorn main:app --reload --port 8000
+```
 
-## Documentation Reference
+### 4) Health check
 
-- [architecture.md](architecture.md) — System architecture with Mermaid diagrams
-- [filesystem.md](filesystem.md) — Complete folder structure
-- [features.md](features.md) — Feature-by-phase breakdown
-- [phases.md](phases.md) — Development roadmap (Phases 1-6)
-- [analysis.md](analysis.md) — QA & stress test results
-- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) — Production deployment instructions
-- [monetisation.md](monetisation.md) — API licensing & cost reference
+```bash
+curl http://localhost:8000/health
+```
 
-***
+Expected response includes status and database connectivity.
 
-## Additional UI Elements
+## API Overview
 
-- **SIGNAL ACTIVE** indicator with an animated waveform bar — shows the engine is live and processing [vibefinderai.netlify](https://vibefinderai.netlify.app/)
-- **RESET ENGINE** button — appears after a search to clear results and start fresh [vibefinderai.netlify](https://vibefinderai.netlify.app/)
-- Real-time **audio waveform visualizer** in the top-right of the input panel
-- The entire UI is responsive and styled with a retro-futuristic synthesizer/oscilloscope aesthetic that reinforces the "acoustic intelligence" branding
+Common backend routes currently include:
 
-***
+- `GET /` - service metadata
+- `GET /health` - health probe
+- `POST /auth/register`, `POST /auth/token` - auth flows
+- `POST /api/vibe/analyze` - core vibe analysis request
+- `GET /api/playlist/*` - playlist operations
+- `GET /api/services/*` - multi-service OAuth and actions
+- `GET /api/spotify/*` - Spotify integration endpoints
+- `GET /api/analytics/*` - analytics data endpoints
 
-## Key Use Cases
+For full route-level details, refer to files under `backend/routes/` and `backend/main.py`.
 
-1. **Mood-based listening** — You feel something but don't know what song fits. Just describe the feeling.
-2. **Scene or activity playlists** — Gaming session, late-night coding, gym workout, study session — describe the context and get a perfectly tuned playlist.
-3. **Artist-inspired discovery** — Mention a reference artist and let the AI find sonically similar but lesser-known tracks (use the Nicheness knob).
-4. **Multilingual music discovery** — Specifically powerful for discovering Indian regional music (Hindi, Tamil, Punjabi, etc.) through emotional descriptions.
-5. **Genre exploration** — Use the Engine State genre tags as clickable filters to drill into specific subgenres surfaced by the AI.
+## Deployment
 
-***
+Backend deployment configuration is in `render.yaml` and uses `backend/start.sh`.
 
-## Summary
+`backend/start.sh` includes:
 
-VibeFinderAI is a mood-first, language-native music discovery engine. Instead of asking *"what genre?"*, it asks *"what does this moment feel like?"* — and delivers a real, playable Spotify playlist that matches. With support for 16+ languages, adjustable acoustic parameters, genre filtering, and Pro Mode overrides, it serves both casual listeners who just want to describe a feeling and power users who want precise control over their discovery experience. [vibefinderai.netlify](https://vibefinderai.netlify.app/)
+- schema hash check for Prisma generation caching
+- lazy Prisma client generation when schema changes
+- low-memory-friendly startup choices for Render
+
+Frontend is deployed on Netlify and should be built with the correct `VITE_API_URL` for target environment.
+
+See `DEPLOYMENT_GUIDE.md` for deployment steps.
+
+## Documentation Index
+
+- `architecture.md` - architecture overview
+- `features.md` - feature tracking
+- `phases.md` - project roadmap and phases
+- `analysis.md` - analysis and QA notes
+- `ANALYTICS.md` - analytics design and usage
+- `DEPLOYMENT_GUIDE.md` - deployment setup
+- `monetisation.md` - cost and monetization notes
+
+## Notes for Contributors
+
+- Keep backend route wiring centralized in `backend/main.py`
+- Prefer lightweight dependencies for Render free-tier compatibility
+- Avoid introducing torch-heavy packages unless deployment capacity is upgraded
+- Keep analytics read endpoints token-gated when exposed publicly
+
+## License
+
+No explicit license file is currently present in this repository. Add one before public redistribution.
