@@ -104,6 +104,27 @@ RB_LIMITER = RateLimiter(RB_RATE_LIMIT)
 AB_LIMITER = RateLimiter(AB_RATE_LIMIT)
 MB_LIMITER = RateLimiter(MB_RATE_LIMIT)
 
+
+def _has_cached_features(row: object) -> bool:
+    fields = (
+        "tempo",
+        "energy",
+        "valence",
+        "danceability",
+        "acousticness",
+        "instrumentalness",
+        "loudness",
+        "speechiness",
+        "moodHappy",
+        "moodSad",
+        "moodRelaxed",
+        "moodAggressive",
+        "moodParty",
+        "moodAcoustic",
+        "moodElectronic",
+    )
+    return any(getattr(row, f, None) is not None for f in fields)
+
 # ─── IN-MEMORY CACHE ─────────────────────────────────────────────────────────
 
 # Prevents 100 concurrent workers from hitting MusicBrainz for the exact same track simultaneously
@@ -381,7 +402,11 @@ async def enrich_from_artist_songs(db: Prisma, client: httpx.AsyncClient) -> Non
     
     log.info(f"Loaded {len(artists)} artists. Fetching existing cache keys...")
     existing_records = await db.trackfeaturecache.find_many()
-    existing_set = {f"{r.title.lower()}|{r.artist.lower()}" for r in existing_records if r.title and r.artist}
+    existing_set = {
+        f"{r.title.lower()}|{r.artist.lower()}"
+        for r in existing_records
+        if r.title and r.artist and _has_cached_features(r)
+    }
     log.info(f"Loaded {len(existing_set)} existing tracks from DB cache.")
 
     tasks = []
@@ -476,7 +501,7 @@ async def enrich_from_spotify_ids(
 
     log.info(f"Loaded {len(lines)} IDs. Fetching existing cache keys...")
     existing_records = await db.trackfeaturecache.find_many(where={"spotifyId": {"not": None}})
-    existing_set = {r.spotifyId for r in existing_records if r.spotifyId}
+    existing_set = {r.spotifyId for r in existing_records if r.spotifyId and _has_cached_features(r)}
 
     tasks = []
     for line in lines:
@@ -556,7 +581,7 @@ async def enrich_from_playlist_tracks(db: Prisma, client: httpx.AsyncClient) -> 
     """
     log.info("Fetching existing cache keys...")
     existing_records = await db.trackfeaturecache.find_many(where={"spotifyId": {"not": None}})
-    existing_set = {r.spotifyId for r in existing_records if r.spotifyId}
+    existing_set = {r.spotifyId for r in existing_records if r.spotifyId and _has_cached_features(r)}
 
     tracks = await db.track.find_many(where={"spotifyId": {"not": None}})
     uncached_tracks = [t for t in tracks if t.spotifyId not in existing_set]
@@ -659,6 +684,18 @@ async def main():
         default=None,
         help="Enrich a single Spotify ID directly",
     )
+    parser.add_argument(
+        "--title",
+        type=str,
+        default="",
+        help="Optional title to improve MB/ISRC enrichment in --spotify-id mode",
+    )
+    parser.add_argument(
+        "--artist",
+        type=str,
+        default="",
+        help="Optional artist to improve MB/ISRC enrichment in --spotify-id mode",
+    )
     args = parser.parse_args()
 
     db = Prisma()
@@ -674,9 +711,34 @@ async def main():
                 rb = await rb_get_features(client, args.spotify_id)
                 if rb:
                     features.update(rb)
-                    log.info(f"ReccoBeats: {features}")
+                    log.info("ReccoBeats features fetched")
                 else:
                     log.info("ReccoBeats: no result")
+
+                mbid = None
+                isrc = None
+                if args.title and args.artist:
+                    mbid, isrc = await memoized_mbid_and_isrc_lookup(client, args.title, args.artist)
+                    if mbid:
+                        ab = await ab_get_mood_features(client, mbid)
+                        if ab:
+                            for k, v in ab.items():
+                                if v is not None and k not in features:
+                                    features[k] = v
+
+                if features:
+                    await cache_track_features(
+                        db,
+                        spotify_id=args.spotify_id,
+                        mbid=mbid,
+                        isrc=isrc,
+                        title=args.title or args.spotify_id,
+                        artist=args.artist or "Unknown Artist",
+                        features=features,
+                    )
+                    log.info("Single track cached into TrackFeatureCache")
+                else:
+                    log.warning("No features found for this Spotify ID")
 
             elif args.source == "artist_songs":
                 await enrich_from_artist_songs(db, client)

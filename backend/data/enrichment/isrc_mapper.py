@@ -233,37 +233,38 @@ async def upsert_isrc(
     Write ISRC + MBID data back to TrackFeatureCache.
     Uses upsert to avoid duplicates. Returns True on success.
     """
+    payload = {
+        "title": title,
+        "artist": artist,
+        "isrc": isrc,
+        "mbid": mbid,
+        "workMbid": work_mbid,
+        "language": language,
+    }
+
     try:
-        await db.trackfeaturecache.upsert(
-            where={"isrc": isrc},
-            data={
-                "create": {
-                    "title":    title,
-                    "artist":   artist,
-                    "isrc":     isrc,
-                    "mbid":     mbid,
-                    "workMbid": work_mbid,
-                    "language": language,
-                },
-                "update": {
-                    "mbid":     mbid,
-                    "workMbid": work_mbid,
-                    "language": language,
-                },
-            },
-        )
+        # First preference: exact ISRC match.
+        existing = await db.trackfeaturecache.find_first(where={"isrc": isrc})
+        if not existing and mbid:
+            # Second preference: MBID match.
+            existing = await db.trackfeaturecache.find_first(where={"mbid": mbid})
+        if not existing:
+            # Final fallback: title+artist row.
+            existing = await db.trackfeaturecache.find_first(where={"title": title, "artist": artist})
+
+        if existing:
+            await db.trackfeaturecache.update(
+                where={"id": existing.id},
+                data={k: v for k, v in payload.items() if v is not None},
+            )
+        else:
+            await db.trackfeaturecache.create(
+                data={k: v for k, v in payload.items() if v is not None},
+            )
         return True
     except Exception as e:
-        # Fall back: update by title+artist if ISRC unique constraint not in schema
-        try:
-            await db.trackfeaturecache.update_many(
-                where={"title": title, "artist": artist},
-                data={"isrc": isrc, "mbid": mbid},
-            )
-            return True
-        except Exception as e2:
-            log.warning(f"[DB] upsert_isrc failed for '{title}': {e2}")
-            return False
+        log.warning(f"[DB] upsert_isrc failed for '{title}': {e}")
+        return False
 
 
 # ─── CROSS-LANGUAGE CLUSTER BUILDER ──────────────────────────────────────────
@@ -393,7 +394,7 @@ async def batch_enrich(
     try:
         where: dict = {}
         if skip_existing:
-            where["isrc"] = None  # only enrich rows missing ISRC
+            where["OR"] = [{"isrc": None}, {"isrc": ""}]  # only enrich rows missing ISRC
         if language:
             where["language"] = language
 
@@ -495,16 +496,18 @@ async def _cli_main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--batch",     action="store_true",      help="Batch enrich TrackFeatureCache")
     group.add_argument("--title",     type=str,                  help="Single track title")
+    group.add_argument("--work-id",  type=str, default=None,    help="Find variants for a Work MBID")
     parser.add_argument("--artist",   type=str, default="",      help="Artist name (with --title)")
     parser.add_argument("--language", type=str, default=None,    help="Filter by language")
     parser.add_argument("--limit",    type=int, default=500,     help="Max tracks to process")
-    parser.add_argument("--work-id",  type=str, default=None,    help="Find variants for a Work MBID")
     args = parser.parse_args()
 
     if args.batch:
         await batch_enrich(language=args.language, limit=args.limit)
 
     elif args.title:
+        if not args.artist:
+            parser.error("--artist is required when using --title")
         db = Prisma()
         await db.connect()
         async with httpx.AsyncClient() as client:

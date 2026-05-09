@@ -160,6 +160,8 @@ model TrackFeatureCache {
   spotifyId        String?  @unique  // primary lookup key
   mbid             String?  @unique  // secondary key (MusicBrainz Recording ID)
   isrc             String?           // ISRC for cross-referencing
+  workMbid         String?           // MusicBrainz Work ID (cross-language composition grouping)
+  language         String?           // Optional language/region tag used for regional clustering
 
   title            String
   artist           String
@@ -192,6 +194,9 @@ model TrackFeatureCache {
 
   @@index([spotifyId])
   @@index([mbid])
+  @@index([isrc])
+  @@index([workMbid])
+  @@index([language])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -45,6 +45,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import time
 from typing import Optional
 
@@ -97,6 +98,54 @@ class RateLimiter:
 MB_LIMITER   = RateLimiter(1.1)   # 1 req/s + 0.1s safety buffer
 LB_LIMITER   = RateLimiter(0.5)   # 2 req/s
 TADB_LIMITER = RateLimiter(0.55)  # ~2 req/s
+
+
+def _is_blank(value: Optional[str]) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _needs_empty_retry(value: Optional[str]) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    raw = value.strip().lower()
+    return raw in ("", "[]", '[{"status": "empty"}]')
+
+
+def _artist_needs_enrichment(artist: object, phases: set[str]) -> bool:
+    if "mb" in phases and (not artist.mbid or _is_blank(artist.mbTags)):
+        return True
+
+    if "lb" in phases and LB_TOKEN and _needs_empty_retry(artist.lbSimilarArtists):
+        return True
+
+    if "tadb" in phases:
+        if artist.tadbId is None:
+            return True
+        if _is_blank(artist.tadbMood) or _is_blank(artist.tadbStyle):
+            return True
+        if _needs_empty_retry(artist.tadbTop10):
+            return True
+
+    return False
+
+
+async def _find_many_with_retry(find_many_fn, **kwargs) -> list[object]:
+    retries = int(os.getenv("ARTIST_DB_READ_RETRIES", "8"))
+    for attempt in range(1, retries + 1):
+        try:
+            return await find_many_fn(**kwargs)
+        except (asyncio.CancelledError, Exception) as e:
+            if attempt >= retries:
+                raise
+            backoff = min(2 ** (attempt - 1), 20)
+            jitter = random.uniform(0.0, 0.4)
+            log.warning(
+                f"DB read timeout/error on attempt {attempt}/{retries}: {e}. "
+                f"Retrying in {(backoff + jitter):.1f}s..."
+            )
+            await asyncio.sleep(backoff + jitter)
 
 
 # ─── MUSICBRAINZ ─────────────────────────────────────────────────────────────
@@ -286,20 +335,20 @@ async def enrich_artist(
                 current_mbid = mb_artist["id"]
                 update_data["mbid"] = current_mbid
                 
-        if current_mbid and artist.mbTags is None:
+        if current_mbid and _is_blank(artist.mbTags):
             tags = await mb_get_artist_tags(client, current_mbid)
             update_data["mbTags"] = ",".join(tags) if tags else ""
-        elif not current_mbid and artist.mbTags is None:
+        elif not current_mbid and _is_blank(artist.mbTags):
             update_data["mbTags"] = ""
 
     # ── Phase 2: ListenBrainz ─────────────────────────────────────────────────
     if "lb" in phases and LB_TOKEN:
         mbid_for_lb = update_data.get("mbid") or artist.mbid
         
-        if mbid_for_lb and (artist.lbSimilarArtists is None or "empty" in artist.lbSimilarArtists):
+        if mbid_for_lb and _needs_empty_retry(artist.lbSimilarArtists):
             similar = await lb_get_similar_artists(client, mbid_for_lb)
             update_data["lbSimilarArtists"] = json.dumps(similar) if similar else '[{"status": "empty"}]'
-        elif not mbid_for_lb and artist.lbSimilarArtists is None:
+        elif not mbid_for_lb and _needs_empty_retry(artist.lbSimilarArtists):
             update_data["lbSimilarArtists"] = '[{"status": "empty"}]'
 
     # ── Phase 3: TheAudioDB ───────────────────────────────────────────────────
@@ -311,18 +360,21 @@ async def enrich_artist(
             if tadb_artist:
                 current_tadb_id = int(tadb_artist.get("idArtist", 0)) or None
                 if current_tadb_id:
-                    update_data["tadbId"]    = current_tadb_id
-                    update_data["tadbMood"]  = tadb_artist.get("strMood") or ""
+                    update_data["tadbId"] = current_tadb_id
+
+                if _is_blank(artist.tadbMood):
+                    update_data["tadbMood"] = tadb_artist.get("strMood") or ""
+                if _is_blank(artist.tadbStyle):
                     update_data["tadbStyle"] = tadb_artist.get("strStyle") or ""
 
-        if current_tadb_id and artist.tadbTop10 in (None, "[]"):
+        if current_tadb_id and _needs_empty_retry(artist.tadbTop10):
             top10 = await tadb_get_top_tracks(client, name, current_tadb_id)
             if top10:
                 update_data["tadbTop10"] = json.dumps(top10)
             else:
                 update_data["tadbTop10"] = '[{"status": "empty"}]'
                 
-        elif not current_tadb_id and artist.tadbTop10 in (None, "[]"):
+        elif not current_tadb_id and _needs_empty_retry(artist.tadbTop10):
             update_data["tadbTop10"] = '[{"status": "empty"}]'
 
     # ── Persist ───────────────────────────────────────────────────────────────
@@ -347,7 +399,14 @@ async def main():
                         help="Comma-sep phases to run: mb,lb,tadb (default: all)")
     args = parser.parse_args()
 
-    phases = set(p.strip() for p in args.phase.split(","))
+    phases = {p.strip() for p in args.phase.split(",") if p.strip()}
+    valid_phases = {"mb", "lb", "tadb"}
+    invalid = phases - valid_phases
+    if invalid:
+        parser.error(f"Invalid --phase values: {sorted(invalid)}. Allowed: mb,lb,tadb")
+    if not phases:
+        parser.error("No phases selected. Use --phase mb,lb,tadb (or subset).")
+
     log.info(f"Enrichment phases: {phases}")
 
     if not LB_TOKEN and "lb" in phases:
@@ -355,25 +414,59 @@ async def main():
             "⚠️  LISTENBRAINZ_TOKEN not set — LB phase will be skipped.\n"
             "   Get your token at: https://listenbrainz.org/settings/"
         )
+        if phases == {"lb"}:
+            log.warning("LB is the only selected phase and token is missing. Nothing to do.")
+            return
 
     db = Prisma()
     await db.connect()
 
     try:
-        # Targeting empty or corrupted rows 
-        target_query = {
-            "OR": [
-                {"tadbTop10": None},
-                {"tadbTop10": "[]"}
-            ]
-        }
-        
         if args.artist:
-            artists = await db.artistdirectory.find_many(where={"name": args.artist})
-        elif args.limit:
-            artists = await db.artistdirectory.find_many(take=args.limit, where=target_query)
+            artists = await _find_many_with_retry(
+                db.artistdirectory.find_many,
+                where={"name": args.artist},
+            )
         else:
-            artists = await db.artistdirectory.find_many(where=target_query)
+            # Avoid giant OR filters that can timeout on large tables by scanning in pages.
+            artists = []
+            scanned = 0
+            cursor_id = None
+            batch_size = int(os.getenv("ARTIST_SCAN_BATCH_SIZE", "20"))
+
+            while True:
+                page_kwargs = {
+                    "take": batch_size,
+                    "order": {"id": "asc"},
+                }
+                if cursor_id:
+                    page_kwargs["cursor"] = {"id": cursor_id}
+                    page_kwargs["skip"] = 1
+
+                page = await _find_many_with_retry(
+                    db.artistdirectory.find_many,
+                    **page_kwargs,
+                )
+
+                if not page:
+                    break
+
+                scanned += len(page)
+                for artist in page:
+                    if _artist_needs_enrichment(artist, phases):
+                        artists.append(artist)
+                        if args.limit and len(artists) >= args.limit:
+                            break
+
+                if args.limit and len(artists) >= args.limit:
+                    break
+
+                cursor_id = page[-1].id
+
+                if scanned % (batch_size * 5) == 0:
+                    log.info(f"Scanned {scanned} artists, selected {len(artists)} for enrichment...")
+
+            log.info(f"Scan complete: {scanned} artists scanned, {len(artists)} selected.")
 
         total_artists = len(artists)
         log.info(f"Processing {total_artists} missing/broken artists concurrently...")
