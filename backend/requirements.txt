@@ -30,7 +30,7 @@ fastembed>=0.2.6
 scikit-learn
 
 # Optional: sentiment boost (uncomment to enable)
-# textblob
+textblob
 python-dotenv
 
 httpx>=0.27.0
