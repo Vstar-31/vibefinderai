@@ -44,14 +44,14 @@ def _load_model():
     if _model_load_error is not None:
         return None
     try:
-        logger.info(f"[Semantic] Loading model: {_MODEL_NAME} ...")
+        logger.info(f"[Semantic] Loading model: {_MODEL_NAME} via fastembed ...")
         t0 = time.time()
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(_MODEL_NAME)
+        from fastembed import TextEmbedding
+        _model = TextEmbedding(model_name=_MODEL_NAME)
         logger.info(f"[Semantic] Model loaded in {time.time()-t0:.2f}s — ready.")
         return _model
     except ImportError:
-        _model_load_error = "sentence-transformers not installed. Run: pip install sentence-transformers"
+        _model_load_error = "fastembed not installed. Run: pip install fastembed"
         logger.warning(f"[Semantic] {_model_load_error}")
         return None
     except Exception as e:
@@ -83,7 +83,7 @@ def rank_tracks_by_prompt(
 ) -> list[dict]:
     """
     Rank a list of track dicts by semantic similarity to the user's prompt.
-    Adds 'semantic_score' key (float 0–1) to each dict.
+    Adds 'semantic_score' key (float 0-1) to each dict.
     Returns input unchanged on model failure.
     """
     if not tracks:
@@ -105,7 +105,9 @@ def rank_tracks_by_prompt(
             return tracks
 
         all_texts  = [prompt] + valid_texts
-        embeddings = model.encode(all_texts, convert_to_numpy=True, show_progress_bar=False)
+        # fastembed returns a generator of embeddings, so we convert it to a numpy array
+        embeddings_gen = model.embed(all_texts)
+        embeddings = np.array(list(embeddings_gen))
 
         prompt_emb  = embeddings[0]
         track_embs  = embeddings[1:]
