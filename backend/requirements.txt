@@ -25,7 +25,7 @@ requests
 slowapi
 
 # ML — lightweight only
-# sentence-transformers is intentionally removed.
+sentence-transformers 
 # It pulls in torch (~600MB) which exceeds Render free tier RAM (512MB).
 # The semantic fallback in semantic_search.py degrades gracefully when absent.
 # Uncomment only on a paid instance with 1GB+ RAM:
