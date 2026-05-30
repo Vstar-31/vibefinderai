@@ -129,17 +129,27 @@ except ImportError:
     _SENTIMENT_AVAILABLE = False
     def apply_sentiment_boost(text, vibe_data): return vibe_data
 
+# MEMORY GATE: fastembed loads ~150MB ONNX model — too large for Render free tier (512MB).
+# Set ENABLE_SEMANTIC=true in Render env vars only if you upgrade to a paid instance.
+_SEMANTIC_ENABLED = os.getenv("ENABLE_SEMANTIC", "false").lower() == "true"
+
 try:
-    from analyzers import semantic_search
-    _SEMANTIC_MODULE_AVAILABLE = True
+    if _SEMANTIC_ENABLED:
+        from analyzers import semantic_search
+        _SEMANTIC_MODULE_AVAILABLE = True
+    else:
+        raise ImportError("Semantic disabled via ENABLE_SEMANTIC env var")
 except Exception as _sem_err:
     _SEMANTIC_MODULE_AVAILABLE = False
-    logger.warning(f"[Semantic] Module unavailable: {_sem_err} — semantic fallback disabled")
+    if _SEMANTIC_ENABLED:
+        logger.warning(f"[Semantic] Module unavailable: {_sem_err} — semantic fallback disabled")
+    else:
+        logger.info("[Semantic] Disabled (ENABLE_SEMANTIC not set) — saving ~150MB RAM")
     class _SemanticStub:
         def semantic_ready(self): return False
         def rank_tracks_by_prompt(self, prompt, tracks, **kw): return tracks
         def blend_semantic_scores(self, tracks, **kw): return tracks
-        def get_thin_pool_supplement(self, *a, **kw): return []
+        async def get_thin_pool_supplement(self, *a, **kw): return []
     semantic_search = _SemanticStub()
 
 # ---------------------------------------------------------
@@ -258,14 +268,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"DB_SIMILAR_ARTISTS load failed: {e}")
 
-    # PATCH 2: Build ARTIST_NAME_INDEX for O(1) entity scanner lookup
+    # PATCH 2: Build ARTIST_NAME_INDEX for O(1) entity scanner lookup.
+    # MEMORY FIX: store only {name, songs} dicts — NOT full Prisma row objects.
+    # Full rows for 29k artists cost ~150-200MB; slim dicts cost ~8MB.
     try:
-        _index_artists = await db.artistdirectory.find_many()
+        _index_artists = await db.artistdirectory.find_many(
+            include={}  # no relations needed — just scalar fields
+        )
         for _a in _index_artists:
             if not _a.name or not re.search(r"\w", _a.name):
                 continue
             _norm = _normalize_for_matching(_a.name)
-            ARTIST_NAME_INDEX[_norm] = _a
+            ARTIST_NAME_INDEX[_norm] = {"name": _a.name, "songs": _a.songs or ""}
         logger.info(f"ARTIST_NAME_INDEX loaded: {len(ARTIST_NAME_INDEX)} artists.")
     except Exception as e:
         logger.warning(f"ARTIST_NAME_INDEX load failed (entity scanner will use DB fallback): {e}")
@@ -1780,19 +1794,22 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             _prompt_norm = _normalize_for_matching(request.text)
 
             for a in _artist_source:
-                if not a.name or not re.search(r"\w", a.name):
+                # Support both slim dicts (ARTIST_NAME_INDEX) and full Prisma rows (DB fallback)
+                _a_name  = a["name"]  if isinstance(a, dict) else a.name
+                _a_songs = a.get("songs", "") if isinstance(a, dict) else (a.songs or "")
+                if not _a_name or not re.search(r"\w", _a_name):
                     continue
-                artist_name = _normalize_for_matching(a.name)
+                artist_name = _normalize_for_matching(_a_name)
                 if len(artist_name) <= 10 and artist_name in COMMON_WORDS_BLACKLIST:
                     continue
                 artist_pattern = rf'\b{re.escape(artist_name)}\b'
                 if re.search(artist_pattern, _prompt_norm):
                     if _is_negated_entity(artist_name, prompt_lower):
                         continue
-                    detected_artist = a.name
+                    detected_artist = _a_name
                     logger.info(f"Entity Scanner Locked Artist: {detected_artist}")
-                    if a.songs:
-                        song_list = [s.strip().lower() for s in a.songs.split(",")]
+                    if _a_songs:
+                        song_list = [s.strip().lower() for s in _a_songs.split(",")]
                         for s in song_list:
                             if s and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
                                 if _is_negated_entity(s, prompt_lower):
@@ -1801,15 +1818,15 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
                                 logger.info(f"Entity Scanner Locked Song: {detected_song}")
                                 break
                     break
-                elif a.songs:
-                    song_list = [s.strip().lower() for s in a.songs.split(",")]
+                elif _a_songs:
+                    song_list = [s.strip().lower() for s in _a_songs.split(",")]
                     for s in song_list:
                         if len(s) > 3 and s not in COMMON_WORDS_BLACKLIST and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
                             if _is_negated_entity(s, prompt_lower):
                                 continue
                             if prompt_word_count >= 10:
                                 continue
-                            detected_artist = a.name
+                            detected_artist = _a_name
                             detected_song   = s
                             logger.info(f"Entity Scanner Locked Song independently: {detected_song} by {detected_artist}")
                             break

@@ -24,9 +24,10 @@ requests
 # Rate limiting
 slowapi
 
-# ML — lightweight only
-# fastembed replaces sentence-transformers to stay under Render's 512MB RAM free tier limit.
-fastembed>=0.2.6
+# ML — disabled on free tier (512MB RAM limit)
+# fastembed + onnxruntime cost ~300MB installed + ~150MB loaded.
+# Re-enable by adding fastembed>=0.2.6 here AND setting ENABLE_SEMANTIC=true in Render env vars.
+# fastembed>=0.2.6   # uncomment for paid Render instances only
 scikit-learn
 
 # Optional: sentiment boost (uncomment to enable)
