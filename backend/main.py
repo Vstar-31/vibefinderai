@@ -1123,6 +1123,7 @@ class VibeResponse(BaseModel):
     vibe_story: str | None = None
     direct_genre_tag: str | None = None
     refinement_available: bool = True
+    artist_exclusive: bool = False
 
 class VibeStoryRequest(BaseModel):
     prompt: str
@@ -1552,10 +1553,14 @@ def filter_and_score_tracks(tracks: list, request: VibeRequest, vibe_data: dict,
     seen_base_titles: set = set()
 
     max_artist_tracks = 2
-    if request.override_artist or request.artist_focus >= 80:
+    if vibe_data.get("artist_exclusive") and vibe_data.get("detected_artist"):
+        # Artist-exclusive mode: all tracks must be from one artist, so remove the cap
+        max_artist_tracks = request.track_limit
+    elif request.override_artist or request.artist_focus >= 80:
         max_artist_tracks = max(2, min(int(request.track_limit * 0.60), 15))
     hard_ceiling = max(2, int(request.track_limit * 0.40))
-    max_artist_tracks = min(max_artist_tracks, hard_ceiling)
+    if not (vibe_data.get("artist_exclusive") and vibe_data.get("detected_artist")):
+        max_artist_tracks = min(max_artist_tracks, hard_ceiling)
 
     for _, t in scored_tracks:
         art    = t.get("artist", "").lower()
@@ -1976,6 +1981,20 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     elif request.override_artist or vibe_data.get("dominant_vibe") == "artist_driven":
         artist_target = request.override_artist or detected_artist
         raw_pool = await fetch_lastfm_artist_tracks(artist=artist_target, limit=200)
+
+    elif detected_artist and vibe_data.get("artist_exclusive"):
+        # v6.1: User said "X only" / "give only X songs" — fetch artist tracks and
+        # hard-filter the pool to that artist, ignoring genre pool entirely.
+        logger.info(f"[v6.1] Artist-exclusive mode: fetching only '{detected_artist}' tracks")
+        raw_pool = await fetch_lastfm_artist_tracks(artist=detected_artist, limit=200)
+        # Hard-filter to that artist (case-insensitive)
+        _excl_artist_norm = detected_artist.strip().lower()
+        raw_pool = [t for t in raw_pool if t.get("artist", "").strip().lower() == _excl_artist_norm]
+        if not raw_pool:
+            # Fallback: try search if artist track list came back empty
+            logger.warning(f"[v6.1] Artist-exclusive pool empty for '{detected_artist}', falling back to search")
+            raw_pool = await fetch_lastfm_track_search(detected_artist, limit=100)
+            raw_pool = [t for t in raw_pool if t.get("artist", "").strip().lower() == _excl_artist_norm]
     else:
         _dominant_vibe = vibe_data.get("dominant_vibe", "")
         if _dominant_vibe == "unknown" and not request.override_genre:
@@ -2262,6 +2281,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     vibe_data["direct_genre_tag"]    = vibe_data.get("direct_genre_tag") or None
     vibe_data["refinement_available"] = True
     vibe_data["vibe_story"]          = None
+    vibe_data["artist_exclusive"]    = bool(vibe_data.get("artist_exclusive", False))
 
     logger.info(f"--- SUCCESS: Returning {len(final_tracks)} tracks ---")
     return vibe_data

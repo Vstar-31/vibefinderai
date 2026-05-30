@@ -66,6 +66,34 @@ export default function SharedPlaylist() {
   const token = window.location.pathname.split("/playlist/")[1]?.split("/")[0];
   const activeColor = playlist ? (vibeColors[playlist.dominant_vibe] || vibeColors.neutral) : vibeColors.neutral;
 
+  const [forking, setForking] = useState(false);
+  const [forkSuccess, setForkSuccess] = useState(false);
+
+  const forkPlaylist = async () => {
+    // If not on app with a token, they'll need to auth. For Phase 9 anonymous forking we can 
+    // handle a redirect to /app with a fork intent, or if we have a token, do it directly.
+    const userToken = localStorage.getItem("vf_token");
+    if (!userToken) {
+      alert("You need to login first to fork playlists (Phase 9 feature under development)");
+      return;
+    }
+    
+    setForking(true);
+    try {
+      const r = await fetch(buildApiUrl(`/api/playlist/${token}/fork`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${userToken}` }
+      });
+      if (!r.ok) throw new Error("Failed to fork playlist");
+      setForkSuccess(true);
+      setTimeout(() => setForkSuccess(false), 3000);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setForking(false);
+    }
+  };
+
   useEffect(() => {
     if (!token) { setError("Invalid playlist link."); setLoading(false); return; }
     fetch(buildApiUrl(`/api/playlist/share/${token}`))
@@ -210,6 +238,25 @@ export default function SharedPlaylist() {
                           {views} {views === 1 ? "view" : "views"}
                         </span>
                       )}
+                      
+                      {/* Phase 9 Anonymous Forking */}
+                      <button 
+                        onClick={forkPlaylist}
+                        disabled={forking}
+                        style={{ 
+                          display: "flex", alignItems: "center", gap: "6px", padding: "7px 14px", 
+                          background: forkSuccess ? "rgba(52, 211, 153, 0.12)" : "rgba(180,140,80,0.1)", 
+                          border: `1px solid ${forkSuccess ? "rgba(52, 211, 153, 0.4)" : "rgba(180,140,80,0.3)"}`, 
+                          borderRadius: "7px", 
+                          color: forkSuccess ? "#34d399" : "#e8d5a3", 
+                          fontSize: "10px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em", textTransform: "uppercase", 
+                          cursor: forking ? "wait" : "pointer", transition: "all 0.2s" 
+                        }}
+                      >
+                        <IconDisc />
+                        {forking ? "Forking..." : forkSuccess ? "Saved!" : "Fork to Library"}
+                      </button>
+
                       {/* Native share / copy link */}
                       <button onClick={shareLink} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 14px", background: copied ? "rgba(52,211,153,0.12)" : "rgba(120,80,20,0.15)", border: `1px solid ${copied ? "rgba(52,211,153,0.4)" : "rgba(160,110,30,0.35)"}`, borderRadius: "7px", color: copied ? "#34d399" : "rgba(180,140,80,0.7)", fontSize: "10px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s" }}>
                         <IconShare /> {copied ? "Copied!" : "Share"}

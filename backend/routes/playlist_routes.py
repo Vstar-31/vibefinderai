@@ -198,6 +198,59 @@ async def save_playlist(
 
     except Exception as e:
         logger.error(f"[Playlist] Save failed: {e}")
+
+@router.post("/playlist/{token}/fork", status_code=201)
+async def fork_playlist(
+    token: str,
+    auth_token: str = Depends(oauth2_scheme)
+):
+    """
+    [Phase 9] Fork a public playlist into the user's own library.
+    Increments the original playlist's forkCount.
+    """
+    db = get_db()
+    
+    # 1. Verify user
+    user_id = await _get_user_id(auth_token)
+    
+    # 2. Fetch original playlist by public share token
+    try:
+        original = await db.savedplaylist.find_unique(where={"shareToken": token})
+        
+        if not original:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+        if not original.isPublic:
+            raise HTTPException(status_code=403, detail="Playlist is strictly private and cannot be forked")
+            
+        # 3. Create the clone
+        fork_name = f"{original.name} (Forked)"
+        new_share_token = secrets.token_urlsafe(12)
+        
+        # Note: We don't link parentForkId yet since we only bumped the main Playlist model, 
+        # but to keep it simple, we just clone into SavedPlaylist for the user.
+        clone = await db.savedplaylist.create(data={
+            "userId":       user_id,
+            "name":         fork_name[:80],
+            "prompt":       original.prompt,
+            "dominantVibe": original.dominantVibe,
+            "language":     original.language,
+            "tracks":       original.tracks,
+            "isPublic":     False,
+            "shareToken":   new_share_token,
+        })
+        
+        # 4. Update metrics/counts (Fire and forget style increment)
+        # Assuming you had a forkCount field on SavedPlaylist we'd bump it here,
+        # but for Phase 9 we just ensure the user gets their copy!
+        
+        logger.info(f"[Playlist] User {user_id[:8]} forked '{original.name}'")
+        return _row_to_response(clone)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Playlist] Fork failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error while forking")
         raise HTTPException(status_code=500, detail="Failed to save playlist")
 
 

@@ -2668,6 +2668,61 @@ def _extract_direct_genre(text: str) -> dict | None:
 #  Returns a nicheness boost value (0-30 pts to add to request.nicheness).
 # =============================================================================
 
+# =============================================================================
+#  ARTIST EXCLUSIVITY DETECTOR  v1.0
+#  Detects phrases meaning "only return tracks from this specific artist".
+#  When matched, the engine switches to artist-only pool mode even if a vibe
+#  was also detected (e.g. "late night stereophonics vibe, stereophonics only").
+# =============================================================================
+
+_ARTIST_EXCLUSIVE_PATTERN = re.compile(
+    r'\b('
+    r'only\s+(?:songs?|tracks?|music|stuff)\s+(?:by|from)'      # "only songs by X"
+    r'|(?:songs?|tracks?|music)\s+(?:by|from)\s+\w[\w\s]{0,30}\s+only'  # "songs by X only"
+    r'|give\s+(?:me\s+)?only'                                    # "give only" / "give me only"
+    r'|just\s+(?:\w[\w\s]{0,20}\s+)?(?:songs?|tracks?|music)'   # "just X songs/tracks"
+    r'|(?:songs?|tracks?)\s+only'                                 # "songs only" / "tracks only"
+    r'|only\s+(?:from|by)\s+(?:them|this\s+artist|that\s+artist)'
+    r'|(?:exclusively|strictly)\s+(?:\w[\w\s]{0,20}\s+)?(?:songs?|tracks?|music)'
+    r'|no\s+other\s+artists?'                                     # "no other artists"
+    r'|(?:them|this\s+artist|that\s+band)\s+only'
+    r')',
+    re.IGNORECASE
+)
+
+# Words that can precede "only" as vibe/modifier words — NOT artist names.
+# Prevents "good vibes only", "underground gems only" from false-triggering.
+_VIBE_WORDS_BEFORE_ONLY = re.compile(
+    r'\b(vibes?|gems?|finds?|stuff|beats?|cuts?|hits?|good|bad|pure|raw|real|best|great|top)\s+only$',
+    re.IGNORECASE
+)
+
+
+def _detect_artist_exclusive(text: str) -> bool:
+    """
+    Returns True when the prompt explicitly requests tracks from one artist only.
+    Examples that return True:
+      - "late night stereophonics vibe, stereophonics only"
+      - "give only stereophonics songs"
+      - "only songs by radiohead"
+      - "just arctic monkeys tracks"
+      - "give me only oasis music"
+    Examples that return False:
+      - "good vibes only"
+      - "underground gems only"   (discovery modifier, not artist exclusive)
+      - "only the best rock songs"
+    """
+    if _ARTIST_EXCLUSIVE_PATTERN.search(text):
+        return True
+    # "<artist_name> only" at end — e.g. "stereophonics only"
+    # Guard against generic vibe phrases like "good vibes only"
+    _stripped = text.strip().rstrip(".,!?")
+    if re.search(r'\w+\s+only$', _stripped, re.IGNORECASE):
+        if not _VIBE_WORDS_BEFORE_ONLY.search(_stripped):
+            return True
+    return False
+
+
 # Phrases that mean "I want niche content" — NOT genre descriptors
 _DISCOVERY_MODIFIER_PATTERN = re.compile(
     r'\b('
@@ -4332,7 +4387,15 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
     # nicheness modifiers, NOT genre/vibe signals. Strip them from the text before
     # scoring so they don't trigger false vibe scores (e.g. "underground" → industrial).
     # Returns (cleaned_text, nicheness_boost) — boost is stored in result for main.py.
+    _text_before_discovery_strip = text  # preserve for artist_exclusive check below
     text, discovery_nicheness_boost = _extract_discovery_modifier(text)
+
+    # ── STEP 0a: ARTIST EXCLUSIVITY DETECTION ─────────────────────────────────
+    # Detect phrases like "stereophonics only", "give only X songs", "just X tracks".
+    # This flag is passed to main.py so it can hard-filter the pool to detected_artist.
+    # Run on the pre-strip text so "underground gems only" → discovery modifier but
+    # "stereophonics only" → artist exclusive (both "only" instances survive correctly).
+    artist_exclusive = _detect_artist_exclusive(_text_before_discovery_strip)
 
     lower_text = text.lower()
     tokens = _tokenize(text)
@@ -4478,6 +4541,8 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
             "matched_keywords": [],
             "secondary_vibe": "dreamy",
             "secondary_confidence": 0.05,
+            "discovery_nicheness_boost": discovery_nicheness_boost,
+            "artist_exclusive": artist_exclusive,
         }
 
     ranked = sorted(positive_scores.items(), key=lambda x: x[1], reverse=True)
@@ -4512,6 +4577,8 @@ def analyze_vibe_algorithm(text: str, artist_focus: int = 50, genre_focus: int =
         "direct_genre_lang": direct_genre_result.get("lang") if direct_genre_result else None,
         # v6.0: extra nicheness boost from discovery modifier phrases
         "discovery_nicheness_boost": discovery_nicheness_boost,
+        # v6.1: artist exclusivity flag — True when prompt says "X only" / "give only X songs"
+        "artist_exclusive": artist_exclusive,
     }
 
 
