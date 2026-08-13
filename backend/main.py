@@ -207,62 +207,73 @@ async def lifespan(app: FastAPI):
                 "moodAcoustic":      float(row.moodAcoustic)      if row.moodAcoustic      else None,
                 "moodElectronic":    float(row.moodElectronic)    if row.moodElectronic    else None,
                 "spotifyId":         row.spotifyId  or None,
-                "isrc":              row.isrc       or None,
-                "mbid":              row.mbid       or None,
+                # isrc and mbid omitted — not used in scoring hot path, saves ~3MB RAM
             }
+        del _cache_rows  # Free Prisma row objects to reclaim transient memory
         logger.info(f"TrackFeatureCache loaded: {len(TRACK_FEATURE_INDEX)} tracks indexed.")
     except Exception as e:
         logger.warning(f"TrackFeatureCache load failed: {e}")
 
-    # ── Single ArtistDirectory query → builds ALL indexes ──────────────────────
-    # Previously 3-4 separate queries; now 1 query to reduce transient memory.
+    # ── Paginated ArtistDirectory query → builds ALL indexes ─────────────────
+    # Batched with take/skip to cap transient Prisma row memory at ~20MB
+    # instead of ~80MB peak from loading all rows at once.
     try:
-        _all_artist_rows = await db.artistdirectory.find_many()
         _db_track_count = 0
+        _BATCH_SIZE = 500
+        _offset = 0
+        _total_processed = 0
 
-        for _a in _all_artist_rows:
-            if not _a.name or not re.search(r"\w", _a.name):
-                continue
-            _artist_key = _a.name.strip().lower()
+        while True:
+            _batch = await db.artistdirectory.find_many(take=_BATCH_SIZE, skip=_offset)
+            if not _batch:
+                break
 
-            # 1) ARTIST_NAME_INDEX (O(1) entity scanner lookup)
-            _norm = _normalize_for_matching(_a.name)
-            ARTIST_NAME_INDEX[_norm] = {"name": _a.name, "songs": _a.songs or ""}
+            for _a in _batch:
+                if not _a.name or not re.search(r"\w", _a.name):
+                    continue
+                _artist_key = _a.name.strip().lower()
 
-            # 2) ARTIST_NICHE_INDEX
-            if _a.tadbTop10:
-                _niche = (_a.niche or "").strip().lower()
-                if _niche:
-                    ARTIST_NICHE_INDEX.setdefault(_niche, []).append({
-                        "name": _a.name, "genres": _a.genres or "",
-                        "mbTags": _a.mbTags or "", "tadbTop10": _a.tadbTop10,
-                    })
+                # 1) ARTIST_NAME_INDEX (O(1) entity scanner lookup)
+                _norm = _normalize_for_matching(_a.name)
+                ARTIST_NAME_INDEX[_norm] = {"name": _a.name, "songs": _a.songs or ""}
 
-                # 3) DB_TRACK_POOL
-                try:
-                    _top10 = json.loads(_a.tadbTop10)
-                    _tracks = []
-                    for _t in _top10:
-                        if isinstance(_t, dict) and _t.get("title"):
-                            _tracks.append({"title": _t["title"], "artist": _a.name})
-                    if _tracks:
-                        DB_TRACK_POOL[_artist_key] = _tracks
-                        _db_track_count += len(_tracks)
-                except Exception:
-                    pass
+                # 2) ARTIST_NICHE_INDEX
+                if _a.tadbTop10:
+                    _niche = (_a.niche or "").strip().lower()
+                    if _niche:
+                        ARTIST_NICHE_INDEX.setdefault(_niche, []).append({
+                            "name": _a.name, "genres": _a.genres or "",
+                            "mbTags": _a.mbTags or "",
+                            # tadbTop10 omitted — already parsed into DB_TRACK_POOL
+                        })
 
-            # 4) DB_SIMILAR_ARTISTS
-            if _a.lbSimilarArtists:
-                try:
-                    _similars = json.loads(_a.lbSimilarArtists)
-                    _names = [s["name"] for s in _similars if isinstance(s, dict) and s.get("name")]
-                    if _names:
-                        DB_SIMILAR_ARTISTS[_artist_key] = _names[:10]
-                except Exception:
-                    pass
+                    # 3) DB_TRACK_POOL
+                    try:
+                        _top10 = json.loads(_a.tadbTop10)
+                        _tracks = []
+                        for _t in _top10:
+                            if isinstance(_t, dict) and _t.get("title"):
+                                _tracks.append({"title": _t["title"], "artist": _a.name})
+                        if _tracks:
+                            DB_TRACK_POOL[_artist_key] = _tracks
+                            _db_track_count += len(_tracks)
+                    except Exception:
+                        pass
 
-        # Free Prisma row objects to reclaim transient memory
-        del _all_artist_rows
+                # 4) DB_SIMILAR_ARTISTS
+                if _a.lbSimilarArtists:
+                    try:
+                        _similars = json.loads(_a.lbSimilarArtists)
+                        _names = [s["name"] for s in _similars if isinstance(s, dict) and s.get("name")]
+                        if _names:
+                            DB_SIMILAR_ARTISTS[_artist_key] = _names[:10]
+                    except Exception:
+                        pass
+
+            _total_processed += len(_batch)
+            _offset += _BATCH_SIZE
+            # Free this batch's Prisma row objects before loading next
+            del _batch
 
         logger.info(f"ARTIST_NAME_INDEX loaded: {len(ARTIST_NAME_INDEX)} artists.")
         logger.info(f"ArtistDirectory niche index loaded: {len(ARTIST_NICHE_INDEX)} niches.")

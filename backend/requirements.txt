@@ -30,7 +30,7 @@ slowapi
 # fastembed>=0.2.6   # uncomment for paid Render instances only
 # scikit-learn       # REMOVED — not imported anywhere, saves ~150MB RAM (scipy+numpy)
 
-# Optional: sentiment boost (uncomment to enable)
+# Sentiment boost
 textblob
 python-dotenv
 
