@@ -76,3 +76,4 @@ backend/testing/analysis_reports/batch_resume_checkpoint.json
 backend/testing/analysis_reports/prompt_level_results_20260323_000642.jsonl
 backend/testing/batch_tester_v10k_2.py
 backend/testing/batch_tester_v10k_2.py
+duplicate_finder.py

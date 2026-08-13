@@ -1,0 +1,124 @@
+import os
+import hashlib
+import json
+import time
+from collections import defaultdict
+
+def get_file_hash(filepath, chunk_size=8192, full_hash=True):
+    hasher = hashlib.sha256()
+    try:
+        with open(filepath, 'rb') as f:
+            if full_hash:
+                for chunk in iter(lambda: f.read(chunk_size), b""):
+                    hasher.update(chunk)
+            else:
+                hasher.update(f.read(chunk_size))
+        return hasher.hexdigest()
+    except Exception as e:
+        return None
+
+def find_duplicates(drives, output_file="duplicate_files_report.json"):
+    print("Step 1: Finding files and grouping by size...")
+    size_groups = defaultdict(list)
+    total_files = 0
+    scanned_bytes = 0
+    
+    start_time = time.time()
+    
+    for drive in drives:
+        print(f"Scanning drive {drive}...")
+        if not os.path.exists(drive):
+            print(f"Drive {drive} not found. Skipping.")
+            continue
+            
+        for root, dirs, files in os.walk(drive):
+            # Skip some system directories to avoid permission errors and slowdowns
+            if '$RECYCLE.BIN' in root or 'System Volume Information' in root:
+                continue
+                
+            for filename in files:
+                filepath = os.path.join(root, filename)
+                try:
+                    # Ignore symlinks
+                    if os.path.islink(filepath):
+                        continue
+                        
+                    size = os.path.getsize(filepath)
+                    # Ignore 0 byte files
+                    if size > 0:
+                        size_groups[size].append(filepath)
+                        total_files += 1
+                        scanned_bytes += size
+                except Exception as e:
+                    pass
+                    
+    print(f"Total files scanned: {total_files} (approx {scanned_bytes / (1024**3):.2f} GB)")
+    
+    # Filter sizes that have more than one file
+    potential_dupes_by_size = {size: paths for size, paths in size_groups.items() if len(paths) > 1}
+    print(f"Found {len(potential_dupes_by_size)} file sizes with potential duplicates.")
+    
+    print("\nStep 2: Computing partial hashes for potential duplicates...")
+    partial_hash_groups = defaultdict(list)
+    for size, paths in potential_dupes_by_size.items():
+        for path in paths:
+            phash = get_file_hash(path, full_hash=False)
+            if phash:
+                partial_hash_groups[phash].append(path)
+                
+    potential_dupes_by_phash = {phash: paths for phash, paths in partial_hash_groups.items() if len(paths) > 1}
+    print(f"File groups remaining after partial hash check: {len(potential_dupes_by_phash)}")
+    
+    print("\nStep 3: Computing full hashes to verify duplicates...")
+    full_hash_groups = defaultdict(list)
+    
+    # Flatten the list of paths to verify
+    paths_to_full_hash = []
+    for paths in potential_dupes_by_phash.values():
+        paths_to_full_hash.extend(paths)
+        
+    print(f"Files needing full hash verification: {len(paths_to_full_hash)}")
+    
+    for i, path in enumerate(paths_to_full_hash):
+        if i % 500 == 0 and i > 0:
+            print(f"  ... hashed {i}/{len(paths_to_full_hash)} files")
+        fhash = get_file_hash(path, full_hash=True)
+        if fhash:
+            full_hash_groups[fhash].append(path)
+            
+    # Final duplicates
+    duplicates = {fhash: paths for fhash, paths in full_hash_groups.items() if len(paths) > 1}
+    
+    # Calculate wasted space
+    wasted_space = 0
+    duplicate_count = 0
+    for fhash, paths in duplicates.items():
+        try:
+            size_per_file = os.path.getsize(paths[0])
+            wasted_space += size_per_file * (len(paths) - 1)
+            duplicate_count += len(paths) - 1
+        except:
+            pass
+            
+    print(f"\nDone! Found {len(duplicates)} sets of verified duplicates (total {duplicate_count} duplicate files).")
+    print(f"Total wasted space: {wasted_space / (1024**3):.2f} GB")
+    print(f"Analysis took {time.time() - start_time:.2f} seconds.")
+    
+    report = {
+        "summary": {
+            "total_duplicate_sets": len(duplicates),
+            "total_duplicate_files": duplicate_count,
+            "wasted_space_gb": round(wasted_space / (1024**3), 2),
+            "time_taken_seconds": round(time.time() - start_time, 2)
+        },
+        "duplicates": duplicates
+    }
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(report, f, indent=4)
+        
+    print(f"\nReport saved to: {os.path.abspath(output_file)}")
+
+if __name__ == '__main__':
+    drives_to_scan = ['D:\\', 'E:\\', 'F:\\', 'G:\\']
+    find_duplicates(drives_to_scan)
