@@ -4,6 +4,7 @@ import App from './App.jsx'
 import LandingPage from './LandingPage.jsx'
 import SharedPlaylist from './SharedPlaylist.jsx'
 import AnalyticsDashboard from './AnalyticsDashboard.jsx'
+import EmbedPlayer from './EmbedPlayer.jsx'
 
 /* ─── Route resolver ─────────────────────────────────────────────
    Called on every navigation event. Reads the live URL each time.
@@ -22,6 +23,7 @@ function resolveRoute() {
     params.get('service_connected') ||
     params.get('service_error');
 
+  if (path.startsWith('/embed/player'))  return 'embed-player';
   if (path.startsWith('/playlist/')) return 'playlist';
   if (path.startsWith('/app'))       return 'app';
   if (path === '/vf-metrics')        return 'metrics';
@@ -47,6 +49,7 @@ function Router() {
     return () => window.removeEventListener('popstate', handlePop);
   }, []);
 
+  if (route === 'embed-player') return <EmbedPlayer />;
   if (route === 'playlist') return <SharedPlaylist />;
   if (route === 'metrics')  return <AnalyticsDashboard />;
   if (route === 'app')      return <App onNavigate={navigate} />;
