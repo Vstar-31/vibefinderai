@@ -374,7 +374,7 @@ export default function MusicPlayer({
     });
   }, [queue.length, repeat]);
 
-  const handlePrev = () => {
+  const handlePrev = useCallback(() => {
     if (elapsed > 3) {
       if (useYT) {
         ytCommand("seekTo", [0, true]);
@@ -386,9 +386,9 @@ export default function MusicPlayer({
       return;
     }
     setQueueIdx(i => Math.max(0, i - 1));
-  };
+  }, [elapsed, useYT, ytCommand]);
 
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     if (useYT) {
       isPlaying ? ytCommand("pauseVideo") : ytCommand("playVideo");
     } else {
@@ -396,7 +396,40 @@ export default function MusicPlayer({
       if (isPlaying) audioRef.current.pause();
       else { if (!audioRef.current.src) audioRef.current.src = track.preview_url; audioRef.current.play().catch(() => {}); }
     }
-  };
+  }, [useYT, isPlaying, ytCommand, track]);
+
+  /* ════════════════════════════════════════════════════════════
+     THEMED.AI BRIDGE (Safe & Secure IPC)
+  ════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (window.chrome && window.chrome.webview) {
+      const payload = {
+        type: "VIBEFINDER_STATE",
+        isPlaying,
+        title: track?.title || "—",
+        artist: track?.artist || "—",
+        coverArt: track?.cover_art || null,
+        previewUrl: track?.preview_url || null,
+        currentTime: elapsed,
+        duration: duration
+      };
+      window.chrome.webview.postMessage(JSON.stringify(payload));
+    }
+  }, [isPlaying, track, elapsed, duration]);
+
+  useEffect(() => {
+    if (!window.chrome || !window.chrome.webview) return;
+    const handleMessage = (e) => {
+      try {
+        const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (msg.command === "playpause") togglePlay();
+        else if (msg.command === "next") handleNext();
+        else if (msg.command === "prev") handlePrev();
+      } catch (err) {}
+    };
+    window.chrome.webview.addEventListener("message", handleMessage);
+    return () => window.chrome.webview.removeEventListener("message", handleMessage);
+  }, [togglePlay, handleNext, handlePrev]);
 
   const seekTo = (e) => {
     if (!progressRef.current || !duration) return;
