@@ -294,10 +294,13 @@ export default function MusicPlayer({
     setElapsed(0);
     setDuration(0);
 
+    let active = true;
+
     const vid = _getVid(track);
     if (vid === undefined) {
       // Not fetched yet — priority fetch then load
       fetchVideoId(track, true).then(id => {
+        if (!active) return;
         if (id && iframeRef.current) {
           iframeRef.current.src = ytSrc(id, true);
           setIsPlaying(true);
@@ -314,6 +317,8 @@ export default function MusicPlayer({
       setIsPlaying(false);
       if (iframeRef.current) iframeRef.current.src = "about:blank";
     }
+
+    return () => { active = false; };
   }, [queueIdx, useYT, cacheVer]); // eslint-disable-line
 
   /* ── Cleanup on unmount ─────────────────────────────────────── */
