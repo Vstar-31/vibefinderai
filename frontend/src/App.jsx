@@ -769,6 +769,65 @@ export default function App({ onNavigate }) {
     };
   }, []);
 
+  // Keeps the message handler below (registered once, on mount) able to call
+  // the *current* render's analyzeVibe. A listener created inside a
+  // `useEffect(..., [])` closes over analyzeVibe — and everything analyzeVibe
+  // itself closes over (token, knobs, overrideGenre, ...) — as they stood at
+  // mount, which is stale by the time any async host message actually
+  // arrives. Refreshed after every render rather than re-subscribing the
+  // listener on every analyzeVibe identity change (analyzeVibe isn't
+  // memoized, so that would mean tearing down/recreating the listener, and
+  // re-posting VIBEFINDER_APP_READY, on every render).
+  const analyzeVibeRef = useRef(analyzeVibe);
+  useEffect(() => { analyzeVibeRef.current = analyzeVibe; });
+
+  /* ════════════════════════════════════════════════════════════
+     THEMED.AI BRIDGE — prompt / track-limit / run autofill (host → app)
+     A second, independent bridge from MusicPlayer.jsx's playback one — that
+     one only mounts once a player is actually showing (see the
+     `{showPlayer && playerTracks.length > 0 && <MusicPlayer .../>}` guard
+     further down this file), which is well after the moment Themed.AI wants
+     to push the saved Vibe Prompt, track count, and a run trigger into this
+     component's own state. Lives here instead, mounted for the lifetime of
+     the app rather than gated on a player existing.
+
+     Handshake, not a blind push: the host has no way to know when this
+     listener is actually registered — a message posted before it exists is
+     simply dropped by WebView2, and NavigationCompleted firing host-side
+     isn't a reliable proxy for "React has mounted." So this side speaks
+     first (VIBEFINDER_APP_READY) and the host replies with whatever
+     setPrompt/setTrackLimit/runAnalysis commands it has queued.
+
+     runAnalysis carries its own text/trackLimit rather than trusting that
+     the setPrompt/setTrackLimit messages above have already flushed into
+     state — those are two separate async React updates, and this can be
+     handled before either lands. analyzeVibe's overrideText/
+     overrideTrackLimit config exists for exactly this: bypass state entirely
+     for the one call that can't wait on it.
+  ════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (!window.chrome || !window.chrome.webview) return;
+
+    const handleMessage = (e) => {
+      try {
+        const msg = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (msg.command === "setPrompt" && typeof msg.text === "string") {
+          setPrompt(msg.text);
+        } else if (msg.command === "setTrackLimit" && [5, 10, 20, 50].includes(msg.value)) {
+          setTrackLimit(msg.value);
+        } else if (msg.command === "runAnalysis" && typeof msg.text === "string" && msg.text.trim()) {
+          const limit = [5, 10, 20, 50].includes(msg.trackLimit) ? msg.trackLimit : undefined;
+          analyzeVibeRef.current({ overrideText: msg.text, overrideTrackLimit: limit });
+        }
+      } catch (err) {}
+    };
+
+    window.chrome.webview.addEventListener("message", handleMessage);
+    window.chrome.webview.postMessage(JSON.stringify({ type: "VIBEFINDER_APP_READY" }));
+
+    return () => window.chrome.webview.removeEventListener("message", handleMessage);
+  }, []);
+
   /* Toggle the In-App Preview Player */
   const togglePlay = (url) => {
     if (!url) return;
@@ -832,7 +891,7 @@ export default function App({ onNavigate }) {
 
   const analyzeVibe = async (config = {}) => {
     const effectivePrompt = config.overrideText || prompt;
-    if (!effectivePrompt.trim()) return;
+    if (!token || !effectivePrompt.trim()) return;
     try {
       setLoading(true); setError(""); setIsSkeletonLoading(true);
       if (config.targetSecondary !== undefined) setLoadReason("pivot");
@@ -869,7 +928,7 @@ export default function App({ onNavigate }) {
           artist_focus: Math.round(knobs.artist),
           nicheness: Math.round(knobs.nicheness),
           bpm_focus: Math.round(knobs.bpm),
-          track_limit: trackLimit,
+          track_limit: config.overrideTrackLimit ?? trackLimit,
           use_secondary_vibe: finalSecondary,
           override_genre: finalGenre.trim() || null,
           override_artist: finalArtist.trim() || null,
