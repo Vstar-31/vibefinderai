@@ -778,7 +778,15 @@ export default function App({ onNavigate }) {
   // listener on every analyzeVibe identity change (analyzeVibe isn't
   // memoized, so that would mean tearing down/recreating the listener, and
   // re-posting VIBEFINDER_APP_READY, on every render).
-  const analyzeVibeRef = useRef(analyzeVibe);
+  //
+  // Seeded with null, not analyzeVibe: analyzeVibe is a `const` declared
+  // further down this same function, and useRef's argument is evaluated
+  // immediately as part of this line running — reaching for it here, before
+  // that line executes, is a temporal-dead-zone reference and throws on
+  // every render. The effect right below assigns the real function the
+  // moment the first render commits, well before any WebView2 message could
+  // plausibly arrive, so nothing is lost by not having it one tick earlier.
+  const analyzeVibeRef = useRef(null);
   useEffect(() => { analyzeVibeRef.current = analyzeVibe; });
 
   /* ════════════════════════════════════════════════════════════
@@ -817,7 +825,7 @@ export default function App({ onNavigate }) {
           setTrackLimit(msg.value);
         } else if (msg.command === "runAnalysis" && typeof msg.text === "string" && msg.text.trim()) {
           const limit = [5, 10, 20, 50].includes(msg.trackLimit) ? msg.trackLimit : undefined;
-          analyzeVibeRef.current({ overrideText: msg.text, overrideTrackLimit: limit });
+          analyzeVibeRef.current?.({ overrideText: msg.text, overrideTrackLimit: limit });
         }
       } catch (err) {}
     };
