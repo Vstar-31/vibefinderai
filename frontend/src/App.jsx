@@ -502,9 +502,8 @@ function GlobalStyles() {
         to   { opacity: 1; }
       }
 
-      /* ── MOBILE RESPONSIVE ─────────────────────────────────── */
-      @media (max-width: 600px) {
-        .app-header { padding-bottom: 16px !important; margin-bottom: 20px !important; }
+      /* ── EMBED / NARROW-DESKTOP RESPONSIVE (WebView2 ≈ 530-750px) ── */
+      @media (max-width: 900px) {
         .app-header-osc { display: none !important; }
         .app-logo-sub { display: none !important; }
 
@@ -519,6 +518,14 @@ function GlobalStyles() {
         .app-signal-row { display: none !important; }
         .app-lang-row { flex-wrap: wrap !important; }
 
+        .app-overrides { flex-direction: column !important; }
+        .app-overrides input { width: 100% !important; box-sizing: border-box !important; }
+      }
+
+      /* ── MOBILE (phones) ────────────────────────────────────── */
+      @media (max-width: 600px) {
+        .app-header { padding-bottom: 16px !important; margin-bottom: 20px !important; }
+
         .app-result-grid { grid-template-columns: 1fr !important; }
         .app-result-stat-grid { grid-template-columns: 1fr 1fr !important; }
 
@@ -528,17 +535,14 @@ function GlobalStyles() {
         .app-track-actions { width: 100% !important; justify-content: flex-end !important; gap: 5px !important; flex-wrap: wrap !important; flex-shrink: 0 !important; }
         .app-track-actions button,
         .app-track-actions a { padding: 6px 10px !important; font-size: 9px !important; }
-
-        .app-overrides { flex-direction: column !important; }
-        .app-overrides input { width: 100% !important; box-sizing: border-box !important; }
       }
 
       @media (max-width: 380px) {
         .app-track-actions .app-track-preview { display: none !important; }
       }
 
-      /* ── Mobile player adjustments ── */
-      @media (max-width: 600px) {
+      /* ── Embedded / narrow player adjustments ── */
+      @media (max-width: 900px) {
         /* Stack player controls vertically on narrow screens */
         .mp-right-controls { display: none !important; }
         .mp-centre { flex: 1 !important; }
@@ -1065,7 +1069,7 @@ export default function App({ onNavigate }) {
 
   /* ── STYLES ── */
   const S = {
-    root: { minHeight: "100vh", padding: "24px 16px 60px", fontFamily: "'DM Mono', monospace" },
+    root: { minHeight: "100vh", padding: "24px 16px 60px", fontFamily: "'DM Mono', monospace", overflowX: "hidden" },
     inner: { maxWidth: "860px", margin: "0 auto" },
     header: { display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "24px", borderBottom: "1px solid rgba(155,105,28,0.38)", marginBottom: "32px" },
     logoWrap: { display: "flex", alignItems: "center", gap: "14px" },
