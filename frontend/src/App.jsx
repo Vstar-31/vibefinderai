@@ -791,7 +791,17 @@ export default function App({ onNavigate }) {
   // moment the first render commits, well before any WebView2 message could
   // plausibly arrive, so nothing is lost by not having it one tick earlier.
   const analyzeVibeRef = useRef(null);
-  useEffect(() => { analyzeVibeRef.current = analyzeVibe; });
+  const showPlayerRef = useRef(false);
+  const resultRef = useRef(null);
+  const launchPlayerRef = useRef(null);
+  const autoPlayRef = useRef(false);
+
+  useEffect(() => { 
+    analyzeVibeRef.current = analyzeVibe; 
+    showPlayerRef.current = showPlayer;
+    resultRef.current = result;
+    launchPlayerRef.current = launchPlayer;
+  });
 
   /* ════════════════════════════════════════════════════════════
      THEMED.AI BRIDGE — prompt / track-limit / run autofill (host → app)
@@ -830,15 +840,45 @@ export default function App({ onNavigate }) {
         } else if (msg.command === "runAnalysis" && typeof msg.text === "string" && msg.text.trim()) {
           const limit = [5, 10, 20, 50].includes(msg.trackLimit) ? msg.trackLimit : undefined;
           analyzeVibeRef.current?.({ overrideText: msg.text, overrideTrackLimit: limit });
+        } else if (msg.command === "playpause") {
+          if (!showPlayerRef.current) {
+            if (resultRef.current && resultRef.current.tracks && resultRef.current.tracks.length > 0) {
+              launchPlayerRef.current?.(resultRef.current.tracks, 0);
+            } else {
+              autoPlayRef.current = true;
+              analyzeVibeRef.current?.({});
+            }
+          }
         }
       } catch (err) {}
     };
 
     window.chrome.webview.addEventListener("message", handleMessage);
-    window.chrome.webview.postMessage(JSON.stringify({ type: "VIBEFINDER_APP_READY" }));
+    window.chrome.webview.postMessage(JSON.stringify({ type: "VIBEFINDER_APP_READY", hasToken: !!token }));
 
     return () => window.chrome.webview.removeEventListener("message", handleMessage);
   }, []);
+
+  /* ════════════════════════════════════════════════════════════
+     THEMED.AI BRIDGE — push result set to host (app → host)
+     Posts a VIBEFINDER_RESULTS message every time a new analysis
+     finishes so the desktop widgets can immediately show the same
+     track list the embed displays, without waiting for the user to
+     explicitly open the MusicPlayer (which has its own per-track
+     VIBEFINDER_STATE bridge for live playback state).
+  ════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (!window.chrome?.webview || !result?.tracks?.length) return;
+    window.chrome.webview.postMessage(JSON.stringify({
+      type: "VIBEFINDER_RESULTS",
+      tracks: result.tracks.map(t => ({
+        title: t.title || "—",
+        artist: t.artist || "—",
+        cover_art: t.cover_art || null,
+        preview_url: t.preview_url || null,
+      })),
+    }));
+  }, [result]);
 
   /* Toggle the In-App Preview Player */
   const togglePlay = (url) => {
@@ -965,6 +1005,10 @@ export default function App({ onNavigate }) {
 
       const data = await res.json();
       setResult(data);
+      if (autoPlayRef.current) {
+        launchPlayerRef.current?.(data.tracks, 0);
+        autoPlayRef.current = false;
+      }
       setArtistUnlocked(false);
       // PHASE 8: Record vibe history
       if (data.dominant_vibe && data.dominant_vibe !== 'Direct Search') {
