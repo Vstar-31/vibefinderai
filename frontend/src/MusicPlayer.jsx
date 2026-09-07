@@ -342,7 +342,19 @@ export default function MusicPlayer({
   }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (useYT || !audioRef.current || !track?.preview_url) { if (!useYT) setIsPlaying(false); return; }
+    if (useYT) return;
+    if (!audioRef.current) return;
+    if (!track?.preview_url) {
+      // Previously this branch only called setIsPlaying(false) and returned — it never
+      // paused the element or cleared its src. Skipping to a track with no preview left the
+      // PREVIOUS track's audio still assigned (and still audibly playing) while the UI
+      // switched to showing the new, preview-less track as "paused". Clearing src/pausing
+      // here keeps the audio element in sync with what's actually on screen.
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      setIsPlaying(false);
+      return;
+    }
     audioRef.current.src    = track.preview_url;
     audioRef.current.volume = muted ? 0 : volume;
     audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
