@@ -893,6 +893,43 @@ export default function App({ onNavigate }) {
     }
   };
 
+  /* ════════════════════════════════════════════════════════════
+     THEMED.AI BRIDGE — post inline player state (app → host)
+     Posts VIBEFINDER_STATE when the inline audio player is used,
+     so the host widgets can show playback progress and play/pause
+     state even if MusicPlayer.jsx hasn't been launched.
+  ════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (!audioRef.current || !window.chrome?.webview) return;
+    const audio = audioRef.current;
+
+    const postState = () => {
+      if (!playingTrack) return;
+      const t = result?.tracks?.find(tr => tr.preview_url === playingTrack);
+      if (!t) return;
+      window.chrome.webview.postMessage(JSON.stringify({
+        type: "VIBEFINDER_STATE",
+        isPlaying: !audio.paused,
+        title: t.title || "—",
+        artist: t.artist || "—",
+        coverArt: t.cover_art || null,
+        previewUrl: t.preview_url || null,
+        currentTime: audio.currentTime || 0,
+        duration: audio.duration || 0
+      }));
+    };
+
+    audio.addEventListener("play", postState);
+    audio.addEventListener("pause", postState);
+    audio.addEventListener("timeupdate", postState);
+
+    return () => {
+      audio.removeEventListener("play", postState);
+      audio.removeEventListener("pause", postState);
+      audio.removeEventListener("timeupdate", postState);
+    };
+  }, [playingTrack, result]);
+
   /* Animate VU meter while loading or playing music */
   useEffect(() => {
     if (loading || playingTrack) {
