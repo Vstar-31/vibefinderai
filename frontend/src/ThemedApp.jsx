@@ -27,6 +27,7 @@ const Icons = {
   X: () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>,
   Arrow: () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>,
   Clock: () => <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>,
+  Save: () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h11l3 3v15H4V3h2Z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>,
 };
 
 function emitHost(message) {
@@ -124,6 +125,8 @@ export default function ThemedApp() {
   const [prompt, setPrompt] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
   const [error, setError] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState("login");
@@ -139,7 +142,8 @@ export default function ThemedApp() {
   const [bpm, setBpm] = useState(50);
   const [trackCount, setTrackCount] = useState(8);
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem("themed_ai_accent") || "#a78bfa"; } catch { return "#a78bfa"; } });
-  const inputRef = useRef(null);
+  const formRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const vibe = result?.dominant_vibe || "neutral";
   const activeColor = VIBES[vibe] || theme;
@@ -147,12 +151,12 @@ export default function ThemedApp() {
   const confidence = Math.round((result?.confidence || 0) * 100);
 
   useEffect(() => {
-    emitHost({ type: "THEMEDAI_READY", version: "1.0", capabilities: ["vibe_analysis", "library", "player", "theme_sync"] });
+    emitHost({ type: "THEMEDAI_READY", version: "1.1", capabilities: ["vibe_analysis", "library", "player", "theme_sync", "playlist_save"] });
   }, []);
 
   useEffect(() => {
-    emitHost({ type: "VIBEFINDER_STATE", state: { vibe, prompt, trackCount: tracks.length, loading } });
-  }, [vibe, prompt, tracks.length, loading]);
+    emitHost({ type: "VIBEFINDER_STATE", state: { vibe, prompt, trackCount: tracks.length, loading, hasResult: Boolean(result) } });
+  }, [vibe, prompt, tracks.length, loading, result]);
 
   useEffect(() => {
     try { localStorage.setItem("themed_ai_accent", theme); } catch {}
@@ -164,10 +168,29 @@ export default function ThemedApp() {
       const data = event.data;
       if (!data || typeof data !== "object") return;
       if (data.type === "THEMEDAI_THEME_SET" && typeof data.accent === "string") setTheme(data.accent);
-      if (data.type === "THEMEDAI_ANALYZE" && typeof data.prompt === "string") { setPrompt(data.prompt); setTimeout(() => inputRef.current?.form?.requestSubmit(), 0); }
+      if (data.type === "THEMEDAI_ANALYZE" && typeof data.prompt === "string") {
+        setPrompt(data.prompt);
+        requestAnimationFrame(() => formRef.current?.requestSubmit());
+      }
     };
     window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
+    const webview = window.chrome?.webview;
+    webview?.addEventListener?.("message", handler);
+    return () => {
+      window.removeEventListener("message", handler);
+      webview?.removeEventListener?.("message", handler);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        textareaRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   const submitAuth = async (e) => {
@@ -181,15 +204,15 @@ export default function ThemedApp() {
       const r = await fetch(api("/auth/token"), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: fd });
       if (!r.ok) throw new Error("Authentication failed — check your credentials.");
       const data = await r.json();
-      localStorage.setItem("vf_token", data.access_token); setToken(data.access_token); setAuthOpen(false);
+      localStorage.setItem("vf_token", data.access_token); setToken(data.access_token); setAuthOpen(false); setAuthForm({ email: "", username: "", password: "" });
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
 
   const analyze = async (e) => {
     e?.preventDefault();
-    if (!prompt.trim()) { inputRef.current?.focus(); return; }
+    if (!prompt.trim()) { textareaRef.current?.focus(); return; }
     if (!token) { setAuthOpen(true); return; }
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setSaveMessage("");
     try {
       const r = await fetch(api("/api/vibe/analyze"), {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -197,18 +220,66 @@ export default function ThemedApp() {
       });
       if (r.status === 401) { localStorage.removeItem("vf_token"); setToken(""); throw new Error("Session expired. Sign in again."); }
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "The vibe engine could not complete that request."); }
-      const data = await r.json(); setResult(data); setLibraryRefresh((x) => x + 1);
+      const data = await r.json(); setResult(data);
       emitHost({ type: "THEMEDAI_ANALYSIS_COMPLETE", vibe: data.dominant_vibe, requestId: data.request_id, tracks: data.tracks?.length || 0 });
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
 
+  const saveCurrent = async () => {
+    if (!token) { setAuthOpen(true); return; }
+    if (!tracks.length || saving) return;
+    setSaving(true); setSaveMessage("");
+    try {
+      const payloadTracks = tracks.map((track) => ({
+        title: track.title || "Untitled",
+        artist: track.artist || "Unknown artist",
+        spotify_uri: track.spotify_uri || "",
+        apple_uri: track.apple_uri || "",
+        preview_url: track.preview_url || null,
+        cover_art: track.cover_art || null,
+      }));
+      const r = await fetch(api("/api/playlist/save"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: prompt.trim() ? `Vibe — ${prompt.trim().slice(0, 56)}` : "Themed.AI Vibe",
+          prompt: prompt.trim() || null,
+          dominant_vibe: result?.dominant_vibe || null,
+          language: null,
+          tracks: payloadTracks,
+          is_public: false,
+        }),
+      });
+      if (r.status === 401) { localStorage.removeItem("vf_token"); setToken(""); throw new Error("Session expired. Sign in again."); }
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "Could not save this vibe."); }
+      await r.json();
+      setSaveMessage("Saved to Library");
+      setLibraryRefresh((x) => x + 1);
+      emitHost({ type: "THEMEDAI_PLAYLIST_SAVED", tracks: tracks.length });
+    } catch (e) {
+      setSaveMessage(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openPlayer = (idx = 0, list = tracks) => { if (!list?.length) return; setPlayerTracks(list); setPlayerIndex(idx); setPlayerOpen(true); };
-  const logout = () => { localStorage.removeItem("vf_token"); setToken(""); setResult(null); setLibraryOpen(false); setPlayerOpen(false); };
+  const logout = () => { localStorage.removeItem("vf_token"); setToken(""); setResult(null); setLibraryOpen(false); setPlayerOpen(false); setSaveMessage(""); };
 
   const loadLibraryItem = (item) => {
-    const itemTracks = item.tracks || [];
-    if (itemTracks.length) { setResult((prev) => ({ ...(prev || {}), tracks: itemTracks, dominant_vibe: item.dominant_vibe || prev?.dominant_vibe || "neutral", prompt: item.prompt || prev?.prompt || "" })); }
-    if (item.prompt) setPrompt(item.prompt);
+    const itemTracks = Array.isArray(item.tracks) ? item.tracks : [];
+    if (itemTracks.length) {
+      setResult((prev) => ({ ...(prev || {}), tracks: itemTracks, dominant_vibe: item.dominant_vibe || prev?.dominant_vibe || "neutral", prompt: item.prompt || prev?.prompt || "", confidence: prev?.confidence || 0 }));
+      if (item.prompt) setPrompt(item.prompt);
+      setLibraryOpen(false);
+      return;
+    }
+    if (item.prompt) {
+      setPrompt(item.prompt);
+      setLibraryOpen(false);
+      requestAnimationFrame(() => formRef.current?.requestSubmit());
+      return;
+    }
     setLibraryOpen(false);
   };
 
@@ -218,7 +289,7 @@ export default function ThemedApp() {
     <main className="ta-app" style={{ "--accent": activeColor, "--user-accent": theme }}>
       <div className="ta-aurora ta-aurora-a" /><div className="ta-aurora ta-aurora-b" />
       <header className="ta-topbar">
-        <button className="ta-brand" onClick={() => { setResult(null); setPrompt(""); }}>
+        <button className="ta-brand" onClick={() => { setResult(null); setPrompt(""); setSaveMessage(""); }}>
           <span className="ta-brand-mark"><Icons.Spark /></span><span>vibefinder<span className="ta-brand-dot">.</span>ai</span><em>THEMED</em>
         </button>
         <div className="ta-top-actions">
@@ -235,9 +306,9 @@ export default function ThemedApp() {
             <p>Describe a moment, a memory, a scene, or a completely unhinged mood. The engine turns it into a playable world.</p>
           </div>
 
-          <form ref={inputRef} className="ta-composer" onSubmit={analyze}>
+          <form ref={formRef} className="ta-composer" onSubmit={analyze}>
             <div className="ta-composer-head"><span>VIBE PROMPT</span><span className="ta-kbd">ENTER ↵</span></div>
-            <textarea autoFocus rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="e.g. rainy neon city, 2am, cinematic but still danceable…" />
+            <textarea ref={textareaRef} autoFocus rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="e.g. rainy neon city, 2am, cinematic but still danceable…" />
             <div className="ta-composer-foot"><div className="ta-chips">{presets.map((p) => <button key={p.text} type="button" style={{ "--chip": p.hue }} onClick={() => setPrompt(p.text)}>{p.text}</button>)}</div><button className="ta-generate" disabled={loading}>{loading ? <span className="ta-spinner" /> : <Icons.Spark />} {loading ? "Finding your vibe…" : "Find my vibe"}</button></div>
           </form>
 
@@ -245,7 +316,14 @@ export default function ThemedApp() {
 
           {result && (
             <section className="ta-result" style={{ "--result-color": activeColor }}>
-              <div className="ta-result-banner"><div><span className="ta-eyebrow">YOUR VIBE</span><h2>{result.dominant_vibe || "Unknown"}</h2><p>{result.explanation || "A custom sonic profile assembled from your prompt."}</p></div><div className="ta-confidence"><b>{confidence}%</b><span>confidence</span></div></div>
+              <div className="ta-result-banner">
+                <div><span className="ta-eyebrow">YOUR VIBE</span><h2>{result.dominant_vibe || "Unknown"}</h2><p>{result.explanation || "A custom sonic profile assembled from your prompt."}</p></div>
+                <div className="ta-result-actions">
+                  <div className="ta-confidence"><b>{confidence}%</b><span>confidence</span></div>
+                  {tracks.length > 0 && <button className="ta-secondary ta-save" onClick={saveCurrent} disabled={saving}><Icons.Save /> {saving ? "Saving…" : "Save vibe"}</button>}
+                </div>
+              </div>
+              {saveMessage && <div className={`ta-save-message ${saveMessage === "Saved to Library" ? "success" : ""}`}>{saveMessage}</div>}
               <div className="ta-track-grid">
                 {tracks.map((track, idx) => (
                   <article className="ta-track-card" key={`${track.title}-${track.artist}-${idx}`}>
@@ -254,7 +332,7 @@ export default function ThemedApp() {
                       <span className="ta-art-play"><Icons.Play /></span>
                     </button>
                     <div className="ta-track-copy"><span className="ta-track-num">{String(idx + 1).padStart(2, "0")}</span><strong title={track.title}>{track.title}</strong><span>{track.artist || "Unknown artist"}</span></div>
-                    <button className="ta-mini-play" onClick={() => openPlayer(idx)}><Icons.Play /></button>
+                    <button className="ta-mini-play" onClick={() => openPlayer(idx)} aria-label={`Open player for ${track.title}`}><Icons.Play /></button>
                   </article>
                 ))}
               </div>
@@ -280,11 +358,11 @@ export default function ThemedApp() {
         </aside>
       </section>
 
-      <footer className="ta-footer"><span>VibeFinderAI × Themed.AI</span><span>frontend build 1.0</span></footer>
+      <footer className="ta-footer"><span>VibeFinderAI × Themed.AI</span><span>frontend build 1.1</span></footer>
 
       {authOpen && <AuthModal mode={authMode} setMode={setAuthMode} form={authForm} setForm={setAuthForm} onSubmit={submitAuth} loading={loading} error={error} onClose={() => { setAuthOpen(false); setError(""); }} />}
       {libraryOpen && token && <Library token={token} refreshKey={libraryRefresh} onLoad={loadLibraryItem} onClose={() => setLibraryOpen(false)} />}
-      {playerOpen && <MusicPlayer tracks={playerTracks} initialIndex={playerIndex} activeColor={activeColor} token={token} buildApiUrl={api} onClose={() => setPlayerOpen(false)} spotifyConnected={false} servicesConnected={{}} visibleServices={{}} />}
+      {playerOpen && <MusicPlayer tracks={playerTracks} initialIndex={playerIndex} activeColor={activeColor} token={token} buildApiUrl={api} onClose={() => setPlayerOpen(false)} spotifyConnected={false} servicesConnected={{ youtube: true }} visibleServices={{ youtube: true }} />}
     </main>
   );
 }
