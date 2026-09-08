@@ -3,6 +3,27 @@
   command = "npm run build"
   publish = "dist"
 
+# Keep the Themed.AI frontend same-origin with the API.
+# This avoids browser CORS failures for authentication and authenticated API calls.
+[[redirects]]
+  from = "/auth/*"
+  to = "https://vibefinderai.onrender.com/auth/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://vibefinderai.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "https://vibefinderai.onrender.com/health"
+  status = 200
+  force = true
+
+# SPA fallback must come last.
 [[redirects]]
   from = "/*"
   to = "/index.html"
