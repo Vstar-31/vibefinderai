@@ -2,7 +2,6 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
 import ThemedApp from './ThemedApp.jsx'
-import LandingPage from './LandingPage.jsx'
 import SharedPlaylist from './SharedPlaylist.jsx'
 import AnalyticsDashboard from './AnalyticsDashboard.jsx'
 
