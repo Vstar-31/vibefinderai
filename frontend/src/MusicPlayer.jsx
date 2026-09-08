@@ -1,85 +1,52 @@
-/**
- * MusicPlayer.jsx  — VibeFinderAI
- * ────────────────────────────────
- * APPROACH: Plain <iframe> embed, NO YT.Player() widget API.
- *
- * Why: The widget API (YT.Player) requires YouTube's script to load
- * inside the iframe and post back to the parent — blocked cross-origin
- * in production. Direct iframes with ?enablejsapi=1 + postMessage work
- * in every browser without any handshaking.
- *
- * How playback works:
- *  1. Swap iframe src to load a new video (autoplay=1 in URL)
- *  2. Send play/pause/seek via iframe.contentWindow.postMessage()
- *  3. Receive state (playing/paused/ended) via window.addEventListener('message')
- *  4. Advance queue automatically on 'ended' state
- *  5. Progress tracked client-side with elapsed timer (no getCurrentTime needed)
- *
- * FALLBACK: HTML Audio for 30s previews when YouTube not connected.
- *
- * Module-level video ID cache — zero duplicate requests.
- */
-
 import { useState, useEffect, useRef, useCallback } from "react";
 
-/* ══════════════════════════════════════════════════════════════
-   MODULE-LEVEL CACHE  (survives re-renders, remounts, HMR)
-══════════════════════════════════════════════════════════════ */
-const _VID_CACHE    = new Map();   // "title|artist" → videoId | null (null = not found)
-const _VID_FETCHING = new Set();   // keys currently in-flight
+const _VID_CACHE = new Map();
+const _VID_FETCHING = new Set();
+const keyOf = (t) => `${t?.title || ""}|${t?.artist || ""}`;
+const getVid = (t) => _VID_CACHE.has(keyOf(t)) ? _VID_CACHE.get(keyOf(t)) : undefined;
+const setVid = (t, v) => _VID_CACHE.set(keyOf(t), v);
 
-const _key    = (t) => `${t.title}|${t.artist}`;
-const _getVid = (t) => _VID_CACHE.has(_key(t)) ? _VID_CACHE.get(_key(t)) : undefined;
-const _setVid = (t, v) => _VID_CACHE.set(_key(t), v); // v = videoId string | null
-const _busy   = (t) => _VID_FETCHING.has(_key(t));
-
-/* ── YouTube embed URL builder ───────────────────────────────── */
-const ytSrc = (videoId, autoplay = true) =>
-  `https://www.youtube.com/embed/${videoId}` +
-  `?enablejsapi=1` +
-  `&autoplay=${autoplay ? 1 : 0}` +
-  `&controls=0` +
-  `&rel=0` +
-  `&modestbranding=1` +
-  `&playsinline=1` +
-  `&origin=${encodeURIComponent(window.location.origin)}`;
-
-/* ── Icons ─────────────────────────────────────────────────────── */
-const Ic = {
-  play:    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>,
-  pause:   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>,
-  prev:    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
-  next:    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
-  shuffle: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>,
-  repeat:  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>,
-  volHigh: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>,
-  volMute: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>,
-  queue:   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
-  spotify: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>,
-  close:   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
-  chevron: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>,
-  disc:    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>,
-  yt:      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>,
+// YouTube's IFrame API requires a real player viewport of at least 200x200.
+// Keep the player visually transparent, but do not collapse it to 160x90/off-screen.
+const ytSrc = (videoId) => {
+  const params = new URLSearchParams({
+    enablejsapi: "1",
+    autoplay: "1",
+    mute: "1",
+    controls: "0",
+    rel: "0",
+    modestbranding: "1",
+    playsinline: "1",
+    origin: window.location.origin,
+  });
+  return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
 };
 
 const fmt = (s) => {
-  if (!s || isNaN(s)) return "0:00";
+  if (!Number.isFinite(s) || s < 0) return "0:00";
   const sec = Math.floor(s);
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 };
 
 const shuffleArray = (arr) => {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+    [out[i], out[j]] = [out[j], out[i]];
   }
-  return a;
+  return out;
 };
 
-/* ═══════════════════════════════════════════════════════════════
-   COMPONENT
-═══════════════════════════════════════════════════════════════ */
+const Icon = ({ children, size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{children}</svg>
+);
+const Play = () => <Icon><polygon points="7,4 20,12 7,20" /></Icon>;
+const Pause = () => <Icon><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></Icon>;
+const Prev = () => <Icon><polygon points="18,4 9,12 18,20"/><rect x="5" y="5" width="2" height="14" rx="1"/></Icon>;
+const Next = () => <Icon><polygon points="6,4 15,12 6,20"/><rect x="17" y="5" width="2" height="14" rx="1"/></Icon>;
+const Disc = () => <Icon size={18}><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2"/><circle cx="12" cy="12" r="3"/></Icon>;
+const Close = () => <Icon><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"/></Icon>;
+
 export default function MusicPlayer({
   tracks = [],
   initialIndex = 0,
@@ -90,383 +57,364 @@ export default function MusicPlayer({
   spotifyConnected = false,
   onExportSpotify,
   servicesConnected = {},
-  visibleServices   = {},
+  visibleServices = {},
   onServiceAction,
 }) {
-  const useYT = !!(visibleServices?.youtube && servicesConnected?.youtube);
+  const useYT = Boolean(visibleServices?.youtube && servicesConnected?.youtube);
 
-  /* ── Queue ───────────────────────────────────────────────────── */
-  const [queue,    setQueue]    = useState(() => tracks.map((t, i) => ({ ...t, _origIdx: i })));
-  const [queueIdx, setQueueIdx] = useState(initialIndex);
-
-  /* ── Playback ────────────────────────────────────────────────── */
-  const [isPlaying,  setIsPlaying]  = useState(false);
-  const [elapsed,    setElapsed]    = useState(0);    // seconds, client-tracked
-  const [duration,   setDuration]   = useState(0);    // seconds
-  const [volume,     setVolume]     = useState(0.7);
-  const [muted,      setMuted]      = useState(false);
-  const [shuffle,    setShuffle]    = useState(false);
-  const [repeat,     setRepeat]     = useState("off");
-  const [showQueue,  setShowQueue]  = useState(false);
-  const [minimised,  setMinimised]  = useState(false);
-
-  /* ── Video ID state ──────────────────────────────────────────── */
-  const [cacheVer,   setCacheVer]   = useState(0);    // bump to re-render on new cache entry
+  const [queue, setQueue] = useState(() => tracks.map((t, i) => ({ ...t, _origIdx: i })));
+  const [queueIdx, setQueueIdx] = useState(() => Math.max(0, Math.min(initialIndex, Math.max(tracks.length - 1, 0))));
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.7);
+  const [muted, setMuted] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState("off");
+  const [showQueue, setShowQueue] = useState(false);
+  const [minimised, setMinimised] = useState(false);
   const [ytSearching, setYtSearching] = useState(false);
+  const [currentVideoId, setCurrentVideoId] = useState(undefined);
+  const [exporting, setExporting] = useState(false);
+  const [toast, setToast] = useState("");
 
-  /* ── Export / services ───────────────────────────────────────── */
-  const [exporting,    setExporting]    = useState(false);
-  const [exportDone,   setExportDone]   = useState(null);
-  const [serviceToast, setServiceToast] = useState(null);
-
-  /* ── Refs ────────────────────────────────────────────────────── */
-  const iframeRef   = useRef(null);   // YT iframe element
-  const audioRef    = useRef(null);   // HTML Audio element (preview fallback)
-  const progressRef = useRef(null);   // progress bar div
-  const tickRef     = useRef(null);   // setInterval for elapsed time
-  const startRef    = useRef(null);   // wall-clock time when play started (for elapsed calc)
-  const elapsedBase = useRef(0);      // elapsed at last play event (for resume accuracy)
-
-  // Stable refs for callbacks
-  const repeatRef   = useRef(repeat);
+  const iframeRef = useRef(null);
+  const audioRef = useRef(null);
+  const ytReadyRef = useRef(false);
+  const desiredPlayingRef = useRef(false);
+  const queuedCommandsRef = useRef([]);
   const queueIdxRef = useRef(queueIdx);
-  const queueRef    = useRef(queue);
-  useEffect(() => { repeatRef.current   = repeat;   }, [repeat]);
+  const queueRef = useRef(queue);
+  const repeatRef = useRef(repeat);
+  const isPlayingRef = useRef(isPlaying);
+  const durationRef = useRef(duration);
+  const elapsedRef = useRef(elapsed);
+  const queryTimerRef = useRef(null);
+
   useEffect(() => { queueIdxRef.current = queueIdx; }, [queueIdx]);
-  useEffect(() => { queueRef.current    = queue;    }, [queue]);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+  useEffect(() => { repeatRef.current = repeat; }, [repeat]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { durationRef.current = duration; }, [duration]);
+  useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
 
-  const track      = queue[queueIdx] || queue[0];
-  const currentVid = track ? _getVid(track) : undefined; // undefined=unknown, null=not found, str=found
+  const track = queue[queueIdx] || queue[0] || null;
 
-  /* ════════════════════════════════════════════════════════════
-     VIDEO ID FETCHING  (module-level cache, no duplicates)
-  ════════════════════════════════════════════════════════════ */
-  const fetchVideoId = useCallback(async (t, isPriority = false) => {
+  const fetchVideoId = useCallback(async (t, priority = false) => {
     if (!buildApiUrl || !t) return null;
-    const cached = _getVid(t);
-    if (cached !== undefined) return cached; // null or videoId — already resolved
-    if (_busy(t)) return null;
-
-    _VID_FETCHING.add(_key(t));
-    if (isPriority) setYtSearching(true);
+    const cached = getVid(t);
+    if (cached !== undefined) return cached;
+    const key = keyOf(t);
+    if (_VID_FETCHING.has(key)) return null;
+    _VID_FETCHING.add(key);
+    if (priority) setYtSearching(true);
     try {
-      const url = buildApiUrl(
-        `/api/services/youtube/search` +
-        `?title=${encodeURIComponent(t.title)}` +
-        `&artist=${encodeURIComponent(t.artist)}` +
-        `&q=${encodeURIComponent(`${t.title} ${t.artist} official audio`)}`
-      );
-      const res  = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        const vid  = data.found ? data.video_id : null;
-        _setVid(t, vid);
-        setCacheVer(v => v + 1);
-        return vid;
+      const url = buildApiUrl(`/api/services/youtube/search?title=${encodeURIComponent(t.title)}&artist=${encodeURIComponent(t.artist)}&q=${encodeURIComponent(`${t.title} ${t.artist} official audio`)}`);
+      const res = await fetch(url);
+      if (!res.ok) {
+        setVid(t, null);
+        return null;
       }
-      _setVid(t, null);
-      return null;
+      const data = await res.json();
+      const id = data?.found && data?.video_id ? data.video_id : null;
+      setVid(t, id);
+      return id;
     } catch {
-      _setVid(t, null);
+      setVid(t, null);
       return null;
     } finally {
-      _VID_FETCHING.delete(_key(t));
-      if (isPriority) setYtSearching(false);
+      _VID_FETCHING.delete(key);
+      if (priority) setYtSearching(false);
     }
   }, [buildApiUrl]);
 
-  /* ── Pre-fetch next 4 ───────────────────────────────────────── */
-  useEffect(() => {
-    if (!useYT || !buildApiUrl) return;
-    const end = Math.min(queueIdx + 4, queue.length);
-    for (let i = queueIdx; i < end; i++) {
-      const t = queue[i];
-      if (_getVid(t) === undefined && !_busy(t)) {
-        setTimeout(() => fetchVideoId(t), (i - queueIdx) * 400);
-      }
-    }
-  }, [queueIdx, useYT]); // eslint-disable-line
-
-  /* ════════════════════════════════════════════════════════════
-     postMessage → iframe (send command)
-  ════════════════════════════════════════════════════════════ */
-  const ytCommand = useCallback((func, args = []) => {
-    // Only send when iframe has loaded a YouTube URL — not about:blank
-    const iframe = iframeRef.current;
-    if (!iframe || !iframe.src?.includes("youtube.com")) return;
-    try {
-      iframe.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func, args }),
-        "https://www.youtube.com"
-      );
-    } catch {}
-  }, []);
-
-  /* ════════════════════════════════════════════════════════════
-     postMessage ← iframe (receive state)
-  ════════════════════════════════════════════════════════════ */
+  // Prefetch a small runway so next/previous never feel like they wait on search.
   useEffect(() => {
     if (!useYT) return;
-    const handler = (e) => {
-      if (e.origin !== "https://www.youtube.com") return;
+    const end = Math.min(queue.length, queueIdx + 4);
+    for (let i = queueIdx; i < end; i++) {
+      const t = queue[i];
+      if (getVid(t) === undefined && !_VID_FETCHING.has(keyOf(t))) {
+        window.setTimeout(() => { void fetchVideoId(t); }, Math.max(0, i - queueIdx) * 200);
+      }
+    }
+  }, [queueIdx, queue, useYT, fetchVideoId]);
+
+  const postYt = useCallback((func, args = []) => {
+    const frame = iframeRef.current;
+    if (!frame || !frame.src.includes("youtube.com") || !frame.contentWindow) return false;
+    const message = JSON.stringify({ event: "command", func, args });
+    if (!ytReadyRef.current) {
+      // Keep only the latest transport command of the same type. This prevents a stale
+      // play from being replayed after the user has already pressed pause during loading.
+      if (func === "playVideo" || func === "pauseVideo") {
+        queuedCommandsRef.current = queuedCommandsRef.current.filter(c => c.func !== "playVideo" && c.func !== "pauseVideo");
+      }
+      queuedCommandsRef.current.push({ message, origin: "https://www.youtube.com" });
+      return false;
+    }
+    try {
+      frame.contentWindow.postMessage(message, "https://www.youtube.com");
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const flushYt = useCallback(() => {
+    const frame = iframeRef.current;
+    if (!frame?.contentWindow) return;
+    const commands = queuedCommandsRef.current.splice(0);
+    for (const { message, origin } of commands) {
+      try { frame.contentWindow.postMessage(message, origin); } catch {}
+    }
+    try {
+      frame.contentWindow.postMessage(JSON.stringify({ event: "command", func: "setVolume", args: [muted ? 0 : Math.round(volume * 100)] }), "https://www.youtube.com");
+      if (muted) frame.contentWindow.postMessage(JSON.stringify({ event: "command", func: "mute", args: [] }), "https://www.youtube.com");
+      else frame.contentWindow.postMessage(JSON.stringify({ event: "command", func: "unMute", args: [] }), "https://www.youtube.com");
+      frame.contentWindow.postMessage(JSON.stringify({ event: "command", func: desiredPlayingRef.current ? "playVideo" : "pauseVideo", args: [] }), "https://www.youtube.com");
+    } catch {}
+  }, [muted, volume]);
+
+  const loadYouTube = useCallback((t, shouldPlay) => {
+    if (!iframeRef.current || !t) return;
+    const vid = getVid(t);
+    if (!vid) {
+      setCurrentVideoId(vid === null ? null : undefined);
+      setIsPlaying(false);
+      ytReadyRef.current = false;
+      iframeRef.current.src = "about:blank";
+      return;
+    }
+    desiredPlayingRef.current = shouldPlay;
+    ytReadyRef.current = false;
+    queuedCommandsRef.current = [];
+    setCurrentVideoId(vid);
+    setElapsed(0);
+    setDuration(0);
+    setIsPlaying(false);
+    iframeRef.current.src = ytSrc(vid);
+  }, []);
+
+  // React to queue changes. A next/prev click inherits the previous playing intent.
+  useEffect(() => {
+    if (!useYT || !track) return;
+    let active = true;
+    const shouldPlay = desiredPlayingRef.current || queueIdx === initialIndex && isPlayingRef.current;
+    const vid = getVid(track);
+    if (vid === undefined) {
+      desiredPlayingRef.current = shouldPlay;
+      void fetchVideoId(track, true).then(id => {
+        if (active && id) loadYouTube(track, shouldPlay);
+      });
+    } else {
+      loadYouTube(track, shouldPlay);
+    }
+    return () => { active = false; };
+  }, [queueIdx, track, useYT, fetchVideoId, loadYouTube, initialIndex]);
+
+  // YouTube transport event listener. The source check stops stale iframes from changing UI state.
+  useEffect(() => {
+    if (!useYT) return;
+    const handler = (event) => {
+      if (event.origin !== "https://www.youtube.com") return;
+      if (iframeRef.current?.contentWindow && event.source !== iframeRef.current.contentWindow) return;
       try {
-        const d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        if (d.event === "onStateChange") {
-          const state = d.info;
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (!data) return;
+        if (data.event === "onReady") {
+          ytReadyRef.current = true;
+          flushYt();
+          return;
+        }
+        if (data.event === "onAutoplayBlocked") {
+          desiredPlayingRef.current = false;
+          setIsPlaying(false);
+          setToast("YouTube blocked autoplay — press play once to start audio.");
+          window.setTimeout(() => setToast(""), 3500);
+          return;
+        }
+        if (data.event === "onStateChange") {
+          const state = Number(data.info);
           if (state === 1) {
-            // Playing — start elapsed timer and request duration
             setIsPlaying(true);
-            startRef.current = Date.now();
-            clearInterval(tickRef.current);
-            tickRef.current = setInterval(() => {
-              const secs = elapsedBase.current + (Date.now() - startRef.current) / 1000;
-              setElapsed(secs);
-            }, 500);
-            // Ask YouTube to send duration via infoDelivery
-            const _ifr = iframeRef.current;
-            if (_ifr?.src?.includes("youtube.com")) {
-              try { _ifr.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "getVideoDuration", args: [] }), "https://www.youtube.com"); } catch {}
-            }
+            isPlayingRef.current = true;
+            desiredPlayingRef.current = true;
           } else if (state === 2) {
-            // Paused — save elapsed so resume is accurate
             setIsPlaying(false);
-            clearInterval(tickRef.current);
-            if (startRef.current) {
-              elapsedBase.current += (Date.now() - startRef.current) / 1000;
-              startRef.current = null;
-            }
+            isPlayingRef.current = false;
           } else if (state === 0) {
-            // Ended — advance queue
-            setIsPlaying(false);
-            clearInterval(tickRef.current);
-            elapsedBase.current = 0;
-            setElapsed(0);
             const idx = queueIdxRef.current;
-            const q   = queueRef.current;
+            const q = queueRef.current;
             const rep = repeatRef.current;
             if (rep === "one") {
-              loadTrackIntoIframe(q[idx]);
+              desiredPlayingRef.current = true;
+              loadYouTube(q[idx], true);
             } else if (idx < q.length - 1) {
+              desiredPlayingRef.current = true;
               setQueueIdx(idx + 1);
             } else if (rep === "all") {
+              desiredPlayingRef.current = true;
               setQueueIdx(0);
             } else {
+              desiredPlayingRef.current = false;
               setIsPlaying(false);
             }
-          } else if (state === 3) {
-            // Buffering — keep isPlaying true visually
           }
-        } else if (d.event === "infoDelivery") {
-          if (d.info?.duration) setDuration(d.info.duration);
-          // Sync elapsed to YouTube's actual position to prevent client-timer drift
-          if (d.info?.currentTime !== undefined && d.info.currentTime > 0) {
-            elapsedBase.current = d.info.currentTime;
-            if (startRef.current) startRef.current = Date.now();
-            setElapsed(d.info.currentTime);
-          }
+          return;
+        }
+        if (data.event === "infoDelivery" && data.info) {
+          const nextDuration = Number(data.info.duration);
+          const nextTime = Number(data.info.currentTime);
+          if (Number.isFinite(nextDuration) && nextDuration > 0) setDuration(nextDuration);
+          if (Number.isFinite(nextTime) && nextTime >= 0) setElapsed(nextTime);
         }
       } catch {}
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [useYT]); // eslint-disable-line — duration removed: caused stale re-subscriptions
+  }, [useYT, flushYt, loadYouTube]);
 
-  /* ════════════════════════════════════════════════════════════
-     Load track into iframe
-  ════════════════════════════════════════════════════════════ */
-  const loadTrackIntoIframe = useCallback((t) => {
-    if (!iframeRef.current || !t) return;
-    const vid = _getVid(t);
-    if (vid) {
-      iframeRef.current.src = ytSrc(vid, true);
-      elapsedBase.current   = 0;
-      setElapsed(0);
-      setDuration(0);
-      setIsPlaying(true); // will be confirmed by postMessage state=1
-    }
-  }, []);
-
-  /* ── Load new track when queueIdx changes (YT mode) ────────── */
+  // Poll actual YouTube time instead of estimating from wall clock. This also acts as a
+  // lightweight readiness probe for embeds that do not emit an initial infoDelivery packet.
   useEffect(() => {
-    if (!useYT || !track) return;
-    clearInterval(tickRef.current);
-    elapsedBase.current = 0;
-    setElapsed(0);
-    setDuration(0);
+    window.clearInterval(queryTimerRef.current);
+    if (!useYT) return;
+    queryTimerRef.current = window.setInterval(() => {
+      if (!ytReadyRef.current) return;
+      postYt("getCurrentTime");
+      postYt("getDuration");
+    }, 800);
+    return () => window.clearInterval(queryTimerRef.current);
+  }, [useYT, postYt]);
 
-    let active = true;
+  useEffect(() => () => window.clearInterval(queryTimerRef.current), []);
 
-    const vid = _getVid(track);
-    if (vid === undefined) {
-      // Not fetched yet — priority fetch then load
-      fetchVideoId(track, true).then(id => {
-        if (!active) return;
-        if (id && iframeRef.current) {
-          iframeRef.current.src = ytSrc(id, true);
-          setIsPlaying(true);
-        }
-      });
-    } else if (vid) {
-      // Already cached
-      if (iframeRef.current) {
-        iframeRef.current.src = ytSrc(vid, true);
-        setIsPlaying(true);
-      }
-    } else {
-      // null = not found — just show "not found" UI, don't load
-      setIsPlaying(false);
-      if (iframeRef.current) iframeRef.current.src = "about:blank";
-    }
-
-    return () => { active = false; };
-  }, [queueIdx, useYT, cacheVer]); // eslint-disable-line
-
-  /* ── Cleanup on unmount ─────────────────────────────────────── */
-  useEffect(() => () => clearInterval(tickRef.current), []);
-
-  /* ════════════════════════════════════════════════════════════
-     HTML AUDIO (preview fallback)
-  ════════════════════════════════════════════════════════════ */
+  // Native 30-second preview fallback when YouTube is unavailable.
   useEffect(() => {
     if (useYT) return;
     const audio = new Audio();
+    audio.preload = "auto";
     audio.volume = muted ? 0 : volume;
     audioRef.current = audio;
-    audio.addEventListener("timeupdate",     () => { setElapsed(audio.currentTime); });
-    audio.addEventListener("durationchange", () => setDuration(audio.duration || 0));
-    audio.addEventListener("ended",          () => advanceAudio());
-    audio.addEventListener("pause",          () => setIsPlaying(false));
-    audio.addEventListener("play",           () => setIsPlaying(true));
-    if (tracks[initialIndex]?.preview_url) { audio.src = tracks[initialIndex].preview_url; audio.play().catch(() => {}); }
-    return () => { audio.pause(); audio.src = ""; clearInterval(tickRef.current); };
-  }, []); // eslint-disable-line
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onTime = () => setElapsed(audio.currentTime || 0);
+    const onDuration = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+    const onEnded = () => {
+      const idx = queueIdxRef.current;
+      const q = queueRef.current;
+      const rep = repeatRef.current;
+      if (rep === "one") { audio.currentTime = 0; void audio.play().catch(() => {}); }
+      else if (idx < q.length - 1) setQueueIdx(idx + 1);
+      else if (rep === "all") setQueueIdx(0);
+      else setIsPlaying(false);
+    };
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("durationchange", onDuration);
+    audio.addEventListener("ended", onEnded);
+    if (track?.preview_url) {
+      audio.src = track.preview_url;
+      void audio.play().catch(() => {});
+    }
+    return () => {
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("durationchange", onDuration);
+      audio.removeEventListener("ended", onEnded);
+      audio.pause();
+      audio.src = "";
+      audioRef.current = null;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (useYT) return;
-    if (!audioRef.current) return;
+    if (useYT || !audioRef.current) return;
+    const audio = audioRef.current;
     if (!track?.preview_url) {
-      // Previously this branch only called setIsPlaying(false) and returned — it never
-      // paused the element or cleared its src. Skipping to a track with no preview left the
-      // PREVIOUS track's audio still assigned (and still audibly playing) while the UI
-      // switched to showing the new, preview-less track as "paused". Clearing src/pausing
-      // here keeps the audio element in sync with what's actually on screen.
-      audioRef.current.pause();
-      audioRef.current.src = "";
+      audio.pause();
+      audio.removeAttribute("src");
       setIsPlaying(false);
+      setElapsed(0);
+      setDuration(0);
       return;
     }
-    audioRef.current.src    = track.preview_url;
-    audioRef.current.volume = muted ? 0 : volume;
-    audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-  }, [queueIdx, queue, useYT]); // eslint-disable-line
+    audio.src = track.preview_url;
+    audio.volume = muted ? 0 : volume;
+    if (desiredPlayingRef.current || isPlayingRef.current) void audio.play().catch(() => {});
+  }, [queueIdx, queue, useYT, track, muted, volume]);
 
-  const advanceAudio = useCallback(() => {
-    const idx = queueIdxRef.current;
-    const q   = queueRef.current;
-    const rep = repeatRef.current;
-    if (rep === "one") { if (audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(() => {}); } return; }
-    if (idx < q.length - 1) setQueueIdx(idx + 1);
-    else if (rep === "all") setQueueIdx(0);
-  }, []);
-
-  /* ── Sync volume ─────────────────────────────────────────────── */
   useEffect(() => {
     const v = muted ? 0 : volume;
     if (audioRef.current) audioRef.current.volume = v;
-    // For YT: use postMessage volume command
     if (useYT) {
-      ytCommand("setVolume", [Math.round(v * 100)]);
-      if (muted) ytCommand("mute"); else ytCommand("unMute");
+      postYt("setVolume", [Math.round(v * 100)]);
+      postYt(muted ? "mute" : "unMute");
     }
-  }, [volume, muted, useYT, ytCommand]);
+  }, [volume, muted, useYT, postYt]);
 
-  /* ════════════════════════════════════════════════════════════
-     CONTROLS
-  ════════════════════════════════════════════════════════════ */
-  const handleNext = useCallback(() => {
-    setQueueIdx(i => {
-      if (repeat === "one") return i;
-      if (i >= queue.length - 1) return repeat === "all" ? 0 : i;
-      return i + 1;
-    });
-  }, [queue.length, repeat]);
-
-  const handlePrev = useCallback(() => {
-    if (elapsed > 3) {
-      if (useYT) {
-        ytCommand("seekTo", [0, true]);
-        elapsedBase.current = 0;
-        setElapsed(0);
-      } else if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-      }
-      return;
+  const setPlayingIntent = useCallback((next) => {
+    desiredPlayingRef.current = next;
+    setIsPlaying(next);
+    if (useYT) {
+      postYt(next ? "unMute" : "pauseVideo");
+      postYt("setVolume", [muted ? 0 : Math.round(volume * 100)]);
+      if (next) postYt("playVideo");
+    } else if (audioRef.current) {
+      if (next) void audioRef.current.play().catch(() => setIsPlaying(false));
+      else audioRef.current.pause();
     }
-    setQueueIdx(i => Math.max(0, i - 1));
-  }, [elapsed, useYT, ytCommand]);
+  }, [useYT, postYt, muted, volume]);
 
   const togglePlay = useCallback(() => {
-    if (useYT) {
-      isPlaying ? ytCommand("pauseVideo") : ytCommand("playVideo");
-    } else {
-      if (!audioRef.current || !track?.preview_url) return;
-      if (isPlaying) audioRef.current.pause();
-      else { if (!audioRef.current.src) audioRef.current.src = track.preview_url; audioRef.current.play().catch(() => {}); }
-    }
-  }, [useYT, isPlaying, ytCommand, track]);
+    setPlayingIntent(!isPlayingRef.current);
+  }, [setPlayingIntent]);
 
-  /* ════════════════════════════════════════════════════════════
-     THEMED.AI BRIDGE (Safe & Secure IPC)
-  ════════════════════════════════════════════════════════════ */
-  useEffect(() => {
-    if (window.chrome && window.chrome.webview) {
-      const payload = {
-        type: "VIBEFINDER_STATE",
-        isPlaying,
-        title: track?.title || "—",
-        artist: track?.artist || "—",
-        coverArt: track?.cover_art || null,
-        previewUrl: track?.preview_url || null,
-        currentTime: elapsed,
-        duration: duration
-      };
-      window.chrome.webview.postMessage(JSON.stringify(payload));
-    }
-  }, [isPlaying, track, elapsed, duration]);
+  const handleNext = useCallback(() => {
+    const q = queueRef.current;
+    if (!q.length) return;
+    desiredPlayingRef.current = isPlayingRef.current;
+    setQueueIdx(i => {
+      if (repeatRef.current === "one") return i;
+      if (i < q.length - 1) return i + 1;
+      return repeatRef.current === "all" ? 0 : i;
+    });
+  }, []);
 
-  useEffect(() => {
-    if (!window.chrome || !window.chrome.webview) return;
-    const handleMessage = (e) => {
-      try {
-        const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-        if (msg.command === "playpause") togglePlay();
-        else if (msg.command === "next") handleNext();
-        else if (msg.command === "prev") handlePrev();
-      } catch (err) {}
-    };
-    window.chrome.webview.addEventListener("message", handleMessage);
-    return () => window.chrome.webview.removeEventListener("message", handleMessage);
-  }, [togglePlay, handleNext, handlePrev]);
-
-  const seekTo = (e) => {
-    if (!progressRef.current || !duration) return;
-    const rect  = progressRef.current.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const secs  = ratio * duration;
-    if (useYT) {
-      ytCommand("seekTo", [secs, true]);
-      elapsedBase.current = secs;
-      startRef.current    = Date.now();
-      setElapsed(secs);
-    } else if (audioRef.current?.duration) {
-      audioRef.current.currentTime = secs;
+  const handlePrev = useCallback(() => {
+    if (elapsedRef.current > 3) {
+      if (useYT) postYt("seekTo", [0, true]);
+      else if (audioRef.current) audioRef.current.currentTime = 0;
+      setElapsed(0);
+      return;
     }
-  };
+    desiredPlayingRef.current = isPlayingRef.current;
+    setQueueIdx(i => Math.max(0, i - 1));
+  }, [useYT, postYt]);
+
+  const seekTo = useCallback((event) => {
+    if (!durationRef.current) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const next = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * durationRef.current;
+    setElapsed(next);
+    if (useYT) postYt("seekTo", [next, true]);
+    else if (audioRef.current) audioRef.current.currentTime = next;
+  }, [useYT, postYt]);
 
   const toggleShuffle = () => {
-    const cur = queue[queueIdx];
-    if (!shuffle) { const rest = queue.filter((_, i) => i !== queueIdx); setQueue([cur, ...shuffleArray(rest)]); setQueueIdx(0); }
-    else { setQueue([...tracks].map((t, i) => ({ ...t, _origIdx: i }))); setQueueIdx(cur._origIdx ?? 0); }
+    const current = queueRef.current[queueIdxRef.current];
+    if (!current) return;
+    if (!shuffle) {
+      const rest = queueRef.current.filter((_, i) => i !== queueIdxRef.current);
+      setQueue([current, ...shuffleArray(rest)]);
+      setQueueIdx(0);
+    } else {
+      setQueue(tracks.map((t, i) => ({ ...t, _origIdx: i })));
+      setQueueIdx(current._origIdx ?? 0);
+    }
     setShuffle(s => !s);
   };
 
@@ -475,234 +423,129 @@ export default function MusicPlayer({
   const handleExport = async () => {
     if (!onExportSpotify) return;
     setExporting(true);
-    try { setExportDone(await onExportSpotify(tracks)); }
-    catch (e) { setExportDone({ error: e.message }); }
-    finally { setExporting(false); }
+    try { await onExportSpotify(tracks); setToast("Exported to Spotify"); }
+    catch { setToast("Spotify export failed"); }
+    finally { setExporting(false); window.setTimeout(() => setToast(""), 2500); }
   };
 
   const serviceAction = async (service, action) => {
-    try { await onServiceAction?.(service, action, track); setServiceToast(`♥ Loved`); }
-    catch { setServiceToast("⚠ Failed"); }
-    setTimeout(() => setServiceToast(null), 2500);
+    try { await onServiceAction?.(service, action, track); setToast(`♥ ${action}`); }
+    catch { setToast("Action failed"); }
+    window.setTimeout(() => setToast(""), 2200);
   };
 
-  /* ── Derived ─────────────────────────────────────────────────── */
-  const progress   = duration > 0 ? Math.min(elapsed / duration, 1) : 0;
-  const vidFound   = currentVid !== undefined && currentVid !== null;
-  const vidMissing = currentVid === null;
-  const canPlay    = useYT ? (vidFound || ytSearching) : !!track?.preview_url;
+  useEffect(() => {
+    if (!window.chrome?.webview) return;
+    const payload = JSON.stringify({
+      type: "VIBEFINDER_STATE",
+      isPlaying,
+      title: track?.title || "—",
+      artist: track?.artist || "—",
+      coverArt: track?.cover_art || null,
+      previewUrl: track?.preview_url || null,
+      currentTime: elapsed,
+      duration,
+    });
+    try { window.chrome.webview.postMessage(payload); } catch {}
+  }, [isPlaying, track, elapsed, duration]);
 
-  /* ════════════════════════════════════════════════════════════
-     MINIMISED BAR
-  ════════════════════════════════════════════════════════════ */
-  if (minimised) {
-    return (
-      <>
-        {useYT && (
-          <iframe ref={iframeRef} src="about:blank" title="yt-player"
-            allow="autoplay; encrypted-media"
-            onLoad={() => {
-              const iframe = iframeRef.current;
-              if (!iframe?.src?.includes("youtube.com")) return;
-              try {
-                iframe.contentWindow?.postMessage(
-                  JSON.stringify({ event: "listening", id: 1 }),
-                  "https://www.youtube.com"
-                );
-              } catch {}
-            }}
-            style={{ position: "fixed", bottom: -300, right: -300, width: 160, height: 90, border: "none", pointerEvents: "none", zIndex: -1 }}
-          />
-        )}
-        <div style={{ position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 200, display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", background: "linear-gradient(135deg, #120900, #0a0500)", border: `1px solid ${activeColor}55`, borderRadius: 40, boxShadow: `0 8px 32px rgba(0,0,0,0.8)`, backdropFilter: "blur(12px)", maxWidth: "90vw" }}>
-          {track?.cover_art ? <img src={track.cover_art} alt="" style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0 }} /> : <div style={{ width: 28, height: 28, borderRadius: 4, background: "rgba(120,80,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.disc}</div>}
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{track?.title}</div>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.5)", display: "flex", alignItems: "center", gap: 3 }}>{useYT && <>{Ic.yt}&nbsp;</>}{track?.artist}</div>
-          </div>
-          <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ ...S.ctrl, width: 28, height: 28 }}>{isPlaying ? Ic.pause : Ic.play}</button>
-          <button onClick={(e) => { e.stopPropagation(); handleNext(); }} style={{ ...S.ctrl, width: 24, height: 24 }}>{Ic.next}</button>
-          <button onClick={() => setMinimised(false)} style={{ ...S.ctrl, opacity: 0.5, width: 22, height: 22 }}>{Ic.chevron}</button>
+  useEffect(() => {
+    if (!window.chrome?.webview) return;
+    const handler = (event) => {
+      try {
+        const msg = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (msg?.command === "playpause") togglePlay();
+        else if (msg?.command === "next") handleNext();
+        else if (msg?.command === "prev") handlePrev();
+      } catch {}
+    };
+    window.chrome.webview.addEventListener("message", handler);
+    return () => window.chrome.webview.removeEventListener("message", handler);
+  }, [togglePlay, handleNext, handlePrev]);
+
+  const progress = duration > 0 ? Math.min(1, elapsed / duration) : 0;
+  const vid = track ? getVid(track) : undefined;
+  const canPlay = useYT ? Boolean(vid || ytSearching) : Boolean(track?.preview_url);
+
+  const playerStyles = {
+    shell: { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 200, padding: "10px 14px 12px", background: "linear-gradient(180deg, rgba(10,5,0,.98), rgba(4,2,0,.99))", borderTop: `1px solid ${activeColor}44`, boxShadow: "0 -12px 40px rgba(0,0,0,.72)", color: "#fde68a", fontFamily: "system-ui, sans-serif" },
+    row: { maxWidth: 980, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 },
+    btn: { border: 0, background: "transparent", color: "rgba(230,200,150,.72)", display: "grid", placeItems: "center", width: 32, height: 32, borderRadius: 9, cursor: "pointer" },
+  };
+
+  if (minimised) return (
+    <>
+      {useYT && <iframe ref={iframeRef} src="about:blank" title="vibefinder-youtube" allow="autoplay; encrypted-media; picture-in-picture" style={{ position: "fixed", width: 200, height: 200, right: 2, bottom: 2, opacity: 0.01, border: 0, pointerEvents: "none", zIndex: 1 }} onLoad={() => {
+        const frame = iframeRef.current;
+        if (!frame?.src.includes("youtube.com") || !frame.contentWindow) return;
+        ytReadyRef.current = true;
+        try { frame.contentWindow.postMessage(JSON.stringify({ event: "listening", id: 1 }), "https://www.youtube.com"); } catch {}
+        flushYt();
+      }} />}
+      <div style={{ ...playerStyles.shell, left: "50%", right: "auto", bottom: 16, transform: "translateX(-50%)", width: "min(520px, 92vw)", border: `1px solid ${activeColor}44`, borderRadius: 18 }}>
+        <div style={playerStyles.row}>
+          {track?.cover_art ? <img src={track.cover_art} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: "cover" }} /> : <div style={{ width: 34, height: 34, display: "grid", placeItems: "center" }}><Disc /></div>}
+          <div style={{ flex: 1, minWidth: 0 }}><div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 12 }}>{track?.title || "Nothing playing"}</div><div style={{ opacity: .52, fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.artist || ""}</div></div>
+          <button style={playerStyles.btn} onClick={togglePlay}>{isPlaying ? <Pause /> : <Play />}</button>
+          <button style={playerStyles.btn} onClick={handleNext}><Next /></button>
+          <button style={playerStyles.btn} onClick={() => setMinimised(false)}>⌃</button>
         </div>
-      </>
-    );
-  }
+      </div>
+    </>
+  );
 
-  /* ════════════════════════════════════════════════════════════
-     FULL PLAYER
-  ════════════════════════════════════════════════════════════ */
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: "linear-gradient(180deg, rgba(10,5,0,0.97) 0%, #060300 100%)", borderTop: `1px solid ${activeColor}44`, boxShadow: `0 -8px 40px rgba(0,0,0,0.8)`, backdropFilter: "blur(20px)", padding: "0 0 env(safe-area-inset-bottom, 0)" }}>
+    <div style={playerStyles.shell}>
+      {useYT && <iframe ref={iframeRef} src="about:blank" title="vibefinder-youtube" allow="autoplay; encrypted-media; picture-in-picture" onLoad={() => {
+        const frame = iframeRef.current;
+        if (!frame?.src.includes("youtube.com") || !frame.contentWindow) return;
+        ytReadyRef.current = true;
+        try { frame.contentWindow.postMessage(JSON.stringify({ event: "listening", id: 1 }), "https://www.youtube.com"); } catch {}
+        flushYt();
+      }} style={{ position: "fixed", width: 200, height: 200, right: 2, bottom: 2, opacity: 0.01, border: 0, pointerEvents: "none", zIndex: 1 }} />}
 
-      {/* Hidden YouTube iframe — off-screen, real dimensions for autoplay to work */}
-      {useYT && (
-        <iframe
-          ref={iframeRef}
-          src="about:blank"
-          title="vf-yt-player"
-          allow="autoplay; encrypted-media"
-          onLoad={() => {
-            // ── FIX: send "listening" after every src change ──────────────
-            // YouTube's postMessage API only dispatches onStateChange /
-            // infoDelivery events AFTER the parent sends this handshake.
-            // Without it the iframe plays but the parent is completely blind.
-            const iframe = iframeRef.current;
-            if (!iframe?.src?.includes("youtube.com")) return;
-            try {
-              iframe.contentWindow?.postMessage(
-                JSON.stringify({ event: "listening", id: 1 }),
-                "https://www.youtube.com"
-              );
-            } catch {}
-          }}
-          style={{
-            position: "fixed",
-            bottom: -300, right: -300,
-            width: 160, height: 90,
-            border: "none", pointerEvents: "none", zIndex: -1,
-          }}
-        />
-      )}
-
-      {/* Progress bar */}
-      <div ref={progressRef} onClick={seekTo} style={{ height: 3, background: "rgba(120,80,20,0.2)", cursor: "pointer", position: "relative" }}>
-        <div style={{ height: "100%", width: `${progress * 100}%`, background: `linear-gradient(90deg, ${activeColor}88, ${activeColor})`, transition: "width 0.5s linear" }} />
-        <div style={{ position: "absolute", top: -3, left: `${progress * 100}%`, transform: "translateX(-50%)", width: 9, height: 9, borderRadius: "50%", background: activeColor, boxShadow: `0 0 6px ${activeColor}`, transition: "left 0.5s linear" }} />
+      <div onClick={seekTo} style={{ height: 4, maxWidth: 980, margin: "0 auto 10px", background: "rgba(160,110,30,.18)", borderRadius: 99, cursor: "pointer", position: "relative" }}>
+        <div style={{ height: "100%", width: `${progress * 100}%`, borderRadius: 99, background: `linear-gradient(90deg, ${activeColor}88, ${activeColor})` }} />
       </div>
 
-      <div style={{ padding: "10px 16px 12px", maxWidth: 900, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap" }}>
-
-          {/* Album art */}
-          <div style={{ position: "relative", flexShrink: 0 }}>
-            {track?.cover_art
-              ? <img src={track.cover_art} alt="" style={{ width: 48, height: 48, borderRadius: 6, boxShadow: `0 0 12px ${activeColor}44`, border: `1px solid ${activeColor}33` }} />
-              : <div style={{ width: 48, height: 48, borderRadius: 6, background: "rgba(120,80,20,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(180,140,80,0.4)" }}>{Ic.disc}</div>
-            }
-            {isPlaying && <div style={{ position: "absolute", inset: 0, borderRadius: 6, border: `1.5px solid ${activeColor}66`, animation: "pulseRing 2s ease infinite" }} />}
-          </div>
-
-          {/* Track info */}
-          <div style={{ flex: "0 0 auto", minWidth: 0, maxWidth: 150 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.title || "—"}</div>
-            <div style={{ fontSize: 10, color: "rgba(180,140,80,0.6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.artist || ""}</div>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
-              {fmt(elapsed)} / {fmt(duration || 0)}
-              {useYT && (
-                <span style={{ display: "flex", alignItems: "center", gap: 2, color: vidMissing ? "rgba(180,80,80,0.4)" : ytSearching ? "rgba(217,119,6,0.5)" : "rgba(255,80,80,0.55)" }}>
-                  {Ic.yt} {ytSearching ? "searching…" : vidMissing ? "no video" : ""}
-                </span>
-              )}
-              {!useYT && <span style={{ opacity: 0.5 }}>30s preview</span>}
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <button onClick={toggleShuffle} style={{ ...S.ctrl, color: shuffle ? activeColor : "rgba(180,140,80,0.35)" }} title="Shuffle">{Ic.shuffle}</button>
-              <button onClick={handlePrev} style={S.ctrl} title="Previous">{Ic.prev}</button>
-
-              <button
-                onClick={togglePlay}
-                disabled={!canPlay}
-                title={useYT ? (ytSearching ? "Searching YouTube…" : vidMissing ? "No video found for this track" : isPlaying ? "Pause" : "Play full track") : (track?.preview_url ? "Play 30s preview" : "No preview available")}
-                style={{ ...S.ctrl, width: 42, height: 42, borderRadius: "50%", background: canPlay ? `linear-gradient(135deg, ${activeColor}cc, ${activeColor})` : "rgba(60,40,10,0.4)", border: `1px solid ${activeColor}55`, color: canPlay ? "#000" : "rgba(120,80,20,0.3)", boxShadow: canPlay ? `0 0 16px ${activeColor}44` : "none", opacity: canPlay ? 1 : 0.5 }}
-              >
-                {ytSearching
-                  ? <div style={{ width: 14, height: 14, border: `2px solid ${activeColor}44`, borderTopColor: activeColor, borderRadius: "50%", animation: "mpSpin 0.8s linear infinite" }} />
-                  : isPlaying ? Ic.pause : Ic.play}
-              </button>
-
-              <button onClick={handleNext} style={S.ctrl} title="Next">{Ic.next}</button>
-              <button onClick={cycleRepeat} style={{ ...S.ctrl, color: repeat !== "off" ? activeColor : "rgba(180,140,80,0.35)", position: "relative" }} title={`Repeat: ${repeat}`}>
-                {Ic.repeat}
-                {repeat === "one" && <span style={{ position: "absolute", top: -4, right: -4, fontSize: 7, color: activeColor, fontWeight: "bold" }}>1</span>}
-              </button>
-            </div>
-
-            <div style={{ fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 3, color: useYT ? "rgba(255,80,80,0.5)" : "rgba(180,140,80,0.2)" }}>
-              {useYT ? <>{Ic.yt} Full length · YouTube</> : "Connect YouTube for full tracks"}
-            </div>
-          </div>
-
-          {/* Right controls */}
-          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-              <button onClick={() => setMuted(m => !m)} style={{ ...S.ctrl, color: muted ? "rgba(180,140,80,0.3)" : "rgba(180,140,80,0.6)" }}>{muted ? Ic.volMute : Ic.volHigh}</button>
-              <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={e => { setVolume(+e.target.value); setMuted(false); }} style={{ width: 55, accentColor: activeColor, cursor: "pointer" }} />
-            </div>
-
-            <button onClick={() => setShowQueue(s => !s)} style={{ ...S.ctrl, color: showQueue ? activeColor : "rgba(180,140,80,0.4)" }} title={`Queue (${queue.length})`}>{Ic.queue}</button>
-
-            {spotifyConnected && (
-              <button onClick={handleExport} disabled={exporting} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(29,185,84,0.15)", border: "1px solid rgba(29,185,84,0.4)", color: exportDone?.url ? "#34d399" : "#1db954", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 4, opacity: exporting ? 0.6 : 1 }} title="Export to Spotify">
-                {Ic.spotify} {exporting ? "…" : exportDone?.url ? "✓" : "Export"}
-              </button>
-            )}
-
-            {visibleServices?.lastfm && servicesConnected?.lastfm && (
-              <button onClick={() => serviceAction("lastfm", "love")} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(213,16,7,0.12)", border: "1px solid rgba(213,16,7,0.3)", color: "#d51007", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 3 }} title="Love on Last.fm">
-                ♥ Last.fm
-              </button>
-            )}
-
-            {serviceToast && <span style={{ fontSize: 9, color: serviceToast.startsWith("⚠") ? "#f87171" : "#34d399", fontFamily: "'DM Mono', monospace" }}>{serviceToast}</span>}
-
-            <button onClick={() => setMinimised(true)} style={{ ...S.ctrl, opacity: 0.4, transform: "rotate(180deg)" }} title="Minimise">{Ic.chevron}</button>
-            <button onClick={onClose} style={{ ...S.ctrl, opacity: 0.4 }} title="Close player">{Ic.close}</button>
-          </div>
+      <div style={playerStyles.row}>
+        {track?.cover_art ? <img src={track.cover_art} alt="" style={{ width: 50, height: 50, borderRadius: 8, objectFit: "cover", boxShadow: `0 0 16px ${activeColor}33` }} /> : <div style={{ width: 50, height: 50, borderRadius: 8, display: "grid", placeItems: "center", background: "rgba(120,80,20,.16)" }}><Disc /></div>}
+        <div style={{ width: 175, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.title || "—"}</div>
+          <div style={{ opacity: .55, fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.artist || ""}</div>
+          <div style={{ opacity: .35, fontSize: 9, marginTop: 2 }}>{fmt(elapsed)} / {fmt(duration)}{useYT ? ` · ${vid === null ? "no YouTube match" : ytSearching ? "searching…" : "YouTube"}` : " · preview"}</div>
         </div>
 
-        {/* Queue */}
-        {showQueue && (
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(120,80,20,0.2)", maxHeight: 200, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: `${activeColor}44 transparent` }}>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>
-              Queue — {queue.length} tracks {shuffle ? "· shuffled" : ""} {useYT ? "· full length · YouTube" : "· 30s previews"}
-            </div>
-            {queue.map((t, i) => {
-              const vid = _getVid(t);
-              return (
-                <div key={`${t.title}|${i}`} onClick={() => setQueueIdx(i)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", borderRadius: 6, cursor: "pointer", background: i === queueIdx ? `${activeColor}18` : "transparent", border: `1px solid ${i === queueIdx ? activeColor + "44" : "transparent"}`, transition: "all 0.15s", marginBottom: 2 }}>
-                  <span style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", width: 16, textAlign: "right", flexShrink: 0 }}>{i === queueIdx ? "▶" : i + 1}</span>
-                  {t.cover_art ? <img src={t.cover_art} alt="" style={{ width: 24, height: 24, borderRadius: 3, flexShrink: 0 }} /> : <div style={{ width: 24, height: 24, borderRadius: 3, background: "rgba(120,80,20,0.2)", flexShrink: 0 }} />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, color: i === queueIdx ? "#fde68a" : "rgba(220,190,140,0.8)", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</div>
-                    <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.artist}</div>
-                  </div>
-                  {useYT && (
-                    <span style={{ fontSize: 8, flexShrink: 0, color: vid ? "rgba(255,80,80,0.6)" : _busy(t) ? "rgba(217,119,6,0.4)" : vid === null ? "rgba(120,80,20,0.3)" : "rgba(120,80,20,0.2)" }}>
-                      {vid ? "▶" : _busy(t) ? "…" : vid === null ? "✕" : "–"}
-                    </span>
-                  )}
-                  {!useYT && !t.preview_url && <span style={{ fontSize: 8, color: "rgba(180,140,80,0.2)", flexShrink: 0 }}>no preview</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
+          <button style={playerStyles.btn} onClick={toggleShuffle} title="Shuffle">⇄</button>
+          <button style={playerStyles.btn} onClick={handlePrev} title="Previous"><Prev /></button>
+          <button disabled={!canPlay} style={{ ...playerStyles.btn, width: 46, height: 46, borderRadius: "50%", background: canPlay ? activeColor : "rgba(90,60,15,.35)", color: canPlay ? "#140a00" : "rgba(255,255,255,.25)", boxShadow: canPlay ? `0 0 22px ${activeColor}44` : "none" }} onClick={togglePlay} title={canPlay ? (isPlaying ? "Pause" : "Play") : "No playable source"}>
+            {ytSearching ? "…" : isPlaying ? <Pause /> : <Play />}
+          </button>
+          <button style={playerStyles.btn} onClick={handleNext} title="Next"><Next /></button>
+          <button style={{ ...playerStyles.btn, position: "relative", color: repeat !== "off" ? activeColor : undefined }} onClick={cycleRepeat} title={`Repeat: ${repeat}`}>↻{repeat === "one" ? <span style={{ position: "absolute", top: 1, right: 3, fontSize: 7 }}>1</span> : null}</button>
+        </div>
 
-        {exportDone && !exportDone.error && exportDone.url && (
-          <div style={{ marginTop: 8, fontSize: 10, color: "#34d399", display: "flex", gap: 8, fontFamily: "'DM Mono', monospace" }}>
-            ✓ Exported! <a href={exportDone.url} target="_blank" rel="noopener noreferrer" style={{ color: "#1db954" }}>Open in Spotify ↗</a>
-          </div>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <button style={playerStyles.btn} onClick={() => setMuted(m => !m)}>{muted ? "🔇" : "🔊"}</button>
+          <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={e => { setVolume(Number(e.target.value)); setMuted(false); }} style={{ width: 65, accentColor: activeColor }} />
+          <button style={playerStyles.btn} onClick={() => setShowQueue(s => !s)} title="Queue">☷</button>
+          {spotifyConnected && <button style={{ ...playerStyles.btn, width: 58, fontSize: 9 }} disabled={exporting} onClick={handleExport}>{exporting ? "…" : "Spotify"}</button>}
+          {visibleServices?.lastfm && servicesConnected?.lastfm && <button style={{ ...playerStyles.btn, width: 48, fontSize: 9 }} onClick={() => serviceAction("lastfm", "love")}>♥</button>}
+          <button style={playerStyles.btn} onClick={() => setMinimised(true)}>⌄</button>
+          <button style={playerStyles.btn} onClick={onClose}><Close /></button>
+        </div>
       </div>
 
-      <style>{`
-        @keyframes pulseRing { 0%,100%{opacity:.8;transform:scale(1);} 50%{opacity:.3;transform:scale(1.04);} }
-        @keyframes mpSpin    { to{transform:rotate(360deg);} }
-      `}</style>
+      {showQueue && <div style={{ maxWidth: 980, margin: "10px auto 0", paddingTop: 8, borderTop: "1px solid rgba(160,110,30,.16)", maxHeight: 210, overflow: "auto" }}>
+        {queue.map((t, i) => <button key={`${t.title}|${i}`} onClick={() => { desiredPlayingRef.current = isPlayingRef.current; setQueueIdx(i); }} style={{ width: "100%", border: 0, background: i === queueIdx ? `${activeColor}14` : "transparent", color: "inherit", textAlign: "left", padding: "6px 4px", cursor: "pointer", display: "flex", gap: 8, alignItems: "center", borderRadius: 7 }}>
+          <span style={{ width: 18, opacity: .4, fontSize: 9 }}>{i === queueIdx ? "▶" : i + 1}</span>
+          {t.cover_art ? <img src={t.cover_art} alt="" style={{ width: 26, height: 26, borderRadius: 4, objectFit: "cover" }} /> : <div style={{ width: 26, height: 26, borderRadius: 4, background: "rgba(120,80,20,.14)" }} />}
+          <span style={{ minWidth: 0, flex: 1 }}><span style={{ display: "block", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span><span style={{ display: "block", fontSize: 9, opacity: .38, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.artist}</span></span>
+        </button>)}
+      </div>}
+
+      {toast && <div style={{ maxWidth: 980, margin: "7px auto 0", fontSize: 10, color: activeColor, opacity: .85 }}>{toast}</div>}
     </div>
   );
 }
-
-const S = {
-  ctrl: {
-    display: "flex", alignItems: "center", justifyContent: "center",
-    width: 32, height: 32, borderRadius: 8,
-    background: "transparent", border: "none",
-    color: "rgba(180,140,80,0.7)", cursor: "pointer",
-    transition: "all 0.15s", flexShrink: 0,
-  },
-};
