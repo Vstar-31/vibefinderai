@@ -1,13 +1,13 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App.jsx'
+import AppWithThemedAI from './AppWithThemedAI.jsx'
 import ThemedApp from './ThemedApp.jsx'
 import SharedPlaylist from './SharedPlaylist.jsx'
 import AnalyticsDashboard from './AnalyticsDashboard.jsx'
 
-/* The Themed.AI branch is a dedicated Netlify client. Keep the existing
-   app/playlist/metrics surfaces available for compatibility, but make the
-   desktop-first Themed.AI experience the root experience. */
+/* The Themed.AI branch keeps the existing VibeFinderAI surfaces available,
+   while embedding the desktop-first Themed.AI workspace directly into the
+   legacy app instead of routing to a separate page. */
 function resolveRoute() {
   const path = window.location.pathname;
   const params = new URLSearchParams(window.location.search);
@@ -35,7 +35,7 @@ function Router() {
 
   if (route === 'playlist') return <SharedPlaylist />;
   if (route === 'metrics') return <AnalyticsDashboard />;
-  if (route === 'legacy-app') return <App onNavigate={navigate} />;
+  if (route === 'legacy-app') return <AppWithThemedAI onNavigate={navigate} />;
   return <ThemedApp />;
 }
 
