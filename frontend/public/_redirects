@@ -1,1 +1,4 @@
-/* /index.html 200
+/auth/*  https://vibefinderai.onrender.com/auth/:splat  200!
+/api/*   https://vibefinderai.onrender.com/api/:splat   200!
+/health   https://vibefinderai.onrender.com/health  200!
+/*        /index.html  200
