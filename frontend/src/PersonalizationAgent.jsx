@@ -23,6 +23,10 @@ const getCurrentVibe = () => {
   return match?.[1]?.trim() || null;
 };
 
+const emitFeedback = (detail) => {
+  window.dispatchEvent(new CustomEvent("vibefinder:feedback", { detail }));
+};
+
 export default function PersonalizationAgent() {
   useEffect(() => {
     const publish = () => {
@@ -55,40 +59,57 @@ export default function PersonalizationAgent() {
       const vibe = getCurrentVibe();
 
       if (buttonTitle === "Good match") {
-        window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-          detail: { artist, mood: vibe, weight: 2, context: "track_like" },
-        }));
+        emitFeedback({ artist, mood: vibe, weight: 2, context: "track_like" });
         return;
       }
 
       if (buttonTitle === "Bad match") {
-        window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-          detail: { artist, mood: vibe, weight: -2, context: "track_dislike", track: { title, artist } },
-        }));
+        emitFeedback({ artist, mood: vibe, weight: -2, context: "track_dislike", track: { title, artist } });
         return;
       }
 
       if (buttonTitle.includes("Play full song") || buttonTitle.includes("Play 30s preview") || buttonText === "Playing") {
-        window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-          detail: { artist, mood: vibe, weight: 0.5, context: "track_play" },
-        }));
+        emitFeedback({ artist, mood: vibe, weight: 0.5, context: "track_play" });
         return;
       }
 
       if (buttonTitle.includes("Remove this track")) {
-        window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-          detail: { artist, mood: vibe, weight: -1.5, context: "track_remove", track: { title, artist } },
-        }));
+        emitFeedback({ artist, mood: vibe, weight: -1.5, context: "track_remove", track: { title, artist } });
         return;
       }
 
       if (target.closest(".freq-tag")) {
         const genre = buttonText.replace(/^✓\s*/, "").trim();
-        if (genre) {
-          window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-            detail: { artist, genre, mood: vibe, weight: 1.25, context: "genre_select" },
-          }));
-        }
+        if (genre) emitFeedback({ artist, genre, mood: vibe, weight: 1.25, context: "genre_select" });
+      }
+    };
+
+    const onChange = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+
+      const colorInput = target.type === "color" && target.closest(".ta-controls");
+      if (colorInput) {
+        emitFeedback({
+          interfaceCategory: "themes",
+          interfaceValue: target.value,
+          weight: 1.5,
+          context: "interface_theme_change",
+        });
+        return;
+      }
+
+      if (target.type !== "range") return;
+      const label = target.closest("label")?.textContent?.toLowerCase() || "";
+      const value = Number(target.value);
+      if (!Number.isFinite(value)) return;
+
+      if (label.includes("artist familiarity")) {
+        emitFeedback({ interfaceCategory: "density", interfaceValue: "artist-familiar", weight: value >= 60 ? 0.5 : -0.25, context: "artist_familiarity_control" });
+      } else if (label.includes("nicheness")) {
+        emitFeedback({ interfaceCategory: "density", interfaceValue: "niche", weight: value >= 60 ? 0.75 : -0.25, context: "nicheness_control" });
+      } else if (label.includes("bpm bias")) {
+        emitFeedback({ interfaceCategory: "ambience", interfaceValue: value >= 60 ? "high-energy" : value <= 40 ? "low-energy" : "balanced", weight: value >= 60 || value <= 40 ? 0.5 : 0.15, context: "bpm_control" });
       }
     };
 
@@ -111,20 +132,16 @@ export default function PersonalizationAgent() {
           .filter((item, index, rows) => rows.findIndex((candidate) => `${candidate.title || ""}|${candidate.artist || ""}` === `${item.title || ""}|${item.artist || ""}`) === index)
           .slice(0, 24);
 
-        const artistBoost = hints.focusBoosts.artist;
-        const genreBoost = hints.focusBoosts.nicheness;
-        const bpmBoost = hints.focusBoosts.bpm;
         const mergedPayload = {
           ...payload,
-          artist_focus: Math.min(100, Math.round((payload.artist_focus ?? 50) + artistBoost)),
-          nicheness: Math.min(100, Math.round((payload.nicheness ?? 50) + genreBoost)),
-          bpm_focus: Math.min(100, Math.round((payload.bpm_focus ?? 50) + bpmBoost)),
+          artist_focus: Math.min(100, Math.round((payload.artist_focus ?? 50) + hints.focusBoosts.artist)),
+          nicheness: Math.min(100, Math.round((payload.nicheness ?? 50) + hints.focusBoosts.nicheness)),
+          bpm_focus: Math.min(100, Math.round((payload.bpm_focus ?? 50) + hints.focusBoosts.bpm)),
           excluded_tracks: excluded.length ? excluded : null,
           liked_artists: [...new Set([...(Array.isArray(payload.liked_artists) ? payload.liked_artists : []), ...hints.likedArtists])].slice(0, 12),
         };
 
-        const nextInit = { ...init, body: JSON.stringify(mergedPayload) };
-        return originalFetch(input, nextInit);
+        return originalFetch(input, { ...init, body: JSON.stringify(mergedPayload) });
       } catch {
         return originalFetch(input, init);
       }
@@ -134,6 +151,7 @@ export default function PersonalizationAgent() {
     window.addEventListener("vibefinder:feedback", onSignal);
     window.addEventListener("themedai:interface-feedback", onInterfaceSignal);
     document.addEventListener("click", onClick, true);
+    document.addEventListener("change", onChange, true);
     publish();
 
     return () => {
@@ -141,6 +159,7 @@ export default function PersonalizationAgent() {
       window.removeEventListener("vibefinder:feedback", onSignal);
       window.removeEventListener("themedai:interface-feedback", onInterfaceSignal);
       document.removeEventListener("click", onClick, true);
+      document.removeEventListener("change", onChange, true);
     };
   }, []);
 
