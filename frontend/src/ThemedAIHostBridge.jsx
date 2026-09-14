@@ -48,6 +48,10 @@ export default function ThemedAIHostBridge() {
   const resultTimerRef = useRef(null);
 
   useEffect(() => {
+    const publishProfile = (detail) => {
+      postHost({ type: "VIBEFINDER_PROFILE", profile: detail || null });
+    };
+
     postHost({
       type: "VIBEFINDER_APP_READY",
       hasToken: (() => {
@@ -90,6 +94,8 @@ export default function ThemedAIHostBridge() {
       publishResults();
       publishState();
     };
+
+    const onProfile = (event) => publishProfile(event?.detail);
 
     const onHostMessage = (event) => {
       let message = event?.data;
@@ -145,6 +151,7 @@ export default function ThemedAIHostBridge() {
       setTimeout(runBridge, 80);
     };
 
+    window.addEventListener("vibefinder:profile", onProfile);
     if (window.chrome?.webview) window.chrome.webview.addEventListener("message", onHostMessage);
     else window.addEventListener("message", onHostMessage);
 
@@ -153,8 +160,13 @@ export default function ThemedAIHostBridge() {
     const observer = new MutationObserver(runBridge);
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     runBridge();
+    try {
+      const raw = localStorage.getItem("vf_personalization_v1");
+      if (raw) publishProfile(JSON.parse(raw));
+    } catch {}
 
     return () => {
+      window.removeEventListener("vibefinder:profile", onProfile);
       if (window.chrome?.webview) window.chrome.webview.removeEventListener("message", onHostMessage);
       else window.removeEventListener("message", onHostMessage);
       if (resultTimerRef.current) window.clearInterval(resultTimerRef.current);
