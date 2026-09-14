@@ -1,4 +1,6 @@
+/* eslint-disable react-refresh/only-export-components */
 import { StrictMode, useEffect, useState } from 'react'
+import { createRoot } from 'react-dom/client'
 import AppWithThemedAI from './AppWithThemedAI.jsx'
 import ThemedApp from './ThemedApp.jsx'
 import SharedPlaylist from './SharedPlaylist.jsx'
