@@ -46,7 +46,9 @@ export function savePersonalizationProfile(profile) {
 export function recordPersonalizationSignal(profile, signal = {}) {
   const next = structuredClone(profile || DEFAULT_PROFILE);
   const amount = Number.isFinite(signal.weight) ? signal.weight : 1;
-  next.signals += amount;
+
+  // `signals` measures observed interaction volume, not preference polarity.
+  next.signals += Math.max(1, Math.abs(amount));
 
   const bump = (bucket, key, delta = amount) => {
     if (!key) return;
