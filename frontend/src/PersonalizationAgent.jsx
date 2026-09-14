@@ -38,6 +38,12 @@ export default function PersonalizationAgent() {
       publish();
     };
 
+    const onInterfaceSignal = (event) => {
+      const signal = event?.detail;
+      if (!signal || typeof signal !== "object") return;
+      onSignal({ detail: { ...signal, context: signal.context || "interface_feedback" } });
+    };
+
     const onClick = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -126,12 +132,14 @@ export default function PersonalizationAgent() {
 
     window.fetch = personalizedFetch;
     window.addEventListener("vibefinder:feedback", onSignal);
+    window.addEventListener("themedai:interface-feedback", onInterfaceSignal);
     document.addEventListener("click", onClick, true);
     publish();
 
     return () => {
       window.fetch = originalFetch;
       window.removeEventListener("vibefinder:feedback", onSignal);
+      window.removeEventListener("themedai:interface-feedback", onInterfaceSignal);
       document.removeEventListener("click", onClick, true);
     };
   }, []);
