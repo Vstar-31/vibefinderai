@@ -9,9 +9,8 @@ const getTrackContext = (element) => {
   const row = element?.closest?.(".app-track-row");
   if (!row) return {};
   const spans = [...row.querySelectorAll(".app-track-meta span")].filter((el) => el.textContent?.trim());
-  const title = spans[0]?.textContent?.trim() || "";
   const artist = spans[1]?.textContent?.trim() || "";
-  return { title, artist };
+  return { artist };
 };
 
 const getCurrentVibe = () => {
@@ -25,11 +24,9 @@ const getCurrentVibe = () => {
 export default function PersonalizationAgent() {
   useEffect(() => {
     const publish = () => {
-      try {
-        window.dispatchEvent(new CustomEvent("vibefinder:profile", {
-          detail: profileSummary(loadPersonalizationProfile()),
-        }));
-      } catch {}
+      window.dispatchEvent(new CustomEvent("vibefinder:profile", {
+        detail: profileSummary(loadPersonalizationProfile()),
+      }));
     };
 
     const onSignal = (event) => {
@@ -43,35 +40,36 @@ export default function PersonalizationAgent() {
       const target = event.target;
       if (!(target instanceof Element)) return;
 
-      const { title, artist } = getTrackContext(target);
+      const { artist } = getTrackContext(target);
       const button = target.closest("button");
       const buttonTitle = button?.title || "";
       const buttonText = button?.textContent?.trim() || "";
+      const vibe = getCurrentVibe();
 
       if (buttonTitle === "Good match") {
         window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-          detail: { artist, mood: getCurrentVibe(), weight: 2, context: "track_like" },
+          detail: { artist, mood: vibe, weight: 2, context: "track_like" },
         }));
         return;
       }
 
       if (buttonTitle === "Bad match") {
         window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-          detail: { artist, mood: getCurrentVibe(), weight: -2, context: "track_dislike" },
+          detail: { artist, mood: vibe, weight: -2, context: "track_dislike" },
         }));
         return;
       }
 
       if (buttonTitle.includes("Play full song") || buttonTitle.includes("Play 30s preview") || buttonText === "Playing") {
         window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-          detail: { artist, mood: getCurrentVibe(), weight: 0.5, context: "track_play" },
+          detail: { artist, mood: vibe, weight: 0.5, context: "track_play" },
         }));
         return;
       }
 
       if (buttonTitle.includes("Remove this track")) {
         window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-          detail: { artist, mood: getCurrentVibe(), weight: -1.5, context: "track_remove" },
+          detail: { artist, mood: vibe, weight: -1.5, context: "track_remove" },
         }));
         return;
       }
@@ -80,7 +78,7 @@ export default function PersonalizationAgent() {
         const genre = buttonText.replace(/^✓\s*/, "").trim();
         if (genre) {
           window.dispatchEvent(new CustomEvent("vibefinder:feedback", {
-            detail: { artist, genre, mood: getCurrentVibe(), weight: 1.25, context: "genre_select" },
+            detail: { artist, genre, mood: vibe, weight: 1.25, context: "genre_select" },
           }));
         }
       }
