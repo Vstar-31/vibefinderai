@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import App from "./App.jsx";
 import ThemedAIEmbed from "./ThemedAIEmbed.jsx";
 import ThemedAIHostBridge from "./ThemedAIHostBridge.jsx";
+import { loadPersonalizationProfile, profileSummary, recordPersonalizationSignal } from "./personalization.js";
 
 const postToThemedAIHost = (message) => {
   try {
@@ -34,6 +35,7 @@ export default function AppWithThemedAI({ onNavigate }) {
         catch { return false; }
       })(),
     });
+    postToThemedAIHost({ type: "VIBEFINDER_PROFILE", profile: profileSummary(loadPersonalizationProfile()) });
 
     const onHostMessage = (event) => {
       let message = event?.data;
@@ -99,6 +101,37 @@ export default function AppWithThemedAI({ onNavigate }) {
   }, []);
 
   useEffect(() => {
+    // Convert meaningful music/interface interactions into durable personalization signals.
+    // This deliberately sits at the wrapper level so future interface controls can participate
+    // without coupling the research model to individual components.
+    const onClick = (event) => {
+      const button = event.target?.closest?.("button, a");
+      if (!button) return;
+      const title = (button.getAttribute("title") || "").toLowerCase();
+      const text = (button.textContent || "").trim().toLowerCase();
+      let signal = null;
+
+      if (text.includes("good match") || title.includes("good match")) signal = { weight: 1 };
+      else if (text.includes("bad match") || title.includes("bad match")) signal = { weight: -1 };
+      else if (title.includes("play 30s preview")) signal = { weight: 0.25 };
+      else if (title.includes("play full song") || title === "play full track") signal = { weight: 0.5 };
+      else if (title === "next" || title === "previous" || title === "prev") signal = { weight: -0.1 };
+      else if (text === "reset engine") signal = { weight: 0.05 };
+      else if (text === "dark" || text === "minimal" || text.includes("ambience")) signal = { weight: 0.25, interfaceCategory: "themes", interfaceValue: text };
+
+      if (!signal) return;
+      const updated = recordPersonalizationSignal(loadPersonalizationProfile(), {
+        ...signal,
+        context: currentPrompt.trim() || undefined,
+      });
+      postToThemedAIHost({ type: "VIBEFINDER_PROFILE", profile: profileSummary(updated) });
+    };
+
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [currentPrompt]);
+
+  useEffect(() => {
     if (!themedOpen) return;
     const textarea = document.querySelector(".app-panel textarea");
     if (textarea instanceof HTMLTextAreaElement) setCurrentPrompt(textarea.value);
@@ -124,6 +157,7 @@ export default function AppWithThemedAI({ onNavigate }) {
 
   const handleThemedMessage = useCallback((message) => {
     if (message.type === "VIBEFINDER_STATE") setLastThemedState(message.state || null);
+    if (message.type === "VIBEFINDER_PROFILE" && message.profile) setLastThemedState((prev) => ({ ...(prev || {}), profile: message.profile }));
   }, []);
 
   const handleThemedAnalysis = useCallback((message) => {
@@ -142,7 +176,14 @@ export default function AppWithThemedAI({ onNavigate }) {
 
   const handleThemedTheme = useCallback((accent) => {
     if (typeof accent === "string") document.documentElement.style.setProperty("--themedai-accent", accent);
-  }, []);
+    const updated = recordPersonalizationSignal(loadPersonalizationProfile(), {
+      interfaceCategory: "themes",
+      interfaceValue: accent,
+      context: currentPrompt.trim() || undefined,
+      weight: 0.5,
+    });
+    postToThemedAIHost({ type: "VIBEFINDER_PROFILE", profile: profileSummary(updated) });
+  }, [currentPrompt]);
 
   return (
     <>
