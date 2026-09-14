@@ -82,6 +82,36 @@ export function rankProfile(bucket = {}) {
     .map(([value, score]) => ({ value, score }));
 }
 
+export function recommendationHints(profile) {
+  const source = profile || DEFAULT_PROFILE;
+  const positive = (bucket) => rankProfile(bucket).filter((item) => item.score > 0);
+  const negative = (bucket) => rankProfile(bucket).filter((item) => item.score < 0);
+
+  return {
+    likedArtists: positive(source.artists)
+      .slice(0, 6)
+      .map(({ value }) => value),
+    preferredGenres: positive(source.genres)
+      .slice(0, 6)
+      .map(({ value }) => value),
+    preferredMoods: positive(source.moods)
+      .slice(0, 4)
+      .map(({ value }) => value),
+    dislikedArtists: negative(source.artists)
+      .slice(0, 8)
+      .map(({ value }) => value),
+    excludedContexts: (source.recentContexts || [])
+      .filter((item) => ["track_dislike", "track_remove"].includes(item.value))
+      .slice(0, 6)
+      .map(({ value }) => value),
+    focusBoosts: {
+      artist: clamp((positive(source.artists)[0]?.score || 0) * 8, 0, 35),
+      nicheness: clamp((positive(source.genres)[0]?.score || 0) * 5, 0, 25),
+      bpm: clamp((positive(source.moods)[0]?.score || 0) * 3, 0, 20),
+    },
+  };
+}
+
 export function profileSummary(profile) {
   return {
     signals: profile?.signals || 0,
