@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import App from "./App.jsx";
 import ThemedAIEmbed from "./ThemedAIEmbed.jsx";
+import ThemedAIHostBridge from "./ThemedAIHostBridge.jsx";
 
 const postToThemedAIHost = (message) => {
   try {
@@ -26,15 +27,14 @@ export default function AppWithThemedAI({ onNavigate }) {
   const [lastThemedState, setLastThemedState] = useState(null);
 
   useEffect(() => {
-    // Tell WebView2 immediately that the VibeFinder app is alive. The desktop host uses this
-    // instead of guessing whether the embedded page has actually mounted.
     postToThemedAIHost({
       type: "VIBEFINDER_APP_READY",
-      hasToken: Boolean(localStorage.getItem("vf_token")),
+      hasToken: (() => {
+        try { return Boolean(localStorage.getItem("vf_token")); }
+        catch { return false; }
+      })(),
     });
 
-    // Commands from Themed.AI arrive through the WebView2 message channel. Keep this bridge at
-    // the wrapper level so prompt/analyze commands work even when the full MusicPlayer is closed.
     const onHostMessage = (event) => {
       let message = event?.data;
       if (typeof message === "string") {
@@ -50,6 +50,8 @@ export default function AppWithThemedAI({ onNavigate }) {
           textarea.focus();
           setCurrentPrompt(message.text);
           postToThemedAIHost({ type: "VIBEFINDER_COMMAND_RESULT", command: "setPrompt", success: true });
+        } else {
+          postToThemedAIHost({ type: "VIBEFINDER_COMMAND_RESULT", command: "setPrompt", success: false, reason: "input_not_ready" });
         }
         return;
       }
@@ -103,12 +105,6 @@ export default function AppWithThemedAI({ onNavigate }) {
   }, [themedOpen]);
 
   useEffect(() => {
-    const open = () => setThemedOpen(true);
-    window.addEventListener("vibefinder:open-themedai", open);
-    return () => window.removeEventListener("vibefinder:open-themedai", open);
-  }, []);
-
-  useEffect(() => {
     const onKey = (event) => {
       if (themedOpen) return;
       if (!event.ctrlKey && !event.metaKey) return;
@@ -119,6 +115,12 @@ export default function AppWithThemedAI({ onNavigate }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [themedOpen]);
+
+  useEffect(() => {
+    const open = () => setThemedOpen(true);
+    window.addEventListener("vibefinder:open-themedai", open);
+    return () => window.removeEventListener("vibefinder:open-themedai", open);
+  }, []);
 
   const handleThemedMessage = useCallback((message) => {
     if (message.type === "VIBEFINDER_STATE") setLastThemedState(message.state || null);
@@ -144,6 +146,7 @@ export default function AppWithThemedAI({ onNavigate }) {
 
   return (
     <>
+      <ThemedAIHostBridge />
       <App onNavigate={onNavigate} />
 
       <button
