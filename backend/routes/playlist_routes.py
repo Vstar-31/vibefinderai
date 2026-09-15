@@ -197,7 +197,8 @@ async def save_playlist(
         return _row_to_response(row)
 
     except Exception as e:
-        logger.error(f"[Playlist] Save failed: {e}")
+        logger.error(f"[Playlist] Save failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save playlist — please try again")
 
 @router.post("/playlist/{token}/fork", status_code=201)
 async def fork_playlist(

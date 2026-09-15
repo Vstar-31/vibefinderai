@@ -120,6 +120,9 @@ function SaveModal({ result, prompt, token, buildApiUrl, onSaved, onClose, filte
         throw new Error(d.detail || "Failed to save");
       }
       const saved = await res.json();
+      if (!saved || !saved.id) {
+        throw new Error("Save failed — server returned no playlist");
+      }
       onSaved(saved);
     } catch (e) {
       setError(e.message);

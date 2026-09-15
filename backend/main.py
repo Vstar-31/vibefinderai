@@ -224,7 +224,9 @@ async def lifespan(app: FastAPI):
         _total_processed = 0
 
         while True:
-            _batch = await db.artistdirectory.find_many(take=_BATCH_SIZE, skip=_offset)
+            _batch = await db.artistdirectory.find_many(
+                take=_BATCH_SIZE, skip=_offset, order={"id": "asc"}
+            )
             if not _batch:
                 break
 
