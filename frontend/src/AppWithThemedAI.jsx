@@ -22,6 +22,30 @@ const setReactTextAreaValue = (element, value) => {
   element.dispatchEvent(new Event("change", { bubbles: true }));
 };
 
+// The VibeFinder app can have either its YouTube iframe player or its HTML-audio preview
+// fallback active. Before replacing the recommendation set, always pause the current player so
+// an old track cannot continue underneath the new analysis.
+const pauseCurrentPlayer = () => {
+  const buttons = [...document.querySelectorAll("button")];
+  const pauseButton = buttons.find((button) =>
+    button.title === "Pause" ||
+    button.title === "Playing" ||
+    button.textContent?.trim() === "Pause"
+  );
+  if (pauseButton instanceof HTMLButtonElement && !pauseButton.disabled) {
+    pauseButton.click();
+    return true;
+  }
+
+  const audio = [...document.querySelectorAll("audio")].find((element) => !element.paused);
+  if (audio instanceof HTMLAudioElement) {
+    audio.pause();
+    return true;
+  }
+
+  return false;
+};
+
 export default function AppWithThemedAI({ onNavigate }) {
   const [themedOpen, setThemedOpen] = useState(false);
   const [currentPrompt, setCurrentPrompt] = useState("");
@@ -68,6 +92,12 @@ export default function AppWithThemedAI({ onNavigate }) {
       }
 
       if (command === "runAnalysis") {
+        // Stop any playback belonging to the previous recommendation set before VibeFinder
+        // mutates the result list. This also prevents the old preview/audio source surviving a
+        // YouTube iframe replacement.
+        const stopped = pauseCurrentPlayer();
+        if (stopped) postToThemedAIHost({ type: "VIBEFINDER_PLAYBACK_RESET", reason: "analysis" });
+
         const runButton = document.querySelector(".app-run-btn");
         if (runButton instanceof HTMLButtonElement) {
           if (runButton.disabled) {
@@ -101,9 +131,6 @@ export default function AppWithThemedAI({ onNavigate }) {
   }, []);
 
   useEffect(() => {
-    // Convert meaningful music/interface interactions into durable personalization signals.
-    // This deliberately sits at the wrapper level so future interface controls can participate
-    // without coupling the research model to individual components.
     const onClick = (event) => {
       const button = event.target?.closest?.("button, a");
       if (!button) return;
