@@ -130,6 +130,17 @@ export default function ThemedAIHostBridge() {
       }
 
       const normalised = command === "previous" ? "prev" : command;
+
+      // Prefer the mounted MusicPlayer's direct command bus. DOM button discovery can become
+      // ambiguous after a YouTube pause/end cycle; the player itself owns the authoritative state.
+      const detail = { command: normalised, handled: false };
+      window.dispatchEvent(new CustomEvent("vibefinder:host-command", { detail }));
+      if (detail.handled) {
+        postHost({ type: "VIBEFINDER_COMMAND_RESULT", command, success: true, reason: null });
+        setTimeout(runBridge, 80);
+        return;
+      }
+
       let ok = false;
 
       if (normalised === "next" || normalised === "prev") {
