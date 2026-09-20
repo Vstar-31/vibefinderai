@@ -92,9 +92,8 @@ export default function AppWithThemedAI({ onNavigate }) {
       }
 
       if (command === "runAnalysis") {
-        // Stop any playback belonging to the previous recommendation set before VibeFinder
-        // mutates the result list. This also prevents the old preview/audio source surviving a
-        // YouTube iframe replacement.
+        // Stop every VibeFinder playback layer before replacing the recommendation set.
+        window.dispatchEvent(new Event("vibefinder:stop-playback"));
         const stopped = pauseCurrentPlayer();
         if (stopped) postToThemedAIHost({ type: "VIBEFINDER_PLAYBACK_RESET", reason: "analysis" });
 
