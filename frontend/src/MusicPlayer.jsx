@@ -126,6 +126,7 @@ export default function MusicPlayer({
   const tickRef     = useRef(null);   // setInterval for elapsed time
   const startRef    = useRef(null);   // wall-clock time when play started (for elapsed calc)
   const elapsedBase = useRef(0);      // elapsed at last play event (for resume accuracy)
+  const playbackGenerationRef = useRef(0); // invalidates stale queue/video-load work
 
   // Stable refs for callbacks
   const repeatRef   = useRef(repeat);
@@ -137,6 +138,60 @@ export default function MusicPlayer({
 
   const track      = queue[queueIdx] || queue[0];
   const currentVid = track ? _getVid(track) : undefined; // undefined=unknown, null=not found, str=found
+
+  const stopPlayback = useCallback(() => {
+    playbackGenerationRef.current += 1;
+    clearInterval(tickRef.current);
+    tickRef.current = null;
+    startRef.current = null;
+    elapsedBase.current = 0;
+
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current.src = "";
+      } catch {}
+    }
+
+    const iframe = iframeRef.current;
+    if (iframe) {
+      try {
+        if (iframe.src?.includes("youtube.com")) {
+          iframe.contentWindow?.postMessage(
+            JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+            "https://www.youtube.com"
+          );
+        }
+      } catch {}
+      try { iframe.src = "about:blank"; } catch {}
+    }
+
+    setIsPlaying(false);
+    setElapsed(0);
+    setDuration(0);
+    setYtSearching(false);
+  }, []);
+
+  // A new recommendation set is a new playback session. Replace the queue and
+  // invalidate anything still resolving for the previous queue.
+  useEffect(() => {
+    const nextQueue = tracks.map((t, i) => ({ ...t, _origIdx: i }));
+    const nextKey = nextQueue.map(_key).join("\u001e");
+    const currentKey = queueRef.current.map(_key).join("\u001e");
+    if (nextKey === currentKey) return;
+
+    stopPlayback();
+    setQueue(nextQueue);
+    setQueueIdx(nextQueue.length ? Math.min(initialIndex, nextQueue.length - 1) : 0);
+  }, [tracks, initialIndex, stopPlayback]);
+
+  // The desktop wrapper and other host integrations can request a hard stop.
+  useEffect(() => {
+    const onExternalStop = () => stopPlayback();
+    window.addEventListener("vibefinder:stop-playback", onExternalStop);
+    return () => window.removeEventListener("vibefinder:stop-playback", onExternalStop);
+  }, [stopPlayback]);
 
   /* ════════════════════════════════════════════════════════════
      VIDEO ID FETCHING  (module-level cache, no duplicates)
@@ -185,7 +240,7 @@ export default function MusicPlayer({
         setTimeout(() => fetchVideoId(t), (i - queueIdx) * 400);
       }
     }
-  }, [queueIdx, useYT]); // eslint-disable-line
+  }, [queueIdx, queue, useYT]); // eslint-disable-line
 
   /* ════════════════════════════════════════════════════════════
      postMessage → iframe (send command)
@@ -289,6 +344,10 @@ export default function MusicPlayer({
   /* ── Load new track when queueIdx changes (YT mode) ────────── */
   useEffect(() => {
     if (!useYT || !track) return;
+
+    const generation = ++playbackGenerationRef.current;
+    const requestedTrackKey = _key(track);
+
     clearInterval(tickRef.current);
     elapsedBase.current = 0;
     setElapsed(0);
@@ -298,6 +357,8 @@ export default function MusicPlayer({
     if (vid === undefined) {
       // Not fetched yet — priority fetch then load
       fetchVideoId(track, true).then(id => {
+        const current = queueRef.current[queueIdxRef.current];
+        if (generation !== playbackGenerationRef.current || !current || _key(current) !== requestedTrackKey) return;
         if (id && iframeRef.current) {
           iframeRef.current.src = ytSrc(id, true);
           setIsPlaying(true);
@@ -314,10 +375,26 @@ export default function MusicPlayer({
       setIsPlaying(false);
       if (iframeRef.current) iframeRef.current.src = "about:blank";
     }
-  }, [queueIdx, useYT, cacheVer]); // eslint-disable-line
+  }, [queueIdx, queue, useYT]); // eslint-disable-line
 
   /* ── Cleanup on unmount ─────────────────────────────────────── */
-  useEffect(() => () => clearInterval(tickRef.current), []);
+  useEffect(() => () => {
+    playbackGenerationRef.current += 1;
+    clearInterval(tickRef.current);
+    try {
+      audioRef.current?.pause();
+      if (audioRef.current) audioRef.current.src = "";
+    } catch {}
+    try {
+      if (iframeRef.current?.src?.includes("youtube.com")) {
+        iframeRef.current.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+          "https://www.youtube.com"
+        );
+      }
+      if (iframeRef.current) iframeRef.current.src = "about:blank";
+    } catch {}
+  }, []);
 
   /* ════════════════════════════════════════════════════════════
      HTML AUDIO (preview fallback)
@@ -389,12 +466,17 @@ export default function MusicPlayer({
   };
 
   const togglePlay = () => {
+    if (!canPlay) return;
     if (useYT) {
       isPlaying ? ytCommand("pauseVideo") : ytCommand("playVideo");
     } else {
       if (!audioRef.current || !track?.preview_url) return;
-      if (isPlaying) audioRef.current.pause();
-      else { if (!audioRef.current.src) audioRef.current.src = track.preview_url; audioRef.current.play().catch(() => {}); }
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        if (!audioRef.current.src) audioRef.current.src = track.preview_url;
+        audioRef.current.play().catch(() => setIsPlaying(false));
+      }
     }
   };
 
