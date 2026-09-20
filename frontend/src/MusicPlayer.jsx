@@ -246,14 +246,16 @@ export default function MusicPlayer({
      postMessage → iframe (send command)
   ════════════════════════════════════════════════════════════ */
   const ytCommand = useCallback((func, args = []) => {
-    // Only send when iframe has loaded a YouTube URL — not about:blank
+    // Only send when iframe has loaded a YouTube URL — not about:blank.
+    // Re-announce the postMessage listener before every transport command because
+    // WebView2/YouTube can lose the ready handshake after a playback state cycle.
     const iframe = iframeRef.current;
     if (!iframe || !iframe.src?.includes("youtube.com")) return;
     try {
-      iframe.contentWindow?.postMessage(
-        JSON.stringify({ event: "command", func, args }),
-        "https://www.youtube.com"
-      );
+      const target = iframe.contentWindow;
+      if (!target) return;
+      target.postMessage(JSON.stringify({ event: "listening", id: 1 }), "https://www.youtube.com");
+      target.postMessage(JSON.stringify({ event: "command", func, args }), "https://www.youtube.com");
     } catch {}
   }, []);
 
@@ -479,6 +481,28 @@ export default function MusicPlayer({
       }
     }
   };
+
+  // Native desktop host commands bypass DOM button discovery. This makes playback controls
+  // deterministic even after the YouTube player has transitioned through pause/ended/buffering.
+  useEffect(() => {
+    const onHostCommand = (event) => {
+      const detail = event?.detail;
+      if (!detail || !["playpause", "next", "prev", "previous"].includes(detail.command)) return;
+
+      const command = detail.command === "previous" ? "prev" : detail.command;
+      try {
+        if (command === "playpause") togglePlay();
+        else if (command === "next") handleNext();
+        else handlePrev();
+        detail.handled = true;
+      } catch {
+        detail.handled = false;
+      }
+    };
+
+    window.addEventListener("vibefinder:host-command", onHostCommand);
+    return () => window.removeEventListener("vibefinder:host-command", onHostCommand);
+  }, [togglePlay, handleNext, handlePrev]);
 
   const seekTo = (e) => {
     if (!progressRef.current || !duration) return;
