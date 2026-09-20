@@ -21,15 +21,21 @@ const getTrack = (row) => {
   return title && artist ? { title, artist, cover_art: img?.src || null, preview_url: null } : null;
 };
 
+const buttonLabel = (button) =>
+  [button?.title, button?.getAttribute("aria-label"), button?.textContent]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
 const findPlayerButton = (kind) => {
   const buttons = [...document.querySelectorAll("button")];
-  if (kind === "next") return buttons.find((b) => b.title === "Next") || buttons.find((b) => b.textContent?.trim() === "Next");
-  if (kind === "prev") return buttons.find((b) => b.title === "Previous") || buttons.find((b) => b.textContent?.trim() === "Previous");
+  if (kind === "next")
+    return buttons.find((b) => /(^|\s)next(\s|$)/i.test(buttonLabel(b)));
+  if (kind === "prev")
+    return buttons.find((b) => /previous|prev/i.test(buttonLabel(b)));
   if (kind === "playpause") {
-    return buttons.find((b) => b.title === "Pause") ||
-      buttons.find((b) => b.title === "Play full track") ||
-      buttons.find((b) => b.title === "Play 30s preview") ||
-      buttons.find((b) => b.title === "Playing");
+    return buttons.find((b) => /pause|playing/i.test(buttonLabel(b))) ||
+      buttons.find((b) => /play full track|play 30s preview|play/i.test(buttonLabel(b)));
   }
   return null;
 };
@@ -46,6 +52,7 @@ export default function ThemedAIHostBridge() {
   const currentIndexRef = useRef(0);
   const stateTimerRef = useRef(null);
   const resultTimerRef = useRef(null);
+  const lastResultsFingerprintRef = useRef("");
 
   useEffect(() => {
     const publishProfile = (detail) => {
@@ -63,7 +70,15 @@ export default function ThemedAIHostBridge() {
     const publishResults = () => {
       const tracks = getTrackRows().map(getTrack).filter(Boolean);
       if (tracks.length === 0) return;
-      currentIndexRef.current = Math.min(currentIndexRef.current, tracks.length - 1);
+
+      const fingerprint = tracks.map((track) => `${track.title}|${track.artist}`).join("\\u001e");
+      if (fingerprint !== lastResultsFingerprintRef.current) {
+        lastResultsFingerprintRef.current = fingerprint;
+        currentIndexRef.current = 0;
+      } else {
+        currentIndexRef.current = Math.min(currentIndexRef.current, tracks.length - 1);
+      }
+
       postHost({ type: "VIBEFINDER_RESULTS", tracks });
     };
 
@@ -75,7 +90,8 @@ export default function ThemedAIHostBridge() {
       if (!track) return;
 
       const pauseButton = findPlayerButton("playpause");
-      const isPlaying = Boolean(pauseButton && (pauseButton.title === "Pause" || pauseButton.textContent?.includes("Pause")));
+      const label = buttonLabel(pauseButton);
+      const isPlaying = /pause|playing/i.test(label);
       postHost({
         type: "VIBEFINDER_STATE",
         state: {
