@@ -758,27 +758,51 @@ export default function App({ onNavigate }) {
 
   const activeColor = result ? (vibeColors[useSecondaryVibe ? result.secondary_vibe : result.dominant_vibe] || vibeColors.neutral) : vibeColors.neutral;
 
+  const stopPreviewAudio = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = "";
+    } catch {}
+    setPlayingTrack(null);
+  };
+
   /* Initialize Audio Object */
   useEffect(() => {
     audioRef.current = new Audio();
     audioRef.current.volume = 0.6;
     audioRef.current.onended = () => setPlayingTrack(null);
+
+    const onExternalStop = () => stopPreviewAudio();
+    window.addEventListener("vibefinder:stop-playback", onExternalStop);
+
     return () => {
-      audioRef.current.pause();
-      audioRef.current.src = "";
+      window.removeEventListener("vibefinder:stop-playback", onExternalStop);
+      try {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      } catch {}
     };
   }, []);
 
   /* Toggle the In-App Preview Player */
-  const togglePlay = (url) => {
-    if (!url) return;
+  const togglePlay = async (url) => {
+    if (!url || !audioRef.current) return;
     if (playingTrack === url) {
+      stopPreviewAudio();
+      return;
+    }
+
+    try {
       audioRef.current.pause();
-      setPlayingTrack(null);
-    } else {
+      audioRef.current.currentTime = 0;
       audioRef.current.src = url;
-      audioRef.current.play();
+      await audioRef.current.play();
       setPlayingTrack(url);
+    } catch {
+      setPlayingTrack(null);
     }
   };
 
@@ -825,6 +849,7 @@ export default function App({ onNavigate }) {
   };
 
   const handleLogout = () => {
+    window.dispatchEvent(new Event("vibefinder:stop-playback"));
     try { localStorage.removeItem("vf_token"); } catch {}
     setToken(null); setResult(null); setPrompt(""); setVuLevel(0);
     setShowPlaylistPanel(false);
@@ -834,6 +859,7 @@ export default function App({ onNavigate }) {
     const effectivePrompt = config.overrideText || prompt;
     if (!effectivePrompt.trim()) return;
     try {
+      window.dispatchEvent(new Event("vibefinder:stop-playback"));
       setLoading(true); setError(""); setIsSkeletonLoading(true);
       if (config.targetSecondary !== undefined) setLoadReason("pivot");
       else if (config.targetGenre !== undefined) setLoadReason("genre");
@@ -915,6 +941,7 @@ export default function App({ onNavigate }) {
 
   // FULL ENGINE KILL SWITCH
   const resetEngine = () => {
+      window.dispatchEvent(new Event("vibefinder:stop-playback"));
       setPrompt("");
       setLastPrompt("");
       setResult(null);
