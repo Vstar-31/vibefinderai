@@ -748,6 +748,14 @@ export default function App({ onNavigate }) {
   const [playerTracks, setPlayerTracks]     = useState([]);
   const [playerStartIdx, setPlayerStartIdx] = useState(0);
 
+  // Native desktop host bridge refs. These stay stable while the actual React state/functions
+  // change, so WebView2 messages always hit the current analysis/player implementation.
+  const analyzeVibeRef = useRef(null);
+  const showPlayerRef = useRef(false);
+  const resultRef = useRef(null);
+  const launchPlayerRef = useRef(null);
+  const autoPlayRef = useRef(false);
+
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
     euphoric: '#e879f9', soulful: '#fbbf24', retro: '#818cf8', dreamy: '#c084fc', cinematic: '#fb923c',
@@ -920,6 +928,10 @@ export default function App({ onNavigate }) {
 
       const data = await res.json();
       setResult(data);
+      if (autoPlayRef.current && data?.tracks?.length) {
+        launchPlayerRef.current?.(data.tracks, 0);
+        autoPlayRef.current = false;
+      }
       setArtistUnlocked(false);
       // PHASE 8: Record vibe history
       if (data.dominant_vibe && data.dominant_vibe !== 'Direct Search') {
@@ -938,6 +950,78 @@ export default function App({ onNavigate }) {
     } catch (err) { setError(err.message); setIsSkeletonLoading(false); }
     finally { setLoading(false); setLoadReason(null); }
   };
+
+  // Keep host callbacks current without re-registering the WebView2 listener on every render.
+  useEffect(() => {
+    analyzeVibeRef.current = analyzeVibe;
+    showPlayerRef.current = showPlayer;
+    resultRef.current = result;
+    launchPlayerRef.current = launchPlayer;
+  });
+
+  // THEMED.AI BRIDGE — host -> VibeFinderAI.
+  // The visible native wrapper uses a handshake so it never blindly posts commands before
+  // this listener is mounted. The runAnalysis message carries its own text/limit because
+  // React setState is asynchronous.
+  useEffect(() => {
+    if (!window.chrome?.webview) return;
+
+    const handleMessage = (e) => {
+      try {
+        const msg = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (msg.command === "setPrompt" && typeof msg.text === "string") {
+          setPrompt(msg.text);
+        } else if (msg.command === "setTrackLimit" && [5, 10, 20, 50].includes(msg.value)) {
+          setTrackLimit(msg.value);
+        } else if (msg.command === "runAnalysis" && typeof msg.text === "string" && msg.text.trim()) {
+          const limit = [5, 10, 20, 50].includes(msg.trackLimit) ? msg.trackLimit : undefined;
+          analyzeVibeRef.current?.({ overrideText: msg.text, overrideTrackLimit: limit });
+        } else if (msg.command === "playpause" && !showPlayerRef.current) {
+          const tracks = resultRef.current?.tracks;
+          if (tracks?.length) {
+            let startIndex = 0;
+            if (typeof msg.title === "string" && typeof msg.artist === "string") {
+              const matchIndex = tracks.findIndex(t =>
+                String(t.title || "").trim().toLowerCase() === msg.title.trim().toLowerCase() &&
+                String(t.artist || "").trim().toLowerCase() === msg.artist.trim().toLowerCase()
+              );
+              if (matchIndex >= 0) startIndex = matchIndex;
+            }
+            if (startIndex === 0 && Number.isInteger(msg.index) && msg.index >= 0 && msg.index < tracks.length)
+              startIndex = msg.index;
+            launchPlayerRef.current?.(tracks, startIndex);
+            return;
+          }
+
+          // No result yet: remember the requested play and run the current prompt.
+          autoPlayRef.current = true;
+          analyzeVibeRef.current?.({});
+        }
+      } catch {}
+    };
+
+    window.chrome.webview.addEventListener("message", handleMessage);
+    window.chrome.webview.postMessage(JSON.stringify({
+      type: "VIBEFINDER_APP_READY",
+      hasToken: !!token
+    }));
+
+    return () => window.chrome.webview.removeEventListener("message", handleMessage);
+  }, [token]);
+
+  // Push the exact result set shown in the UI to the native widget host.
+  useEffect(() => {
+    if (!window.chrome?.webview || !result?.tracks?.length) return;
+    window.chrome.webview.postMessage(JSON.stringify({
+      type: "VIBEFINDER_RESULTS",
+      tracks: result.tracks.map(t => ({
+        title: t.title || "—",
+        artist: t.artist || "—",
+        cover_art: t.cover_art || null,
+        preview_url: t.preview_url || null,
+      })),
+    }));
+  }, [result]);
 
   // FULL ENGINE KILL SWITCH
   const resetEngine = () => {
