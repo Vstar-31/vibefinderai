@@ -313,7 +313,7 @@ export default function MusicPlayer({
         if (!active) return;
         if (id && iframeRef.current) {
           iframeRef.current.src = ytSrc(id, true);
-          setIsPlaying(true);
+          setIsPlaying(false); // wait for YouTube onStateChange=1
         }
       });
     } else if (vid) {
