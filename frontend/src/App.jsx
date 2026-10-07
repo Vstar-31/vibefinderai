@@ -976,7 +976,21 @@ export default function App({ onNavigate }) {
         } else if (msg.command === "runAnalysis" && typeof msg.text === "string" && msg.text.trim()) {
           const limit = [5, 10, 20, 50].includes(msg.trackLimit) ? msg.trackLimit : undefined;
           analyzeVibeRef.current?.({ overrideText: msg.text, overrideTrackLimit: limit });
-        } else if (msg.command === "playpause" && !showPlayerRef.current) {
+        } else if (["playpause", "next", "prev", "previous"].includes(msg.command)) {
+          if (showPlayerRef.current) {
+            // MusicPlayer already owns the live queue controls; reuse its existing deterministic
+            // host-command path instead of poking DOM buttons or creating a second controller.
+            window.dispatchEvent(new CustomEvent("vibefinder:host-command", {
+              detail: {
+                ...msg,
+                command: msg.command === "previous" ? "prev" : msg.command,
+              },
+            }));
+            return;
+          }
+
+          if (msg.command !== "playpause") return;
+
           const tracks = resultRef.current?.tracks;
           if (tracks?.length) {
             let startIndex = 0;
