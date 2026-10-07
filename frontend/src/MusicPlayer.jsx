@@ -256,16 +256,6 @@ export default function MusicPlayer({
           } else if (state === 3) {
             // Buffering — keep isPlaying true visually
           }
-        } else if (d.event === "onError") {
-          setIsPlaying(false);
-          if (window.chrome?.webview) {
-            window.chrome.webview.postMessage(JSON.stringify({
-              type: "VIBEFINDER_PLAYBACK_ERROR",
-              code: d.info,
-              title: track?.title || "—",
-              artist: track?.artist || "—",
-            }));
-          }
         } else if (d.event === "infoDelivery") {
           if (d.info?.duration) setDuration(d.info.duration);
           // Sync elapsed to YouTube's actual position to prevent client-timer drift
@@ -292,7 +282,7 @@ export default function MusicPlayer({
       elapsedBase.current   = 0;
       setElapsed(0);
       setDuration(0);
-      setIsPlaying(false); // YouTube confirms real playback via onStateChange=1
+      setIsPlaying(true); // will be confirmed by postMessage state=1
     }
   }, []);
 
@@ -313,14 +303,14 @@ export default function MusicPlayer({
         if (!active) return;
         if (id && iframeRef.current) {
           iframeRef.current.src = ytSrc(id, true);
-          setIsPlaying(false); // wait for YouTube onStateChange=1
+          setIsPlaying(true);
         }
       });
     } else if (vid) {
       // Already cached
       if (iframeRef.current) {
         iframeRef.current.src = ytSrc(vid, true);
-        setIsPlaying(false);
+        setIsPlaying(true);
       }
     } else {
       // null = not found — just show "not found" UI, don't load
@@ -519,16 +509,6 @@ export default function MusicPlayer({
                   JSON.stringify({ event: "listening", id: 1 }),
                   "https://www.youtube.com"
                 );
-                // Source autoplay is a fast path; explicitly asking the player to start
-                // here makes the intended state unambiguous once the iframe is ready.
-                setTimeout(() => {
-                  try {
-                    iframe.contentWindow?.postMessage(
-                      JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-                      "https://www.youtube.com"
-                    );
-                  } catch {}
-                }, 80);
               } catch {}
             }}
             style={{ position: "fixed", bottom: -300, right: -300, width: 160, height: 90, border: "none", pointerEvents: "none", zIndex: -1 }}
