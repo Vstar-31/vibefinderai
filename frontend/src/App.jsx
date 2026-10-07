@@ -842,8 +842,23 @@ export default function App({ onNavigate }) {
           analyzeVibeRef.current?.({ overrideText: msg.text, overrideTrackLimit: limit });
         } else if (msg.command === "playpause") {
           if (!showPlayerRef.current) {
-            if (resultRef.current && resultRef.current.tracks && resultRef.current.tracks.length > 0) {
-              launchPlayerRef.current?.(resultRef.current.tracks, 0);
+            const tracks = resultRef.current?.tracks;
+            if (tracks && tracks.length > 0) {
+              // The native widget may already be showing a track other than index 0.
+              // Prefer the title/artist identity supplied by the host, then its index,
+              // and only fall back to the first result when neither is available.
+              let startIndex = 0;
+              if (typeof msg.title === "string" && typeof msg.artist === "string") {
+                const matchIndex = tracks.findIndex(t =>
+                  String(t.title || "").trim().toLowerCase() === msg.title.trim().toLowerCase() &&
+                  String(t.artist || "").trim().toLowerCase() === msg.artist.trim().toLowerCase()
+                );
+                if (matchIndex >= 0) startIndex = matchIndex;
+              }
+              if (startIndex === 0 && Number.isInteger(msg.index) && msg.index >= 0 && msg.index < tracks.length) {
+                startIndex = msg.index;
+              }
+              launchPlayerRef.current?.(tracks, startIndex);
             } else {
               autoPlayRef.current = true;
               analyzeVibeRef.current?.({});
