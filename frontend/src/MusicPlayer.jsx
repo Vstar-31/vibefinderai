@@ -313,6 +313,16 @@ export default function MusicPlayer({
           } else if (state === 3) {
             // Buffering — keep isPlaying true visually
           }
+        } else if (d.event === "onError") {
+          setIsPlaying(false);
+          if (window.chrome?.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              type: "VIBEFINDER_PLAYBACK_ERROR",
+              code: d.info,
+              title: track?.title || "—",
+              artist: track?.artist || "—",
+            }));
+          }
         } else if (d.event === "infoDelivery") {
           if (d.info?.duration) setDuration(d.info.duration);
           // Sync elapsed to YouTube's actual position to prevent client-timer drift
@@ -339,7 +349,7 @@ export default function MusicPlayer({
       elapsedBase.current   = 0;
       setElapsed(0);
       setDuration(0);
-      setIsPlaying(true); // will be confirmed by postMessage state=1
+      setIsPlaying(false); // wait for YouTube onStateChange=1
     }
   }, []);
 
@@ -363,14 +373,14 @@ export default function MusicPlayer({
         if (generation !== playbackGenerationRef.current || !current || _key(current) !== requestedTrackKey) return;
         if (id && iframeRef.current) {
           iframeRef.current.src = ytSrc(id, true);
-          setIsPlaying(true);
+          setIsPlaying(false); // wait for YouTube onStateChange=1
         }
       });
     } else if (vid) {
       // Already cached
       if (iframeRef.current) {
         iframeRef.current.src = ytSrc(vid, true);
-        setIsPlaying(true);
+        setIsPlaying(false); // wait for YouTube onStateChange=1
       }
     } else {
       // null = not found — just show "not found" UI, don't load
@@ -482,6 +492,23 @@ export default function MusicPlayer({
     }
   };
 
+  // THEMED.AI BRIDGE — publish live player state to the native widget host.
+  // The host mirrors this into every VibeFinder widget and uses its playback controls to
+  // command this same player instance.
+  useEffect(() => {
+    if (!window.chrome?.webview) return;
+    window.chrome.webview.postMessage(JSON.stringify({
+      type: "VIBEFINDER_STATE",
+      isPlaying,
+      title: track?.title || "—",
+      artist: track?.artist || "—",
+      coverArt: track?.cover_art || null,
+      previewUrl: track?.preview_url || null,
+      currentTime: elapsed,
+      duration,
+    }));
+  }, [isPlaying, track, elapsed, duration]);
+
   // Native desktop host commands bypass DOM button discovery. This makes playback controls
   // deterministic even after the YouTube player has transitioned through pause/ended/buffering.
   useEffect(() => {
@@ -565,6 +592,16 @@ export default function MusicPlayer({
                   JSON.stringify({ event: "listening", id: 1 }),
                   "https://www.youtube.com"
                 );
+                // Autoplay in the URL is not a sufficient contract in an embedded desktop host.
+                // Explicitly request playback after the iframe has completed the handshake.
+                setTimeout(() => {
+                  try {
+                    iframe.contentWindow?.postMessage(
+                      JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+                      "https://www.youtube.com"
+                    );
+                  } catch {}
+                }, 80);
               } catch {}
             }}
             style={{ position: "fixed", bottom: -300, right: -300, width: 160, height: 90, border: "none", pointerEvents: "none", zIndex: -1 }}
