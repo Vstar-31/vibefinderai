@@ -367,10 +367,16 @@ if _RATE_LIMIT_AVAILABLE:
 
 def get_cors_origins():
     origins = ["http://localhost:5173","http://127.0.0.1:5173","http://localhost:3000"]
-    frontend_prod = os.getenv("FRONTEND_URL_PROD") or "https://vibefinderai.netlify.app"
-    if frontend_prod:
-        origins.append(frontend_prod)
-    return origins
+    origins.extend([
+        "https://vibefinderai.netlify.app",
+        "https://vfaithemed.netlify.app",
+    ])
+    # Keep both deployed frontends working; allow explicit additional origins.
+    for configured in os.getenv("FRONTEND_URL_PROD", "").split(","):
+        origin = configured.strip().rstrip("/")
+        if origin:
+            origins.append(origin)
+    return list(dict.fromkeys(origins))
 
 app.add_middleware(
     CORSMiddleware, allow_origins=get_cors_origins(),
