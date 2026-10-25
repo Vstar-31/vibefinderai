@@ -21,6 +21,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { readYouTubeMessage } from "./youtubeMessages.js";
 
 /* ══════════════════════════════════════════════════════════════
    MODULE-LEVEL CACHE  (survives re-renders, remounts, HMR)
@@ -127,6 +128,7 @@ export default function MusicPlayer({
   const startRef    = useRef(null);   // wall-clock time when play started (for elapsed calc)
   const elapsedBase = useRef(0);      // elapsed at last play event (for resume accuracy)
   const playbackGenerationRef = useRef(0); // invalidates stale queue/video-load work
+  const ytStateRef = useRef(null);
 
   // Stable refs for callbacks
   const repeatRef   = useRef(repeat);
@@ -141,6 +143,7 @@ export default function MusicPlayer({
 
   const stopPlayback = useCallback(() => {
     playbackGenerationRef.current += 1;
+    ytStateRef.current = null;
     clearInterval(tickRef.current);
     tickRef.current = null;
     startRef.current = null;
@@ -265,11 +268,15 @@ export default function MusicPlayer({
   useEffect(() => {
     if (!useYT) return;
     const handler = (e) => {
-      if (e.origin !== "https://www.youtube.com") return;
+      const d = readYouTubeMessage(e, iframeRef.current?.contentWindow);
+      if (!d) return;
       try {
-        const d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        if (d.event === "onStateChange") {
-          const state = d.info;
+        // Snapshots can arrive without onStateChange in WebView2. Deduplicate
+        // both paths so repeated PLAYING does not reset the clock, and repeated
+        // ENDED does not advance the queue more than once.
+        if (d.state !== undefined && d.state !== ytStateRef.current) {
+          const state = d.state;
+          ytStateRef.current = state;
           if (state === 1) {
             // Playing — start elapsed timer and request duration
             setIsPlaying(true);
@@ -284,7 +291,7 @@ export default function MusicPlayer({
             if (_ifr?.src?.includes("youtube.com")) {
               try { _ifr.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "getVideoDuration", args: [] }), "https://www.youtube.com"); } catch {}
             }
-          } else if (state === 2) {
+          } else if (state === 2 || state === -1 || state === 5) {
             // Paused — save elapsed so resume is accurate
             setIsPlaying(false);
             clearInterval(tickRef.current);
@@ -313,8 +320,12 @@ export default function MusicPlayer({
           } else if (state === 3) {
             // Buffering — keep isPlaying true visually
           }
-        } else if (d.event === "onError") {
+        }
+        if (d.event === "onError") {
           setIsPlaying(false);
+          clearInterval(tickRef.current);
+          startRef.current = null;
+          ytStateRef.current = null;
           if (window.chrome?.webview) {
             window.chrome.webview.postMessage(JSON.stringify({
               type: "VIBEFINDER_PLAYBACK_ERROR",
@@ -323,10 +334,10 @@ export default function MusicPlayer({
               artist: track?.artist || "—",
             }));
           }
-        } else if (d.event === "infoDelivery") {
+        } else if (d.event === "infoDelivery" || d.event === "initialDelivery") {
           if (d.info?.duration) setDuration(d.info.duration);
           // Sync elapsed to YouTube's actual position to prevent client-timer drift
-          if (d.info?.currentTime !== undefined && d.info.currentTime > 0) {
+          if (Number.isFinite(d.info?.currentTime) && d.info.currentTime >= 0 && d.state !== 0) {
             elapsedBase.current = d.info.currentTime;
             if (startRef.current) startRef.current = Date.now();
             setElapsed(d.info.currentTime);
@@ -345,6 +356,9 @@ export default function MusicPlayer({
     if (!iframeRef.current || !t) return;
     const vid = _getVid(t);
     if (vid) {
+      ytStateRef.current = null;
+      clearInterval(tickRef.current);
+      startRef.current = null;
       iframeRef.current.src = ytSrc(vid, true);
       elapsedBase.current   = 0;
       setElapsed(0);
@@ -358,6 +372,8 @@ export default function MusicPlayer({
     if (!useYT || !track) return;
 
     const generation = ++playbackGenerationRef.current;
+    ytStateRef.current = null;
+    startRef.current = null;
     const requestedTrackKey = _key(track);
 
     clearInterval(tickRef.current);
@@ -646,6 +662,12 @@ export default function MusicPlayer({
                 JSON.stringify({ event: "listening", id: 1 }),
                 "https://www.youtube.com"
               );
+              for (const eventName of ["onStateChange", "onError"]) {
+                iframe.contentWindow?.postMessage(
+                  JSON.stringify({ event: "command", func: "addEventListener", args: [eventName] }),
+                  "https://www.youtube.com"
+                );
+              }
             } catch {}
           }}
           style={{
