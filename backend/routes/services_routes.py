@@ -36,6 +36,7 @@ from urllib.parse import urlencode, quote
 
 import httpx
 import jwt as _jwt
+from auth_security import decode_access_token
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -43,6 +44,7 @@ from core.youtube_cache import (
     init as init_youtube_cache,
     yt_cache_get,
     yt_cache_set,
+    youtube_search_query,
     yt_cache_stats as get_youtube_cache_stats,
 )
 
@@ -82,7 +84,7 @@ SUPPORTED_SERVICES = ["lastfm", "deezer", "soundcloud", "youtube"]
 # ── auth helper ───────────────────────────────────────────────────────────────
 def _get_user_id(token: str) -> str:
     try:
-        payload = _jwt.decode(token, _SECRET_KEY, algorithms=[_ALGORITHM])
+        payload = decode_access_token(token, _SECRET_KEY)
         uid = payload.get("sub")
         if not uid:
             raise HTTPException(status_code=401, detail="Invalid token")
@@ -616,11 +618,24 @@ async def youtube_cache_stats():
 
 
 @router.get("/api/services/youtube/search")
-async def youtube_search(q: str = Query(...), title: str = Query(None), artist: str = Query(None)):
+async def youtube_search(
+    q: Optional[str] = Query(None, min_length=1, max_length=500),
+    title: Optional[str] = Query(None, min_length=1, max_length=200),
+    artist: Optional[str] = Query(None, min_length=1, max_length=200),
+):
     """
     Search YouTube for a track. Checks persistent cache (L1 + DB) before
     hitting the API. Cache survives Render deploys.
     """
+    if title is not None or artist is not None:
+        if not title or not title.strip() or not artist or not artist.strip():
+            raise HTTPException(status_code=422, detail="Both title and artist are required for track lookup")
+        # Cache identity and provider query must describe the same track. An
+        # arbitrary q may only be used for uncached free-text searches.
+        q = youtube_search_query(title, artist)
+    elif not q or not q.strip():
+        raise HTTPException(status_code=422, detail="A nonblank search query is required")
+
     if not YOUTUBE_API_KEY:
         raise HTTPException(status_code=503, detail="YouTube API key not configured")
 
@@ -754,7 +769,7 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
             cached = await yt_cache_get(title, artist)
             if cached:
                 return cached
-            q = f"{title} {artist} official audio"
+            q = youtube_search_query(title, artist)
             try:
                 resp = await client.get(
                     "https://www.googleapis.com/youtube/v3/search",

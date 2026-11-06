@@ -151,6 +151,20 @@ GEMINI_API_KEY=
 
 Note: some integrations require additional service-specific secrets (for example Last.fm shared secret, Deezer and SoundCloud OAuth credentials, Apple credentials).
 
+Replace `SECRET_KEY` with a private random value of at least 32 bytes before starting
+the backend. Missing, blank, short and the former built-in default keys are rejected.
+For example, generate a value locally with `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+and store it in the backend secret environment, never in frontend settings or Git.
+Use the same user signing key on every backend replica.
+
+The metrics dashboard also requires `METRICS_PASSPHRASE` and a separate random
+`METRICS_SECRET` of at least 32 bytes. It cannot reuse `SECRET_KEY`; an absent or
+invalid metrics key disables metrics access. Existing metrics sessions need a new
+login because metrics tokens now require an explicit purpose claim. Existing user
+tokens remain valid until expiry when they contain a nonblank user ID and use the
+configured signing key. Rotate any formerly public/default key and sign users in
+again before deploying; changing this source does not rotate deployed secrets.
+
 ### 3) Run in development
 
 From repo root (both frontend + backend):
@@ -219,6 +233,27 @@ See `DEPLOYMENT_GUIDE.md` for deployment steps.
 - `monetisation.md` - cost and monetization notes
 
 ## Notes for Contributors
+
+Backend regression tests run from `backend` after installing `requirements-test.txt`:
+
+```bash
+python -m pytest tests -q
+```
+
+The real-app integration suite is opt-in. Create a disposable local PostgreSQL
+database named `vfai_security` (or another name beginning with `vfai_security`).
+Set `VFAI_TEST_DATABASE_URL`, `DATABASE_URL` and `DIRECT_URL` to that same loopback
+connection, then run `python -m prisma generate --schema schema.prisma` and
+`python -m prisma db push --schema schema.prisma --skip-generate` before pytest.
+Use a separate test cluster; these tests create and remove fixture records. They
+exercise startup/shutdown, sign-in, ownership, sharing, analytics and cache reads.
+Provider calls are mocked in the focused suite; production provider behavior and
+deployment settings still require separate validation.
+
+YouTube track lookups now derive their provider query from the same normalized
+title/artist pair used for caching. Caller-supplied `q` is used only for uncached
+free-text searches. The `yt:v2:` namespace intentionally ignores older cache rows,
+so the first lookup for each track may consume provider quota after deployment.
 
 - Keep backend route wiring centralized in `backend/main.py`
 - Prefer lightweight dependencies for Render free-tier compatibility

@@ -35,6 +35,7 @@ from pydantic import BaseModel
 from urllib.parse import urlencode, quote
 import httpx
 import jwt as _jwt
+from auth_security import decode_access_token
 
 logger = logging.getLogger("VibeFinderEngine.Spotify")
 
@@ -75,7 +76,7 @@ SPOTIFY_SCOPES = " ".join([
 # ── auth helper ───────────────────────────────────────────────────────────────
 def _get_user_id(token: str) -> str:
     try:
-        payload = _jwt.decode(token, _SECRET_KEY, algorithms=[_ALGORITHM])
+        payload = decode_access_token(token, _SECRET_KEY)
         uid = payload.get("sub")
         if not uid:
             raise HTTPException(status_code=401, detail="Invalid token")
