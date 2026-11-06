@@ -22,10 +22,19 @@ import os
 import time
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
-from jose import JWTError, jwt
+import jwt
+from auth_security import load_signing_key
 
 METRICS_PASSPHRASE = os.getenv("METRICS_PASSPHRASE", "")
-_METRICS_SECRET    = os.getenv("METRICS_SECRET", "") or os.getenv("SECRET_KEY", "")
+
+def _metrics_key() -> str:
+    try:
+        key = load_signing_key("METRICS_SECRET")
+        if hmac.compare_digest(key.encode("utf-8"), os.getenv("SECRET_KEY", "").encode("utf-8")):
+            raise RuntimeError("Metrics must use a separate signing key")
+        return key
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Metrics authentication is not configured") from None
 
 router = APIRouter()
 
@@ -35,12 +44,15 @@ async def metrics_auth(body: dict = Body(...)):
     """
     Exchange the admin passphrase for a 7-day metrics JWT.
     Passphrase lives only in the Render env var — never in the JS bundle.
-    Constant-time compare + fixed 1.5s failure delay prevents brute-force.
+    Constant-time comparison and failure delay supplement deployment rate limits.
     """
+    key = _metrics_key()
+    if not METRICS_PASSPHRASE:
+        raise HTTPException(status_code=503, detail="Metrics authentication is not configured")
     attempt = body.get("passphrase", "")
 
     valid = (
-        bool(METRICS_PASSPHRASE) and
+        isinstance(attempt, str) and len(attempt) <= 1024 and
         hmac.compare_digest(attempt.encode(), METRICS_PASSPHRASE.encode())
     )
 
@@ -51,8 +63,8 @@ async def metrics_auth(body: dict = Body(...)):
     exp_unix = int(time.time()) + 7 * 24 * 3600  # 7 days
 
     token = jwt.encode(
-        {"sub": "metrics", "exp": exp_unix, "iat": int(time.time())},
-        _METRICS_SECRET,
+        {"sub": "metrics", "token_use": "metrics", "exp": exp_unix, "iat": int(time.time())},
+        key,
         algorithm="HS256",
     )
 
@@ -65,15 +77,17 @@ async def metrics_auth(body: dict = Body(...)):
 def require_metrics_token(authorization: str = Header(None)):
     """
     Dependency for GET /api/analytics/* read endpoints.
-    POST event-logging routes stay unprotected (called by regular users).
+    This dependency is mandatory on every analytics read route.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Metrics token required")
 
     token = authorization[7:]
+    key = _metrics_key()
     try:
-        payload = jwt.decode(token, _METRICS_SECRET, algorithms=["HS256"])
-        if payload.get("sub") != "metrics":
+        payload = jwt.decode(token, key, algorithms=["HS256"],
+                             options={"require": ["exp", "sub", "token_use"]})
+        if payload.get("sub") != "metrics" or payload.get("token_use") != "metrics":
             raise HTTPException(status_code=401, detail="Invalid token type")
-    except JWTError:
+    except (jwt.InvalidTokenError, TypeError, ValueError, OverflowError):
         raise HTTPException(status_code=401, detail="Invalid or expired metrics token")

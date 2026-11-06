@@ -27,12 +27,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-try:
-    from routes.metrics_auth import require_metrics_token
-    _METRICS_AUTH_AVAILABLE = True
-except ImportError:
-    _METRICS_AUTH_AVAILABLE = False
-    require_metrics_token = None
+from routes.metrics_auth import require_metrics_token
 
 from fastapi import Depends
 from prisma import Prisma
@@ -55,11 +50,16 @@ def get_db() -> Prisma:
     return _db
 
 
+def _rank_vibe_groups(groups):
+    # Prisma Client Python returns dictionaries with an _count aggregate.
+    return sorted(groups, key=lambda group: group["_count"]["id"], reverse=True)
+
+
 # ─── DASHBOARD ENDPOINT ───────────────────────────────────────────────────────
 
 @router.get("/analytics/dashboard")
 async def get_analytics_dashboard(
-    _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
+    _: None = Depends(require_metrics_token),
 ):
     """
     Full analytics snapshot. Uses aggregation queries — O(1) DB calls
@@ -98,23 +98,20 @@ async def get_analytics_dashboard(
         active_user_ids = {r.userId for r in active_requests_1h if r.userId}
 
         # ── Confidence aggregate ─────────────────────────────────────────────
-        confidence_agg = await db.viberequest.aggregate(
-            _avg={"confidence": True},
-            _min={"confidence": True},
-            _max={"confidence": True},
+        confidence_agg = await db.query_raw(
+            'SELECT AVG("confidence") AS avg_confidence FROM "VibeRequest"'
         )
-        avg_confidence = float(confidence_agg.avg.confidence or 0)
+        avg_confidence = float(confidence_agg[0]["avg_confidence"] or 0)
 
         # ── Vibe breakdown (group_by — single query replaces Counter over 5k rows) ─
         vibe_groups = await db.viberequest.group_by(
             by=["dominantVibe"],
             count={"id": True},
-            order={"count": {"id": "desc"}},
         )
         top_vibes = {
-            g.dominantVibe: g.count.id
-            for g in vibe_groups
-            if g.dominantVibe
+            g["dominantVibe"]: g["_count"]["id"]
+            for g in _rank_vibe_groups(vibe_groups)
+            if g["dominantVibe"]
         }
 
         # ── Trending vibes (1h) — same approach ────────────────────────────
@@ -122,12 +119,11 @@ async def get_analytics_dashboard(
             by=["dominantVibe"],
             count={"id": True},
             where={"createdAt": {"gte": one_hour_ago}},
-            order={"count": {"id": "desc"}},
         )
         trending_vibes_1h = {
-            g.dominantVibe: g.count.id
-            for g in trending_groups[:8]
-            if g.dominantVibe
+            g["dominantVibe"]: g["_count"]["id"]
+            for g in _rank_vibe_groups(trending_groups)[:8]
+            if g["dominantVibe"]
         }
 
         # ── Feedback aggregates ──────────────────────────────────────────────
@@ -251,7 +247,7 @@ async def get_analytics_dashboard(
 
 @router.get("/analytics/live")
 async def get_live_metrics(
-    _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
+    _: None = Depends(require_metrics_token),
 ):
     """
     Lightweight endpoint for the live metrics bar. Three COUNT queries total.
@@ -279,9 +275,8 @@ async def get_live_metrics(
             by=["dominantVibe"],
             count={"id": True},
             where={"createdAt": {"gte": one_hour_ago}},
-            order={"count": {"id": "desc"}},
         )
-        top_vibe_1h = trending[0].dominantVibe if trending else None
+        top_vibe_1h = _rank_vibe_groups(trending)[0]["dominantVibe"] if trending else None
 
         return {
             "active_users_1h": len(active_users),
@@ -300,7 +295,7 @@ async def get_live_metrics(
 @router.get("/analytics/vibes")
 async def get_vibe_breakdown(
     days: int = 7,
-    _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
+    _: None = Depends(require_metrics_token),
 ):
     """
     Returns vibe distribution over the last N days using GROUP BY.
@@ -313,13 +308,11 @@ async def get_vibe_breakdown(
             by=["dominantVibe"],
             count={"id": True},
             where={"createdAt": {"gte": since}},
-            order={"count": {"id": "desc"}},
         )
         secondary_groups = await db.viberequest.group_by(
             by=["secondaryVibe"],
             count={"id": True},
             where={"createdAt": {"gte": since}, "secondaryVibe": {"not": None}},
-            order={"count": {"id": "desc"}},
         )
         total = await db.viberequest.count(
             where={"createdAt": {"gte": since}}
@@ -340,14 +333,14 @@ async def get_vibe_breakdown(
             "period_days": days,
             "total_searches": total,
             "dominant_vibes": {
-                g.dominantVibe: g.count.id
-                for g in dominant_groups[:20]
-                if g.dominantVibe
+                g["dominantVibe"]: g["_count"]["id"]
+                for g in _rank_vibe_groups(dominant_groups)[:20]
+                if g["dominantVibe"]
             },
             "secondary_vibes": {
-                g.secondaryVibe: g.count.id
-                for g in secondary_groups[:10]
-                if g.secondaryVibe
+                g["secondaryVibe"]: g["_count"]["id"]
+                for g in _rank_vibe_groups(secondary_groups)[:10]
+                if g["secondaryVibe"]
             },
             "daily_breakdown": {
                 day: dict(counter.most_common(5))
@@ -363,7 +356,7 @@ async def get_vibe_breakdown(
 
 @router.get("/analytics/export")
 async def export_analytics_csv(
-    _: None = Depends(require_metrics_token) if _METRICS_AUTH_AVAILABLE else None,
+    _: None = Depends(require_metrics_token),
 ):
     """
     Export full VibeRequest history as CSV. Streams rows to avoid loading

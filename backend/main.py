@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import jwt
+from auth_security import load_signing_key, decode_access_token
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
@@ -180,10 +181,10 @@ async def lifespan(app: FastAPI):
         analytics_set_db(db)
         logger.info("Playlist and analytics routes wired to DB.")
     if _SPOTIFY_ROUTES_AVAILABLE and spotify_router:
-        spotify_set_db(db, os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this"))
+        spotify_set_db(db, load_signing_key())
         logger.info("Spotify routes wired to DB.")
     if _SERVICES_ROUTES_AVAILABLE and services_router:
-        services_set_db(db, os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this"))
+        services_set_db(db, load_signing_key())
         logger.info("Services routes wired to DB.")
 
     # TrackFeatureCache → TRACK_FEATURE_INDEX
@@ -385,7 +386,7 @@ if _SERVICES_ROUTES_AVAILABLE and services_router:
 if _METRICS_ROUTES_AVAILABLE and metrics_router:
     app.include_router(metrics_router)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this")
+SECRET_KEY = load_signing_key()
 ALGORITHM  = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
@@ -1185,7 +1186,7 @@ def get_password_hash(password):
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "token_use": "access"})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -1282,7 +1283,7 @@ async def fetch_lastfm_tracks_sync(genre: str, limit: int = 200):
     api_key = os.getenv("LASTFM_API_KEY")
     if not api_key:
         return []
-    url = f"http://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
+    url = f"https://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag={urllib.parse.quote(genre)}&api_key={api_key}&format=json&limit={limit}"
     data = await _fetch_with_retry(url, label=f"Last.fm genre:'{genre}'")
     if data:
         tracks = data.get("tracks", {}).get("track", [])
@@ -1299,7 +1300,7 @@ async def fetch_lastfm_artist_tracks_sync(artist: str, limit: int = 200):
     api_key = os.getenv("LASTFM_API_KEY")
     if not api_key:
         return []
-    url = f"http://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist={urllib.parse.quote(artist)}&api_key={api_key}&format=json&limit={limit}"
+    url = f"https://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist={urllib.parse.quote(artist)}&api_key={api_key}&format=json&limit={limit}"
     data = await _fetch_with_retry(url, label=f"Last.fm artist:'{artist}'")
     if data:
         tracks = data.get("toptracks", {}).get("track", [])
@@ -1312,7 +1313,7 @@ async def fetch_lastfm_track_search_sync(query: str, limit: int = 100):
     api_key = os.getenv("LASTFM_API_KEY")
     if not api_key:
         return []
-    url = f"http://ws.audioscrobbler.com/2.0/?method=track.search&track={urllib.parse.quote(query)}&api_key={api_key}&format=json&limit={limit}"
+    url = f"https://ws.audioscrobbler.com/2.0/?method=track.search&track={urllib.parse.quote(query)}&api_key={api_key}&format=json&limit={limit}"
     data = await _fetch_with_retry(url, label=f"Last.fm direct track search for '{query}'")
     if data:
         tracks = data.get("results", {}).get("trackmatches", {}).get("track", [])
@@ -1652,7 +1653,7 @@ async def health_check():
 @app.get("/api/user/taste")
 async def get_user_taste(token: str = Depends(oauth2_scheme)):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token, SECRET_KEY)
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token payload")
@@ -1723,7 +1724,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 @app.get("/users/me")
 async def read_users_me(token: str = Depends(oauth2_scheme)):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token, SECRET_KEY)
         user_id = payload.get("sub")
         user    = await db.user.find_unique(where={"id": user_id})
         return user
@@ -1737,7 +1738,7 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 @app.post("/api/vibe/analyze", response_model=VibeResponse)
 async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)):
     try:
-        _pre_payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        _pre_payload = decode_access_token(token, SECRET_KEY)
         _pre_user_id = _pre_payload.get("sub")
         if not _pre_user_id:
             raise HTTPException(status_code=401, detail="Invalid token payload")
@@ -2271,7 +2272,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     vibe_request_id  = None
     _logged_nicheness = request.nicheness  # already boosted if PATCH 6 fired
     try:
-        payload  = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload  = decode_access_token(token, SECRET_KEY)
         user_id  = payload.get("sub")
         vibe_request_row = await db.viberequest.create(data={
             "userId":          user_id,
@@ -2324,6 +2325,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 @app.post("/api/vibe/story")
 async def generate_vibe_story(req: VibeStoryRequest, token: str = Depends(oauth2_scheme)):
+    decode_access_token(token, SECRET_KEY)
     if not GEMINI_API_KEY:
         return {"story": None}
     top_tracks_str = ", ".join(f"{t.get('title','')}" for t in req.tracks[:3] if t.get("title"))
@@ -2355,7 +2357,7 @@ async def generate_vibe_story(req: VibeStoryRequest, token: str = Depends(oauth2
 @app.get("/api/vibe/history")
 async def get_vibe_history(limit: int = 10, token: str = Depends(oauth2_scheme), db: Prisma = Depends(get_db)):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token, SECRET_KEY)
         user_id = payload.get("sub")
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -2398,7 +2400,7 @@ async def submit_feedback(feedback: FeedbackRequest, token: str = Depends(oauth2
     if feedback.signal not in (-1, 0, 1):
         raise HTTPException(status_code=422, detail="signal must be -1, 0, or 1")
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token, SECRET_KEY)
         user_id = payload.get("sub")
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
