@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import jwt
 from auth_security import load_signing_key, decode_access_token
+from lastfm_proxy import proxy as public_lastfm_proxy
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
@@ -2446,58 +2447,4 @@ async def submit_feedback(feedback: FeedbackRequest, token: str = Depends(oauth2
 
 @app.get("/api/lastfm/proxy")
 async def lastfm_proxy(request: Request):
-    LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
-    if not LASTFM_API_KEY:
-        raise HTTPException(status_code=500, detail="Last.fm API key not configured")
-
-    params = dict(request.query_params)
-    params["api_key"] = LASTFM_API_KEY
-    params["format"] = "json"
-
-    timeout = httpx.Timeout(connect=4.0, read=8.0, write=4.0, pool=4.0)
-    last_exc: Exception | None = None
-
-    for attempt in range(2):
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                r = await client.get("https://ws.audioscrobbler.com/2.0/", params=params)
-
-            # Last.fm often returns HTTP 200 even when payload is an API error.
-            data = r.json()
-            if "error" in data:
-                logger.warning(
-                    f"[LFM Proxy] Last.fm API error {data['error']}: {data.get('message', '')} "
-                    f"(method={params.get('method')}, "
-                    f"tag={params.get('tag', params.get('artist', ''))})"
-                )
-                raise HTTPException(status_code=502, detail=data.get("message", "Last.fm API error"))
-
-            return data
-
-        except HTTPException:
-            raise
-
-        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as e:
-            last_exc = e
-            err_repr = repr(e) or type(e).__name__
-            if attempt == 0:
-                logger.warning(
-                    f"[LFM Proxy] Transient error (attempt {attempt + 1}/2), retrying: {err_repr} "
-                    f"method={params.get('method')}"
-                )
-                await asyncio.sleep(0.6)
-            else:
-                logger.error(
-                    f"[LFM Proxy] Failed after 2 attempts: {err_repr} "
-                    f"method={params.get('method')}"
-                )
-
-        except Exception as e:
-            err_repr = repr(e) or type(e).__name__
-            logger.error(f"[LFM Proxy] Unexpected error: {err_repr}")
-            raise HTTPException(status_code=500, detail=f"Proxy error: {type(e).__name__}")
-
-    raise HTTPException(
-        status_code=502,
-        detail=f"Last.fm unreachable after retries: {type(last_exc).__name__}",
-    )
+    return await public_lastfm_proxy(request)
