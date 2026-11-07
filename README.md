@@ -232,6 +232,44 @@ See `DEPLOYMENT_GUIDE.md` for deployment steps.
 - `DEPLOYMENT_GUIDE.md` - deployment setup
 - `monetisation.md` - cost and monetization notes
 
+## Provider account-link security
+
+Deploy the backend and frontend together: legacy query-token calls are deliberately
+rejected. Private Spotify/service requests require `Authorization: Bearer ...`.
+`POST /api/spotify/authorize` and `POST /api/services/{service}/authorize` accept
+`{challenge}` (SHA-256 hex of a 32-byte random browser verifier), and return a
+short-lived ticket plus the configured callback-host `start_url`. The frontend
+POSTs that ticket and verifier in a top-level form to `start_url`, establishing
+an HttpOnly, Secure, SameSite=Lax cookie without third-party cookie access. This
+also works when normal API requests use Netlify's same-origin reverse proxy.
+
+Before deployment, apply `supabase/migrations/20261107065140_oauth_link_transactions.sql`
+using the trusted backend/table-owning database role, then generate Prisma. The
+migration creates the transaction table and enables RLS in one transaction, with
+no browser policies and no `anon`/`authenticated` grants. Do not replace this step
+with `prisma db push` on a production database: it does not install RLS. The
+backend must use a server-only role that can access this table; never publish that
+connection or use a browser role for Prisma. Existing tables are not changed.
+
+Transactions last ten minutes, are consumed atomically before provider exchange,
+and bind user, provider and browser. A new attempt supersedes the pending attempt
+for that user/provider. Expired rows are removed on the next authorized attempt;
+one pending row per user/provider is retained. Browser cookies expire naturally
+so a delayed old callback cannot erase a new flow's cookie. Consumed transactions
+cannot be replayed even while the cookie remains. Spotify, SoundCloud and Google
+use S256 PKCE; SoundCloud uses its current secure authorization/token endpoints.
+Google requests `openid` to obtain the stable account ID used by the existing
+userinfo lookup. Last.fm and Deezer retain their documented provider protocols.
+
+Set `FRONTEND_URL`, `BACKEND_URL` and `SPOTIFY_REDIRECT_URI` to the intended
+HTTPS deployments (HTTP is accepted only for loopback development). Register
+those exact callback URLs with each provider. The existing Netlify and local
+frontend origins are allowed; additional trusted frontends use the existing
+comma-separated `FRONTEND_URL_PROD` setting. Provider linking requires JavaScript
+Web Crypto and a secure browser context (HTTPS or localhost). After deploying,
+validate real browser consent/callback flows against provider test accounts;
+local tests use mocked provider responses and never use live credentials.
+
 ## Notes for Contributors
 
 Backend regression tests run from `backend` after installing `requirements-test.txt`:
@@ -245,8 +283,14 @@ database named `vfai_security` (or another name beginning with `vfai_security`).
 Set `VFAI_TEST_DATABASE_URL`, `DATABASE_URL` and `DIRECT_URL` to that same loopback
 connection, then run `python -m prisma generate --schema schema.prisma` and
 `python -m prisma db push --schema schema.prisma --skip-generate` before pytest.
+For fresh test databases created with `db push`, additionally execute
+`ALTER TABLE "OAuthLinkTransaction" ENABLE ROW LEVEL SECURITY;` as the test owner.
+For migration verification, apply the SQL migration to the pre-change schema
+instead. The RLS test needs permission to create/drop its disposable test role.
 Use a separate test cluster; these tests create and remove fixture records. They
-exercise startup/shutdown, sign-in, ownership, sharing, analytics and cache reads.
+exercise startup/shutdown, sign-in, ownership, sharing, analytics, cache reads,
+OAuth replay/expiry/concurrency and transaction-table RLS. Run frontend transport
+checks with `node --test src/oauthLink.test.js` from `frontend`.
 Provider calls are mocked in the focused suite; production provider behavior and
 deployment settings still require separate validation.
 
