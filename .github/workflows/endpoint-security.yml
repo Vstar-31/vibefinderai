@@ -1,0 +1,59 @@
+name: Endpoint security regression tests
+
+on:
+  pull_request:
+    branches: [main, Themed.AI]
+  push:
+    branches: [main, Themed.AI]
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: security_test
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: vfai_security_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U security_test -d vfai_security_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://security_test:local-test-only@127.0.0.1:5432/vfai_security_ci
+      DIRECT_URL: postgresql://security_test:local-test-only@127.0.0.1:5432/vfai_security_ci
+      VFAI_TEST_DATABASE_URL: postgresql://security_test:local-test-only@127.0.0.1:5432/vfai_security_ci
+      PYTHON_DOTENV_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install backend test dependencies
+        working-directory: backend
+        run: python -m pip install -r requirements-test.txt
+      - name: Generate Prisma and prepare disposable test schema
+        working-directory: backend
+        run: |
+          python -m prisma generate --schema schema.prisma
+          python -m prisma db push --schema schema.prisma --skip-generate
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'ALTER TABLE "OAuthLinkTransaction" ENABLE ROW LEVEL SECURITY;'
+      - name: Backend security and real database integration tests
+        working-directory: backend
+        run: python -m pytest tests -q
+      - name: Frontend credential transport tests
+        working-directory: frontend
+        run: node --test src/oauthLink.test.js

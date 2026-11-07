@@ -60,6 +60,7 @@ model User {
   createdAt      DateTime @default(now())
 
   oauthIdentities OAuthIdentity[]
+  oauthLinkTransactions OAuthLinkTransaction[]
   playlists       Playlist[]
   forumPosts      ForumPost[]
   comments        Comment[]
@@ -78,6 +79,21 @@ model OAuthIdentity {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([providerName, providerId])
+}
+
+// Server-only one-use link transactions. Apply the accompanying SQL migration
+// (which enables RLS) before deploying; do not expose this table to Data API roles.
+model OAuthLinkTransaction {
+  id           String   @id
+  userId       String
+  provider     String
+  verifierHash String
+  stateHash    String?  @unique
+  expiresAt    DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([expiresAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
