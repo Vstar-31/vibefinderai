@@ -307,3 +307,32 @@ so the first lookup for each track may consume provider quota after deployment.
 ## License
 
 No explicit license file is currently present in this repository. Add one before public redistribution.
+
+## Public Last.fm metadata proxy
+
+The Audiophile panel remains available without login. `/api/lastfm/proxy` is
+restricted to its five public read operations: `tag.getinfo`, `tag.gettoptracks`,
+`tag.gettopartists`, `artist.getinfo` and `artist.getsimilar`. Each operation
+accepts only its tag/artist and supported limit/autocorrect parameters. Duplicate
+or unknown parameters, session credentials, JSONP, paging and other API methods
+are rejected with 422 before contacting the provider. Names are bounded to 200
+characters and list limits to 1–20.
+
+The proxy allows 30 outbound attempts per ASGI peer per minute, 60 total attempts
+per minute, and three concurrent provider requests per process. Retries count
+against these same budgets. Overload fails promptly with 429 and Retry-After;
+requests are not queued. The provider response is capped at 1 MiB, compression
+and redirects are refused, and the entire operation (including one transient
+retry) has a 12-second deadline. Errors do not return provider messages or log
+credential-bearing URLs. The limiter is mandatory even without SlowAPI.
+
+These limits cover this public proxy, not every internal Last.fm consumer. They
+are process-local and reset on restart; deployment currently starts one Uvicorn
+worker. Configure trusted forwarding proxies at the server edge. Multiple
+workers/replicas need a shared edge/provider budget before scaling; these local
+limits are not a distributed quota guarantee. The server-key API protocol and
+other provider endpoints remain part of the wider audit.
+
+Run `python -m pytest tests/test_lastfm_proxy.py -q` from `backend` (or the root
+of the desktop backend snapshot). Tests use offline HTTPX responses and exercise
+the actual route wrapper; no provider credentials or live requests are used.
