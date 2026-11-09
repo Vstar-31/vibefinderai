@@ -14,6 +14,10 @@ const postToThemedAIHost = (message) => {
   }
 };
 
+// Read the settled input only when a consumer needs it. Rendering this parent
+// during the input capture phase can restore the previous controlled value.
+const readPrompt = () => document.querySelector(".app-panel textarea")?.value || "";
+
 export default function AppWithThemedAI({ onNavigate }) {
   const [themedOpen, setThemedOpen] = useState(false);
   const [currentPrompt, setCurrentPrompt] = useState("");
@@ -22,17 +26,6 @@ export default function AppWithThemedAI({ onNavigate }) {
   // App is the sole owner of the WebView command listener and ready handshake.
   useEffect(() => {
     postToThemedAIHost({ type: "VIBEFINDER_PROFILE", profile: profileSummary(loadPersonalizationProfile()) });
-  }, []);
-
-  useEffect(() => {
-    const syncPrompt = (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLTextAreaElement)) return;
-      if (!target.closest(".app-panel")) return;
-      setCurrentPrompt(target.value);
-    };
-    document.addEventListener("input", syncPrompt, true);
-    return () => document.removeEventListener("input", syncPrompt, true);
   }, []);
 
   useEffect(() => {
@@ -54,19 +47,18 @@ export default function AppWithThemedAI({ onNavigate }) {
       if (!signal) return;
       const updated = recordPersonalizationSignal(loadPersonalizationProfile(), {
         ...signal,
-        context: currentPrompt.trim() || undefined,
+        context: readPrompt().trim() || undefined,
       });
       postToThemedAIHost({ type: "VIBEFINDER_PROFILE", profile: profileSummary(updated) });
     };
 
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [currentPrompt]);
+  }, []);
 
   useEffect(() => {
     if (!themedOpen) return;
-    const textarea = document.querySelector(".app-panel textarea");
-    if (textarea instanceof HTMLTextAreaElement) setCurrentPrompt(textarea.value);
+    setCurrentPrompt(readPrompt());
   }, [themedOpen]);
 
   useEffect(() => {
