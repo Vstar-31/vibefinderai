@@ -27,12 +27,10 @@ import { readYouTubeMessage } from "./youtubeMessages.js";
    MODULE-LEVEL CACHE  (survives re-renders, remounts, HMR)
 ══════════════════════════════════════════════════════════════ */
 const _VID_CACHE    = new Map();   // "title|artist" → videoId | null (null = not found)
-const _VID_FETCHING = new Set();   // keys currently in-flight
 
 const _key    = (t) => `${t.title}|${t.artist}`;
 const _getVid = (t) => _VID_CACHE.has(_key(t)) ? _VID_CACHE.get(_key(t)) : undefined;
 const _setVid = (t, v) => _VID_CACHE.set(_key(t), v); // v = videoId string | null
-const _busy   = (t) => _VID_FETCHING.has(_key(t));
 
 /* ── YouTube embed URL builder ───────────────────────────────── */
 const ytSrc = (videoId, autoplay = true) =>
@@ -129,6 +127,8 @@ export default function MusicPlayer({
   const elapsedBase = useRef(0);      // elapsed at last play event (for resume accuracy)
   const playbackGenerationRef = useRef(0); // invalidates stale queue/video-load work
   const ytStateRef = useRef(null);
+  const videoRequestsRef = useRef(new Map());
+  const [lookupRetry, setLookupRetry] = useState(0);
 
   // Stable refs for callbacks
   const repeatRef   = useRef(repeat);
@@ -203,47 +203,44 @@ export default function MusicPlayer({
     if (!buildApiUrl || !t) return null;
     const cached = _getVid(t);
     if (cached !== undefined) return cached; // null or videoId — already resolved
-    if (_busy(t)) return null;
-
-    _VID_FETCHING.add(_key(t));
-    if (isPriority) setYtSearching(true);
-    try {
-      const url = buildApiUrl(
-        `/api/services/youtube/search` +
-        `?title=${encodeURIComponent(t.title)}` +
-        `&artist=${encodeURIComponent(t.artist)}` +
-        `&q=${encodeURIComponent(`${t.title} ${t.artist} official audio`)}`
-      );
-      const res  = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        const vid  = data.found ? data.video_id : null;
-        _setVid(t, vid);
-        setCacheVer(v => v + 1);
-        return vid;
-      }
-      _setVid(t, null);
-      return null;
-    } catch {
-      _setVid(t, null);
-      return null;
-    } finally {
-      _VID_FETCHING.delete(_key(t));
-      if (isPriority) setYtSearching(false);
+    // A priority request must await an existing prefetch, not treat it as a miss.
+    const key = `${token || ""}|${_key(t)}`;
+    let request = videoRequestsRef.current.get(key);
+    if (!request) {
+      request = (async () => {
+        try {
+          const url = buildApiUrl(`/api/services/youtube/search?title=${encodeURIComponent(t.title)}&artist=${encodeURIComponent(t.artist)}&q=${encodeURIComponent(`${t.title} ${t.artist} official audio`)}`);
+          const res = await fetch(url, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            signal: AbortSignal.timeout(20000),
+          });
+          if (!res.ok) return null; // Retry temporary server/auth failures on Play.
+          const data = await res.json();
+          if (data.found !== false && !(data.found === true && typeof data.video_id === "string" && data.video_id)) return null;
+          const vid = data.found ? data.video_id : null;
+          _setVid(t, vid);
+          setCacheVer(v => v + 1);
+          return vid;
+        } catch {
+          return null;
+        } finally {
+          videoRequestsRef.current.delete(key);
+        }
+      })();
+      videoRequestsRef.current.set(key, request);
     }
-  }, [buildApiUrl]);
+    if (isPriority) setYtSearching(true);
+    try { return await request; }
+    finally { if (isPriority) setYtSearching(false); }
+  }, [buildApiUrl, token]);
 
-  /* ── Pre-fetch next 4 ───────────────────────────────────────── */
+  /* Pre-fetch the next tracks; cancel timers when the queue/session changes. */
   useEffect(() => {
     if (!useYT || !buildApiUrl) return;
-    const end = Math.min(queueIdx + 4, queue.length);
-    for (let i = queueIdx; i < end; i++) {
-      const t = queue[i];
-      if (_getVid(t) === undefined && !_busy(t)) {
-        setTimeout(() => fetchVideoId(t), (i - queueIdx) * 400);
-      }
-    }
-  }, [queueIdx, queue, useYT]); // eslint-disable-line
+    const timers = queue.slice(queueIdx + 1, queueIdx + 4).map((t, i) =>
+      setTimeout(() => fetchVideoId(t), (i + 1) * 400));
+    return () => timers.forEach(clearTimeout);
+  }, [queueIdx, queue, useYT, buildApiUrl, fetchVideoId]);
 
   /* ════════════════════════════════════════════════════════════
      postMessage → iframe (send command)
@@ -374,6 +371,8 @@ export default function MusicPlayer({
     const generation = ++playbackGenerationRef.current;
     ytStateRef.current = null;
     startRef.current = null;
+    setIsPlaying(false);
+    if (iframeRef.current) iframeRef.current.src = "about:blank";
     const requestedTrackKey = _key(track);
 
     clearInterval(tickRef.current);
@@ -403,7 +402,7 @@ export default function MusicPlayer({
       setIsPlaying(false);
       if (iframeRef.current) iframeRef.current.src = "about:blank";
     }
-  }, [queueIdx, queue, useYT]); // eslint-disable-line
+  }, [queueIdx, queue, useYT, fetchVideoId, lookupRetry]); // eslint-disable-line
 
   /* ── Cleanup on unmount ─────────────────────────────────────── */
   useEffect(() => () => {
@@ -437,12 +436,19 @@ export default function MusicPlayer({
     audio.addEventListener("ended",          () => advanceAudio());
     audio.addEventListener("pause",          () => setIsPlaying(false));
     audio.addEventListener("play",           () => setIsPlaying(true));
-    if (tracks[initialIndex]?.preview_url) { audio.src = tracks[initialIndex].preview_url; audio.play().catch(() => {}); }
     return () => { audio.pause(); audio.src = ""; clearInterval(tickRef.current); };
-  }, []); // eslint-disable-line
+  }, [useYT]); // eslint-disable-line
 
   useEffect(() => {
-    if (useYT || !audioRef.current || !track?.preview_url) { if (!useYT) setIsPlaying(false); return; }
+    if (useYT || !audioRef.current) return;
+    if (!track?.preview_url) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      setIsPlaying(false);
+      setElapsed(0);
+      setDuration(0);
+      return;
+    }
     audioRef.current.src    = track.preview_url;
     audioRef.current.volume = muted ? 0 : volume;
     audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
@@ -496,6 +502,7 @@ export default function MusicPlayer({
   const togglePlay = () => {
     if (!canPlay) return;
     if (useYT) {
+      if (currentVid === undefined) { setLookupRetry(v => v + 1); return; }
       isPlaying ? ytCommand("pauseVideo") : ytCommand("playVideo");
     } else {
       if (!audioRef.current || !track?.preview_url) return;
@@ -589,7 +596,7 @@ export default function MusicPlayer({
   const progress   = duration > 0 ? Math.min(elapsed / duration, 1) : 0;
   const vidFound   = currentVid !== undefined && currentVid !== null;
   const vidMissing = currentVid === null;
-  const canPlay    = useYT ? (vidFound || ytSearching) : !!track?.preview_url;
+  const canPlay    = useYT ? (!!track && !vidMissing && !ytSearching) : !!track?.preview_url;
 
   /* ════════════════════════════════════════════════════════════
      MINIMISED BAR

@@ -1,3 +1,4 @@
+import { useHostPrompt } from "./useHostPrompt.js";
 import { useState, useEffect, useRef } from "react";
 import PlaylistPanel from "./PlaylistPanel.jsx";
 import ServicesPanel from "./ServicesPanel.jsx";
@@ -659,7 +660,7 @@ export default function App({ onNavigate }) {
     try { return localStorage.getItem("vf_token") || null; }
     catch { return null; }
   });
-  const [prompt, setPrompt]           = useState("");
+  const { prompt, setPrompt, applyHostPrompt, canRunHostAnalysis } = useHostPrompt();
   const [lastPrompt, setLastPrompt]   = useState("");
   const [result, setResult]           = useState(null);
   const [loading, setLoading]         = useState(false);
@@ -970,10 +971,11 @@ export default function App({ onNavigate }) {
       try {
         const msg = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
         if (msg.command === "setPrompt" && typeof msg.text === "string") {
-          setPrompt(msg.text);
+          applyHostPrompt(msg.text, msg.force === true);
         } else if (msg.command === "setTrackLimit" && [5, 10, 20, 50].includes(msg.value)) {
           setTrackLimit(msg.value);
         } else if (msg.command === "runAnalysis" && typeof msg.text === "string" && msg.text.trim()) {
+          if (!canRunHostAnalysis(msg.force)) return;
           const limit = [5, 10, 20, 50].includes(msg.trackLimit) ? msg.trackLimit : undefined;
           analyzeVibeRef.current?.({ overrideText: msg.text, overrideTrackLimit: limit });
         } else if (["playpause", "next", "prev", "previous"].includes(msg.command)) {
@@ -1552,7 +1554,7 @@ export default function App({ onNavigate }) {
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder={"Ex: Late night drive through rain-slicked streets, Travis Scott on the radio..."}
                     style={S.textarea}
-                    disabled={!token || loading}
+                    disabled={!token}
                     onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }}
                     onBlur={e => { e.target.style.borderColor = "rgba(160,110,30,0.42)"; e.target.style.boxShadow = "none"; }}
                 />
@@ -2633,7 +2635,8 @@ export default function App({ onNavigate }) {
           onClose={() => setShowPlaylistPanel(false)}
           currentResult={result}
           currentPrompt={prompt}
-          onLoadPrompt={(p) => { setPrompt(p); setShowPlaylistPanel(false); }}
+          onReRunPrompt={(p) => { setPrompt(p); analyzeVibe({ overrideText: p }); }}
+          onLoadPlaylist={(tracks) => launchPlayer(tracks)}
           onPlaylistSaved={() => setPlaylistSaveCount(c => c + 1)}
           saveCount={playlistSaveCount}
           activeColor={activeColor}
