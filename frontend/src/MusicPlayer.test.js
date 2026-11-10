@@ -50,6 +50,10 @@ test('YouTube snapshots drive pause/resume UI, commands and desktop state', asyn
     assert.ok(view.root.findByProps({ title: 'Pause' }));
     await send({ event: 'onError', info: 150 });
     assert.ok(view.root.findByProps({ title: 'Play full track' }));
+    await send({ event: 'onStateChange', info: 1 });
+    assert.equal(hostStates.at(-1).isPlaying, true);
+    await act(() => view.root.findByProps({ title: 'Close player' }).props.onClick());
+    assert.equal(hostStates.at(-1).type, 'VIBEFINDER_PLAYBACK_RESET');
   } finally {
     if (view) await act(() => view.unmount());
     globalThis.window = savedWindow;

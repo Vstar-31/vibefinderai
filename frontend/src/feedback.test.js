@@ -152,6 +152,7 @@ test('preview audio stops on a track without a preview and recreates after provi
   try {
     await act(async () => { view = create(React.createElement(MusicPlayer, props), { createNodeMock: e => e.type === 'iframe' ? iframe : {} }); });
     assert.equal(instances[0].paused, false);
+    assert.ok(view.root.findByProps({ title: 'Pause' }));
     await act(() => view.root.findByProps({ title: 'Next' }).props.onClick());
     assert.equal(instances[0].paused, true);
     assert.equal(instances[0].src, '');
