@@ -5,6 +5,9 @@ import LandingPage from './LandingPage.jsx'
 import SharedPlaylist from './SharedPlaylist.jsx'
 import AnalyticsDashboard from './AnalyticsDashboard.jsx'
 import EmbedPlayer from './EmbedPlayer.jsx'
+import AppWithThemedAI from './AppWithThemedAI.jsx'
+import PersonalizationAgent from './PersonalizationAgent.jsx'
+import ThemedApp from './ThemedApp.jsx'
 
 /* ─── Route resolver ─────────────────────────────────────────────
    Called on every navigation event. Reads the live URL each time.
@@ -25,6 +28,8 @@ function resolveRoute() {
 
   if (path.startsWith('/embed/player'))  return 'embed-player';
   if (path.startsWith('/playlist/')) return 'playlist';
+  if (path === '/themed')            return 'themed';
+  if (window.chrome?.webview && (path === '/' || path.startsWith('/app') || isOAuthCallback)) return 'desktop-app';
   if (path.startsWith('/app'))       return 'app';
   if (path === '/vf-metrics')        return 'metrics';
   if (isOAuthCallback)               return 'app';   // backend lands here → keep on engine
@@ -52,6 +57,13 @@ function Router() {
   if (route === 'embed-player') return <EmbedPlayer />;
   if (route === 'playlist') return <SharedPlaylist />;
   if (route === 'metrics')  return <AnalyticsDashboard />;
+  if (route === 'themed') return <ThemedApp />;
+  if (route === 'desktop-app') return (
+    <>
+      <PersonalizationAgent />
+      <AppWithThemedAI onNavigate={navigate} />
+    </>
+  );
   if (route === 'app')      return <App onNavigate={navigate} />;
   return <LandingPage onNavigate={navigate} />;
 }
