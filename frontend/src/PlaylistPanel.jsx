@@ -44,9 +44,7 @@
  *  • Zero external deps — pure React + inline styles matching amber aesthetic
  */
 
-import { useState, useEffect, useRef } from "react";
-
-import { useLibraryCollection } from "./useLibraryCollection.js";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ─── ICONS (self-contained SVG — no lucide needed) ─────────────── */
 const Ico = {
@@ -391,12 +389,9 @@ export default function PlaylistPanel({
   onVisibilityChange,
 }) {
   const [tab,         setTab]         = useState("playlists");   // "playlists" | "history"
-  const playlistState = useLibraryCollection(buildApiUrl("/api/playlist/list?limit=50"), token, "playlists", "playlists");
-  const historyState = useLibraryCollection(buildApiUrl("/api/user/history?limit=30"), token, "history", "history");
-  const { items: playlists, setItems: setPlaylists } = playlistState;
-  const { items: history } = historyState;
-  const activeCollection = tab === "playlists" ? playlistState : historyState;
-  const { loading } = activeCollection;
+  const [playlists,   setPlaylists]   = useState([]);
+  const [history,     setHistory]     = useState([]);
+  const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState("");
   const [showSave,    setShowSave]    = useState(false);
 
@@ -417,16 +412,50 @@ export default function PlaylistPanel({
     return () => { document.body.style.overflow = ""; };
   }, []);
 
+  const fetchPlaylists = useCallback(async () => {
+    try {
+      const res = await fetch(buildApiUrl("/api/playlist/list?limit=50"), {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to load playlists");
+      const data = await res.json();
+      setPlaylists(data.playlists || []);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, [token, buildApiUrl]);
+
+  const fetchHistory = useCallback(async () => {
+    try {
+      const res = await fetch(buildApiUrl("/api/user/history?limit=30"), {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to load history");
+      const data = await res.json();
+      setHistory(data.history || []);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, [token, buildApiUrl]);
+
   useEffect(() => {
-    const controller = new AbortController();
-    fetch(buildApiUrl("/api/vibes/today"), { signal: controller.signal })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d && !controller.signal.aborted) setVibeOfDay(d); }).catch(() => {});
-    fetch(buildApiUrl("/api/vibes/feed?limit=6"), { signal: controller.signal })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.vibes && !controller.signal.aborted) setRecentVibes(d.vibes); }).catch(() => {});
-    return () => controller.abort();
-  }, [buildApiUrl]);
+    setLoading(true);
+    setError("");
+    const load = async () => {
+      await Promise.all([fetchPlaylists(), fetchHistory()]);
+      // Vibe of day + recent public feed — fire and forget, no loading gate
+      fetch(buildApiUrl("/api/vibes/today"))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setVibeOfDay(d); })
+        .catch(() => {});
+      fetch(buildApiUrl("/api/vibes/feed?limit=6"))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.vibes) setRecentVibes(d.vibes); })
+        .catch(() => {});
+      setLoading(false);
+    };
+    load();
+  }, [fetchPlaylists, fetchHistory]);
 
   const handleSaved = (playlist) => {
     setPlaylists(prev => [playlist, ...prev]);
@@ -438,11 +467,10 @@ export default function PlaylistPanel({
 
   const handleDelete = async (id) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/playlist/${id}`), {
+      await fetch(buildApiUrl(`/api/playlist/${id}`), {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error("Delete failed");
       setPlaylists(prev => prev.filter(p => p.id !== id));
     } catch (e) {
       setError("Delete failed");
@@ -586,11 +614,6 @@ export default function PlaylistPanel({
         <div style={S.body}>
           {loading ? (
             <div style={S.empty}>Loading...</div>
-          ) : activeCollection.error ? (
-            <div role="alert" style={S.emptyState}>
-              <p>{activeCollection.error}</p>
-              <button style={S.primaryBtn(false)} onClick={activeCollection.retry}>Retry {tab}</button>
-            </div>
           ) : tab === "playlists" ? (
             playlists.length === 0 ? (
               <div style={S.emptyState}>

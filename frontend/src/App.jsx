@@ -1,4 +1,3 @@
-import { useHostPrompt } from "./useHostPrompt.js";
 import { useState, useEffect, useRef } from "react";
 import PlaylistPanel from "./PlaylistPanel.jsx";
 import ServicesPanel from "./ServicesPanel.jsx";
@@ -664,7 +663,7 @@ export default function App({ onNavigate }) {
     try { return localStorage.getItem("vf_token") || null; }
     catch { return null; }
   });
-  const { prompt, setPrompt, applyHostPrompt, canRunHostAnalysis } = useHostPrompt();
+  const [prompt, setPrompt]           = useState("");
   const [lastPrompt, setLastPrompt]   = useState("");
   const [result, setResult]           = useState(null);
   const [loading, setLoading]         = useState(false);
@@ -753,14 +752,6 @@ export default function App({ onNavigate }) {
   const [playerTracks, setPlayerTracks]     = useState([]);
   const [playerStartIdx, setPlayerStartIdx] = useState(0);
 
-  // Native desktop host bridge refs. These stay stable while the actual React state/functions
-  // change, so WebView2 messages always hit the current analysis/player implementation.
-  const analyzeVibeRef = useRef(null);
-  const showPlayerRef = useRef(false);
-  const resultRef = useRef(null);
-  const launchPlayerRef = useRef(null);
-  const autoPlayRef = useRef(false);
-
   const vibeColors = {
     hype: '#f87171', calm: '#34d399', intense: '#f97316', chill: '#60a5fa', focus: '#22d3ee',
     euphoric: '#e879f9', soulful: '#fbbf24', retro: '#818cf8', dreamy: '#c084fc', cinematic: '#fb923c',
@@ -771,53 +762,173 @@ export default function App({ onNavigate }) {
 
   const activeColor = result ? (vibeColors[useSecondaryVibe ? result.secondary_vibe : result.dominant_vibe] || vibeColors.neutral) : vibeColors.neutral;
 
-  const stopPreviewAudio = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    try {
-      audio.pause();
-      audio.currentTime = 0;
-      audio.src = "";
-    } catch {}
-    setPlayingTrack(null);
-  };
-
   /* Initialize Audio Object */
   useEffect(() => {
     audioRef.current = new Audio();
     audioRef.current.volume = 0.6;
     audioRef.current.onended = () => setPlayingTrack(null);
-
-    const onExternalStop = () => stopPreviewAudio();
-    window.addEventListener("vibefinder:stop-playback", onExternalStop);
-
     return () => {
-      window.removeEventListener("vibefinder:stop-playback", onExternalStop);
-      try {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-      } catch {}
+      audioRef.current.pause();
+      audioRef.current.src = "";
     };
   }, []);
 
-  /* Toggle the In-App Preview Player */
-  const togglePlay = async (url) => {
-    if (!url || !audioRef.current) return;
-    if (playingTrack === url) {
-      stopPreviewAudio();
-      return;
-    }
+  // Keeps the message handler below (registered once, on mount) able to call
+  // the *current* render's analyzeVibe. A listener created inside a
+  // `useEffect(..., [])` closes over analyzeVibe — and everything analyzeVibe
+  // itself closes over (token, knobs, overrideGenre, ...) — as they stood at
+  // mount, which is stale by the time any async host message actually
+  // arrives. Refreshed after every render rather than re-subscribing the
+  // listener on every analyzeVibe identity change (analyzeVibe isn't
+  // memoized, so that would mean tearing down/recreating the listener, and
+  // re-posting VIBEFINDER_APP_READY, on every render).
+  //
+  // Seeded with null, not analyzeVibe: analyzeVibe is a `const` declared
+  // further down this same function, and useRef's argument is evaluated
+  // immediately as part of this line running — reaching for it here, before
+  // that line executes, is a temporal-dead-zone reference and throws on
+  // every render. The effect right below assigns the real function the
+  // moment the first render commits, well before any WebView2 message could
+  // plausibly arrive, so nothing is lost by not having it one tick earlier.
+  const analyzeVibeRef = useRef(null);
+  const showPlayerRef = useRef(false);
+  const resultRef = useRef(null);
+  const launchPlayerRef = useRef(null);
+  const autoPlayRef = useRef(false);
 
-    try {
+  useEffect(() => { 
+    analyzeVibeRef.current = analyzeVibe; 
+    showPlayerRef.current = showPlayer;
+    resultRef.current = result;
+    launchPlayerRef.current = launchPlayer;
+  });
+
+  /* ════════════════════════════════════════════════════════════
+     THEMED.AI BRIDGE — prompt / track-limit / run autofill (host → app)
+     A second, independent bridge from MusicPlayer.jsx's playback one — that
+     one only mounts once a player is actually showing (see the
+     `{showPlayer && playerTracks.length > 0 && <MusicPlayer .../>}` guard
+     further down this file), which is well after the moment Themed.AI wants
+     to push the saved Vibe Prompt, track count, and a run trigger into this
+     component's own state. Lives here instead, mounted for the lifetime of
+     the app rather than gated on a player existing.
+
+     Handshake, not a blind push: the host has no way to know when this
+     listener is actually registered — a message posted before it exists is
+     simply dropped by WebView2, and NavigationCompleted firing host-side
+     isn't a reliable proxy for "React has mounted." So this side speaks
+     first (VIBEFINDER_APP_READY) and the host replies with whatever
+     setPrompt/setTrackLimit/runAnalysis commands it has queued.
+
+     runAnalysis carries its own text/trackLimit rather than trusting that
+     the setPrompt/setTrackLimit messages above have already flushed into
+     state — those are two separate async React updates, and this can be
+     handled before either lands. analyzeVibe's overrideText/
+     overrideTrackLimit config exists for exactly this: bypass state entirely
+     for the one call that can't wait on it.
+  ════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (!window.chrome || !window.chrome.webview) return;
+
+    const handleMessage = (e) => {
+      try {
+        const msg = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (msg.command === "setPrompt" && typeof msg.text === "string") {
+          setPrompt(msg.text);
+        } else if (msg.command === "setTrackLimit" && [5, 10, 20, 50].includes(msg.value)) {
+          setTrackLimit(msg.value);
+        } else if (msg.command === "runAnalysis" && typeof msg.text === "string" && msg.text.trim()) {
+          const limit = [5, 10, 20, 50].includes(msg.trackLimit) ? msg.trackLimit : undefined;
+          analyzeVibeRef.current?.({ overrideText: msg.text, overrideTrackLimit: limit });
+        } else if (msg.command === "playpause") {
+          if (!showPlayerRef.current) {
+            if (resultRef.current && resultRef.current.tracks && resultRef.current.tracks.length > 0) {
+              launchPlayerRef.current?.(resultRef.current.tracks, 0);
+            } else {
+              autoPlayRef.current = true;
+              analyzeVibeRef.current?.({});
+            }
+          }
+        }
+      } catch (err) {}
+    };
+
+    window.chrome.webview.addEventListener("message", handleMessage);
+    window.chrome.webview.postMessage(JSON.stringify({ type: "VIBEFINDER_APP_READY", hasToken: !!token }));
+
+    return () => window.chrome.webview.removeEventListener("message", handleMessage);
+  }, []);
+
+  /* ════════════════════════════════════════════════════════════
+     THEMED.AI BRIDGE — push result set to host (app → host)
+     Posts a VIBEFINDER_RESULTS message every time a new analysis
+     finishes so the desktop widgets can immediately show the same
+     track list the embed displays, without waiting for the user to
+     explicitly open the MusicPlayer (which has its own per-track
+     VIBEFINDER_STATE bridge for live playback state).
+  ════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (!window.chrome?.webview || !result?.tracks?.length) return;
+    window.chrome.webview.postMessage(JSON.stringify({
+      type: "VIBEFINDER_RESULTS",
+      tracks: result.tracks.map(t => ({
+        title: t.title || "—",
+        artist: t.artist || "—",
+        cover_art: t.cover_art || null,
+        preview_url: t.preview_url || null,
+      })),
+    }));
+  }, [result]);
+
+  /* Toggle the In-App Preview Player */
+  const togglePlay = (url) => {
+    if (!url) return;
+    if (playingTrack === url) {
       audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current.src = url;
-      await audioRef.current.play();
-      setPlayingTrack(url);
-    } catch {
       setPlayingTrack(null);
+    } else {
+      audioRef.current.src = url;
+      audioRef.current.play();
+      setPlayingTrack(url);
     }
   };
+
+  /* ════════════════════════════════════════════════════════════
+     THEMED.AI BRIDGE — post inline player state (app → host)
+     Posts VIBEFINDER_STATE when the inline audio player is used,
+     so the host widgets can show playback progress and play/pause
+     state even if MusicPlayer.jsx hasn't been launched.
+  ════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (!audioRef.current || !window.chrome?.webview) return;
+    const audio = audioRef.current;
+
+    const postState = () => {
+      if (!playingTrack) return;
+      const t = result?.tracks?.find(tr => tr.preview_url === playingTrack);
+      if (!t) return;
+      window.chrome.webview.postMessage(JSON.stringify({
+        type: "VIBEFINDER_STATE",
+        isPlaying: !audio.paused,
+        title: t.title || "—",
+        artist: t.artist || "—",
+        coverArt: t.cover_art || null,
+        previewUrl: t.preview_url || null,
+        currentTime: audio.currentTime || 0,
+        duration: audio.duration || 0
+      }));
+    };
+
+    audio.addEventListener("play", postState);
+    audio.addEventListener("pause", postState);
+    audio.addEventListener("timeupdate", postState);
+
+    return () => {
+      audio.removeEventListener("play", postState);
+      audio.removeEventListener("pause", postState);
+      audio.removeEventListener("timeupdate", postState);
+    };
+  }, [playingTrack, result]);
 
   /* Animate VU meter while loading or playing music */
   useEffect(() => {
@@ -862,7 +973,6 @@ export default function App({ onNavigate }) {
   };
 
   const handleLogout = () => {
-    window.dispatchEvent(new Event("vibefinder:stop-playback"));
     try { localStorage.removeItem("vf_token"); } catch {}
     setToken(null); setResult(null); setPrompt(""); setVuLevel(0);
     setShowPlaylistPanel(false);
@@ -872,7 +982,6 @@ export default function App({ onNavigate }) {
     const effectivePrompt = config.overrideText || prompt;
     if (!token || !effectivePrompt.trim()) return;
     try {
-      window.dispatchEvent(new Event("vibefinder:stop-playback"));
       setLoading(true); setError(""); setIsSkeletonLoading(true);
       if (config.targetSecondary !== undefined) setLoadReason("pivot");
       else if (config.targetGenre !== undefined) setLoadReason("genre");
@@ -933,7 +1042,7 @@ export default function App({ onNavigate }) {
 
       const data = await res.json();
       setResult(data);
-      if (autoPlayRef.current && data?.tracks?.length) {
+      if (autoPlayRef.current) {
         launchPlayerRef.current?.(data.tracks, 0);
         autoPlayRef.current = false;
       }
@@ -956,96 +1065,8 @@ export default function App({ onNavigate }) {
     finally { setLoading(false); setLoadReason(null); }
   };
 
-  // Keep host callbacks current without re-registering the WebView2 listener on every render.
-  useEffect(() => {
-    analyzeVibeRef.current = analyzeVibe;
-    showPlayerRef.current = showPlayer;
-    resultRef.current = result;
-    launchPlayerRef.current = launchPlayer;
-  });
-
-  // THEMED.AI BRIDGE — host -> VibeFinderAI.
-  // The visible native wrapper uses a handshake so it never blindly posts commands before
-  // this listener is mounted. The runAnalysis message carries its own text/limit because
-  // React setState is asynchronous.
-  useEffect(() => {
-    if (!window.chrome?.webview) return;
-
-    const handleMessage = (e) => {
-      try {
-        const msg = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        if (msg.command === "setPrompt" && typeof msg.text === "string") {
-          applyHostPrompt(msg.text, msg.force === true);
-        } else if (msg.command === "setTrackLimit" && [5, 10, 20, 50].includes(msg.value)) {
-          setTrackLimit(msg.value);
-        } else if (msg.command === "runAnalysis" && typeof msg.text === "string" && msg.text.trim()) {
-          if (!canRunHostAnalysis(msg.force)) return;
-          const limit = [5, 10, 20, 50].includes(msg.trackLimit) ? msg.trackLimit : undefined;
-          analyzeVibeRef.current?.({ overrideText: msg.text, overrideTrackLimit: limit });
-        } else if (["playpause", "next", "prev", "previous"].includes(msg.command)) {
-          if (showPlayerRef.current) {
-            // MusicPlayer already owns the live queue controls; reuse its existing deterministic
-            // host-command path instead of poking DOM buttons or creating a second controller.
-            window.dispatchEvent(new CustomEvent("vibefinder:host-command", {
-              detail: {
-                ...msg,
-                command: msg.command === "previous" ? "prev" : msg.command,
-              },
-            }));
-            return;
-          }
-
-          if (msg.command !== "playpause") return;
-
-          const tracks = resultRef.current?.tracks;
-          if (tracks?.length) {
-            let startIndex = 0;
-            if (typeof msg.title === "string" && typeof msg.artist === "string") {
-              const matchIndex = tracks.findIndex(t =>
-                String(t.title || "").trim().toLowerCase() === msg.title.trim().toLowerCase() &&
-                String(t.artist || "").trim().toLowerCase() === msg.artist.trim().toLowerCase()
-              );
-              if (matchIndex >= 0) startIndex = matchIndex;
-            }
-            if (startIndex === 0 && Number.isInteger(msg.index) && msg.index >= 0 && msg.index < tracks.length)
-              startIndex = msg.index;
-            launchPlayerRef.current?.(tracks, startIndex);
-            return;
-          }
-
-          // No result yet: remember the requested play and run the current prompt.
-          autoPlayRef.current = true;
-          analyzeVibeRef.current?.({});
-        }
-      } catch {}
-    };
-
-    window.chrome.webview.addEventListener("message", handleMessage);
-    window.chrome.webview.postMessage(JSON.stringify({
-      type: "VIBEFINDER_APP_READY",
-      hasToken: !!token
-    }));
-
-    return () => window.chrome.webview.removeEventListener("message", handleMessage);
-  }, [token]);
-
-  // Push the exact result set shown in the UI to the native widget host.
-  useEffect(() => {
-    if (!window.chrome?.webview || !result?.tracks?.length) return;
-    window.chrome.webview.postMessage(JSON.stringify({
-      type: "VIBEFINDER_RESULTS",
-      tracks: result.tracks.map(t => ({
-        title: t.title || "—",
-        artist: t.artist || "—",
-        cover_art: t.cover_art || null,
-        preview_url: t.preview_url || null,
-      })),
-    }));
-  }, [result]);
-
   // FULL ENGINE KILL SWITCH
   const resetEngine = () => {
-      window.dispatchEvent(new Event("vibefinder:stop-playback"));
       setPrompt("");
       setLastPrompt("");
       setResult(null);
@@ -1558,7 +1579,7 @@ export default function App({ onNavigate }) {
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder={"Ex: Late night drive through rain-slicked streets, Travis Scott on the radio..."}
                     style={S.textarea}
-                    disabled={!token}
+                    disabled={!token || loading}
                     onFocus={e => { e.target.style.borderColor = activeColor; e.target.style.boxShadow = `0 0 0 2px ${activeColor}22`; }}
                     onBlur={e => { e.target.style.borderColor = "rgba(160,110,30,0.42)"; e.target.style.boxShadow = "none"; }}
                 />
@@ -2639,8 +2660,7 @@ export default function App({ onNavigate }) {
           onClose={() => setShowPlaylistPanel(false)}
           currentResult={result}
           currentPrompt={prompt}
-          onReRunPrompt={(p) => { setPrompt(p); analyzeVibe({ overrideText: p }); }}
-          onLoadPlaylist={(tracks) => launchPlayer(tracks)}
+          onLoadPrompt={(p) => { setPrompt(p); setShowPlaylistPanel(false); }}
           onPlaylistSaved={() => setPlaylistSaveCount(c => c + 1)}
           saveCount={playlistSaveCount}
           activeColor={activeColor}
