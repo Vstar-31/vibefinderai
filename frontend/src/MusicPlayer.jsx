@@ -112,6 +112,7 @@ export default function MusicPlayer({
   /* ── Video ID state ──────────────────────────────────────────── */
   const [cacheVer,   setCacheVer]   = useState(0);    // bump to re-render on new cache entry
   const [ytSearching, setYtSearching] = useState(false);
+  const [lookupFailed, setLookupFailed] = useState(false);
 
   /* ── Export / services ───────────────────────────────────────── */
   const [exporting,    setExporting]    = useState(false);
@@ -216,6 +217,8 @@ export default function MusicPlayer({
           });
           if (!res.ok) return null; // Retry temporary server/auth failures on Play.
           const data = await res.json();
+          // Older backends report an upstream quota error in a successful HTTP response.
+          if (data.quota_exceeded === true) return null;
           if (data.found !== false && !(data.found === true && typeof data.video_id === "string" && data.video_id)) return null;
           const vid = data.found ? data.video_id : null;
           _setVid(t, vid);
@@ -374,6 +377,7 @@ export default function MusicPlayer({
     setIsPlaying(false);
     if (iframeRef.current) iframeRef.current.src = "about:blank";
     const requestedTrackKey = _key(track);
+    setLookupFailed(false);
 
     clearInterval(tickRef.current);
     elapsedBase.current = 0;
@@ -386,6 +390,7 @@ export default function MusicPlayer({
       fetchVideoId(track, true).then(id => {
         const current = queueRef.current[queueIdxRef.current];
         if (generation !== playbackGenerationRef.current || !current || _key(current) !== requestedTrackKey) return;
+        setLookupFailed(!id && _getVid(track) === undefined);
         if (id && iframeRef.current) {
           iframeRef.current.src = ytSrc(id, true);
           setIsPlaying(false); // wait for YouTube onStateChange=1
@@ -692,7 +697,7 @@ export default function MusicPlayer({
                   {fmt(elapsed)} / {fmt(duration || 0)}
                   {useYT && (
                     <span style={{ display: "flex", alignItems: "center", gap: 2, color: vidMissing ? "rgba(180,80,80,0.4)" : ytSearching ? "rgba(217,119,6,0.5)" : "rgba(255,80,80,0.55)" }}>
-                      {Ic.yt} {ytSearching ? "searching…" : vidMissing ? "no video" : ""}
+                      {Ic.yt} {ytSearching ? "searching…" : vidMissing ? "no video" : lookupFailed ? "search unavailable; retry later" : ""}
                     </span>
                   )}
                   {!useYT && <span style={{ opacity: 0.5 }}>30s preview</span>}

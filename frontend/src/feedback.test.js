@@ -81,22 +81,28 @@ test('selecting a still-prefetching track awaits its video and sends the session
   } finally { if (view) await act(() => view.unmount()); globalThis.window = savedWindow; globalThis.fetch = savedFetch; }
 });
 
-test('Play retries a temporary video lookup failure instead of caching a permanent miss', async () => {
-  const savedWindow = globalThis.window, savedFetch = globalThis.fetch;
-  globalThis.window = { location: { origin: 'https://example.test' }, addEventListener() {}, removeEventListener() {} };
-  const iframe = { src: 'about:blank', contentWindow: { postMessage() {} } };
-  let calls = 0, view;
-  globalThis.fetch = async () => ++calls === 1 ? { ok: false, status: 503 } : response({ found: true, video_id: 'retry-video' });
-  try {
-    await act(async () => { view = create(React.createElement(MusicPlayer, {
-      tracks: [{ title: 'Temporary failure fixture', artist: 'Test' }], buildApiUrl: api,
-      servicesConnected: { youtube: true }, visibleServices: { youtube: true },
-    }), { createNodeMock: e => e.type === 'iframe' ? iframe : {} }); });
-    await act(async () => view.root.findByProps({ title: 'Play full track' }).props.onClick());
-    assert.equal(calls, 2);
-    assert.match(iframe.src, /embed\/retry-video/);
-  } finally { if (view) await act(() => view.unmount()); globalThis.window = savedWindow; globalThis.fetch = savedFetch; }
-});
+for (const [failure, firstResponse] of [
+  ['HTTP 503', { ok: false, status: 503 }],
+  ['provider quota', response({ found: false, quota_exceeded: true })],
+]) {
+  test(`Play retries after ${failure} without caching a permanent miss`, async () => {
+    const savedWindow = globalThis.window, savedFetch = globalThis.fetch;
+    globalThis.window = { location: { origin: 'https://example.test' }, addEventListener() {}, removeEventListener() {} };
+    const iframe = { src: 'about:blank', contentWindow: { postMessage() {} } };
+    let calls = 0, view;
+    globalThis.fetch = async () => ++calls === 1 ? firstResponse : response({ found: true, video_id: 'retry-video' });
+    try {
+      await act(async () => { view = create(React.createElement(MusicPlayer, {
+        tracks: [{ title: `Temporary failure fixture ${failure}`, artist: 'Test' }], buildApiUrl: api,
+        servicesConnected: { youtube: true }, visibleServices: { youtube: true },
+      }), { createNodeMock: e => e.type === 'iframe' ? iframe : {} }); });
+      assert.match(JSON.stringify(view.toJSON()), /search unavailable/);
+      await act(async () => view.root.findByProps({ title: 'Play full track' }).props.onClick());
+      assert.equal(calls, 2);
+      assert.match(iframe.src, /embed\/retry-video/);
+    } finally { if (view) await act(() => view.unmount()); globalThis.window = savedWindow; globalThis.fetch = savedFetch; }
+  });
+}
 
 test('playlists render while history is pending; history failure has a retry instead of an empty state', async () => {
   const savedDocument = globalThis.document, savedFetch = globalThis.fetch;
