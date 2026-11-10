@@ -499,6 +499,12 @@ export default function MusicPlayer({
     setQueueIdx(i => Math.max(0, i - 1));
   };
 
+  const closePlayer = () => {
+    onClose?.();
+    // Unmounting stops the media, so no later progress snapshot can clear the widget.
+    window.chrome?.webview?.postMessage(JSON.stringify({ type: "VIBEFINDER_PLAYBACK_RESET" }));
+  };
+
   const togglePlay = () => {
     if (!canPlay) return;
     if (useYT) {
@@ -728,7 +734,7 @@ export default function MusicPlayer({
               <button
                 onClick={togglePlay}
                 disabled={!canPlay}
-                title={useYT ? (ytSearching ? "Searching YouTube…" : vidMissing ? "No video found for this track" : isPlaying ? "Pause" : "Play full track") : (track?.preview_url ? "Play 30s preview" : "No preview available")}
+                title={useYT ? (ytSearching ? "Searching YouTube…" : vidMissing ? "No video found for this track" : isPlaying ? "Pause" : "Play full track") : (isPlaying ? "Pause" : track?.preview_url ? "Play 30s preview" : "No preview available")}
                 style={{ ...S.ctrl, width: 42, height: 42, borderRadius: "50%", background: canPlay ? `linear-gradient(135deg, ${activeColor}cc, ${activeColor})` : "rgba(60,40,10,0.4)", border: `1px solid ${activeColor}55`, color: canPlay ? "#000" : "rgba(120,80,20,0.3)", boxShadow: canPlay ? `0 0 16px ${activeColor}44` : "none", opacity: canPlay ? 1 : 0.5 }}
               >
                 {ytSearching
@@ -772,7 +778,7 @@ export default function MusicPlayer({
             {serviceToast && <span style={{ fontSize: 9, color: serviceToast.startsWith("⚠") ? "#f87171" : "#34d399", fontFamily: "'DM Mono', monospace" }}>{serviceToast}</span>}
 
             <button onClick={() => setMinimised(true)} style={{ ...S.ctrl, opacity: 0.4, transform: "rotate(180deg)" }} title="Minimise">{Ic.chevron}</button>
-            <button onClick={onClose} style={{ ...S.ctrl, opacity: 0.4 }} title="Close player">{Ic.close}</button>
+            <button onClick={closePlayer} style={{ ...S.ctrl, opacity: 0.4 }} title="Close player">{Ic.close}</button>
           </div>
         </div>
 
