@@ -6,9 +6,7 @@
  * FIX: accepts `buildApiUrl` prop instead of hardcoding API_BASE.
  * App.jsx passes it as: <PromptHistory buildApiUrl={buildApiUrl} ... />
  */
-import React, { useState } from "react";
-
-import { useLibraryCollection } from "../useLibraryCollection.js";
+import React, { useEffect, useState } from "react";
 
 const VIBE_COLORS = {
   party: "#d97706", hype: "#b45309", heartbreak: "#be185d", romantic: "#db2777",
@@ -74,7 +72,9 @@ function HistoryRow({ item, onRerun }) {
 }
 
 export default function PromptHistory({ token, onRerun, refreshTrigger, buildApiUrl, style = {} }) {
+  const [history, setHistory] = useState([]);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Fallback: if buildApiUrl not passed, derive from env
   const apiUrl = buildApiUrl
@@ -84,16 +84,33 @@ export default function PromptHistory({ token, onRerun, refreshTrigger, buildApi
         return base ? `${base}${path}` : path;
       };
 
-  const { items: history, loading, error, retry } = useLibraryCollection(
-    apiUrl("/api/vibe/history?limit=10"), token, "history", "recent searches", refreshTrigger);
-  if (!token || (history.length === 0 && !loading && !error)) return null;
+  const fetchHistory = async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const res = await fetch(apiUrl("/api/vibe/history?limit=10"), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.history || []);
+      }
+    } catch (_) {}
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, [token, refreshTrigger]); // eslint-disable-line
+
+  if (history.length === 0 && !loading) return null;
 
   return (
     <div style={{ marginTop: "10px", ...style }}>
       <button
         onClick={() => {
           setOpen(v => !v);
-          if (!open) retry();
+          if (!open) fetchHistory();
         }}
         style={{
           display: "flex", alignItems: "center", gap: "6px",
@@ -118,10 +135,7 @@ export default function PromptHistory({ token, onRerun, refreshTrigger, buildApi
         )}
       </button>
 
-      {error && <div role="alert" style={{ color: "#fca5a5", fontSize: 12, marginTop: 8 }}>
-        {error} <button onClick={retry}>Retry recent searches</button>
-      </div>}
-      {open && !error && (
+      {open && (
         <div style={{ marginTop: "6px" }}>
           {loading && history.length === 0 ? (
             <div style={{
