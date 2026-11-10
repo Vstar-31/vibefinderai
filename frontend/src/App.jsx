@@ -866,7 +866,7 @@ export default function App({ onNavigate }) {
 
   const analyzeVibe = async (config = {}) => {
     const effectivePrompt = config.overrideText || prompt;
-    if (!effectivePrompt.trim()) return;
+    if (!token || !effectivePrompt.trim()) return;
     try {
       window.dispatchEvent(new Event("vibefinder:stop-playback"));
       setLoading(true); setError(""); setIsSkeletonLoading(true);
