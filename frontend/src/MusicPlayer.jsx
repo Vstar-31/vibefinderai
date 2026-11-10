@@ -37,7 +37,7 @@ const ytSrc = (videoId, autoplay = true) =>
   `https://www.youtube.com/embed/${videoId}` +
   `?enablejsapi=1` +
   `&autoplay=${autoplay ? 1 : 0}` +
-  `&controls=0` +
+  `&controls=1` +
   `&rel=0` +
   `&modestbranding=1` +
   `&playsinline=1` +
@@ -604,59 +604,21 @@ export default function MusicPlayer({
   const vidMissing = currentVid === null;
   const canPlay    = useYT ? (!!track && !vidMissing && !ytSearching) : !!track?.preview_url;
 
-  /* ════════════════════════════════════════════════════════════
-     MINIMISED BAR
-  ════════════════════════════════════════════════════════════ */
-  if (minimised) {
-    return (
-      <>
-        {useYT && (
-          <iframe ref={iframeRef} src="about:blank" title="yt-player"
-            allow="autoplay; encrypted-media"
-            onLoad={() => {
-              const iframe = iframeRef.current;
-              if (!iframe?.src?.includes("youtube.com")) return;
-              try {
-                iframe.contentWindow?.postMessage(
-                  JSON.stringify({ event: "listening", id: 1 }),
-                  "https://www.youtube.com"
-                );
-                // Autoplay in the URL is not a sufficient contract in an embedded desktop host.
-                // Explicitly request playback after the iframe has completed the handshake.
-                setTimeout(() => {
-                  try {
-                    iframe.contentWindow?.postMessage(
-                      JSON.stringify({ event: "command", func: "playVideo", args: [] }),
-                      "https://www.youtube.com"
-                    );
-                  } catch {}
-                }, 80);
-              } catch {}
-            }}
-            style={{ position: "fixed", bottom: -300, right: -300, width: 160, height: 90, border: "none", pointerEvents: "none", zIndex: -1 }}
-          />
-        )}
-        <div style={{ position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 200, display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", background: "linear-gradient(135deg, #120900, #0a0500)", border: `1px solid ${activeColor}55`, borderRadius: 40, boxShadow: `0 8px 32px rgba(0,0,0,0.8)`, backdropFilter: "blur(12px)", maxWidth: "90vw" }}>
-          {track?.cover_art ? <img src={track.cover_art} alt="" style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0 }} /> : <div style={{ width: 28, height: 28, borderRadius: 4, background: "rgba(120,80,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.disc}</div>}
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{track?.title}</div>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.5)", display: "flex", alignItems: "center", gap: 3 }}>{useYT && <>{Ic.yt}&nbsp;</>}{track?.artist}</div>
-          </div>
-          <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{ ...S.ctrl, width: 28, height: 28 }}>{isPlaying ? Ic.pause : Ic.play}</button>
-          <button onClick={(e) => { e.stopPropagation(); handleNext(); }} style={{ ...S.ctrl, width: 24, height: 24 }}>{Ic.next}</button>
-          <button onClick={() => setMinimised(false)} style={{ ...S.ctrl, opacity: 0.5, width: 22, height: 22 }}>{Ic.chevron}</button>
-        </div>
-      </>
-    );
-  }
-
-  /* ════════════════════════════════════════════════════════════
-     FULL PLAYER
-  ════════════════════════════════════════════════════════════ */
+  const compactStyle = {
+    position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)",
+    zIndex: 200, width: useYT ? "min(356px, 96vw)" : "max-content", maxWidth: "96vw",
+    background: useYT ? "#060300" : "transparent", borderRadius: useYT ? 8 : 40, overflow: "hidden",
+  };
+  const expandedStyle = {
+    position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200,
+    background: "linear-gradient(180deg, rgba(10,5,0,0.97) 0%, #060300 100%)",
+    borderTop: `1px solid ${activeColor}44`, boxShadow: "0 -8px 40px rgba(0,0,0,0.8)",
+    backdropFilter: "blur(20px)", padding: "0 0 env(safe-area-inset-bottom, 0)",
+    maxHeight: "90dvh", overflowY: "auto",
+  };
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: "linear-gradient(180deg, rgba(10,5,0,0.97) 0%, #060300 100%)", borderTop: `1px solid ${activeColor}44`, boxShadow: `0 -8px 40px rgba(0,0,0,0.8)`, backdropFilter: "blur(20px)", padding: "0 0 env(safe-area-inset-bottom, 0)" }}>
-
-      {/* Hidden YouTube iframe — off-screen, real dimensions for autoplay to work */}
+    <div style={minimised ? compactStyle : expandedStyle}>
+      {/* Keep the media frame mounted when only the transport layout changes. */}
       {useYT && (
         <iframe
           ref={iframeRef}
@@ -684,138 +646,152 @@ export default function MusicPlayer({
             } catch {}
           }}
           style={{
-            position: "fixed",
-            bottom: -300, right: -300,
-            width: 160, height: 90,
-            border: "none", pointerEvents: "none", zIndex: -1,
+            display: "block", width: "100%", maxWidth: minimised ? 356 : 480,
+            height: minimised ? 200 : "clamp(200px, 30vh, 270px)",
+            margin: "0 auto", border: 0,
           }}
         />
       )}
 
-      {/* Progress bar */}
-      <div ref={progressRef} onClick={seekTo} style={{ height: 3, background: "rgba(120,80,20,0.2)", cursor: "pointer", position: "relative" }}>
-        <div style={{ height: "100%", width: `${progress * 100}%`, background: `linear-gradient(90deg, ${activeColor}88, ${activeColor})`, transition: "width 0.5s linear" }} />
-        <div style={{ position: "absolute", top: -3, left: `${progress * 100}%`, transform: "translateX(-50%)", width: 9, height: 9, borderRadius: "50%", background: activeColor, boxShadow: `0 0 6px ${activeColor}`, transition: "left 0.5s linear" }} />
-      </div>
-
-      <div style={{ padding: "10px 16px 12px", maxWidth: 900, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap" }}>
-
-          {/* Album art */}
-          <div style={{ position: "relative", flexShrink: 0 }}>
-            {track?.cover_art
-              ? <img src={track.cover_art} alt="" style={{ width: 48, height: 48, borderRadius: 6, boxShadow: `0 0 12px ${activeColor}44`, border: `1px solid ${activeColor}33` }} />
-              : <div style={{ width: 48, height: 48, borderRadius: 6, background: "rgba(120,80,20,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(180,140,80,0.4)" }}>{Ic.disc}</div>
-            }
-            {isPlaying && <div style={{ position: "absolute", inset: 0, borderRadius: 6, border: `1.5px solid ${activeColor}66`, animation: "pulseRing 2s ease infinite" }} />}
+      {minimised ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", background: "linear-gradient(135deg, #120900, #0a0500)", border: `1px solid ${activeColor}55`, borderRadius: 40, boxShadow: `0 8px 32px rgba(0,0,0,0.8)`, backdropFilter: "blur(12px)", maxWidth: "100%" }}>
+          {track?.cover_art ? <img src={track.cover_art} alt="" style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0 }} /> : <div style={{ width: 28, height: 28, borderRadius: 4, background: "rgba(120,80,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.disc}</div>}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{track?.title}</div>
+            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.5)", display: "flex", alignItems: "center", gap: 3 }}>{useYT && <>{Ic.yt}&nbsp;</>}{track?.artist}</div>
           </div>
-
-          {/* Track info */}
-          <div style={{ flex: "0 0 auto", minWidth: 0, maxWidth: 150 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.title || "—"}</div>
-            <div style={{ fontSize: 10, color: "rgba(180,140,80,0.6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.artist || ""}</div>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
-              {fmt(elapsed)} / {fmt(duration || 0)}
-              {useYT && (
-                <span style={{ display: "flex", alignItems: "center", gap: 2, color: vidMissing ? "rgba(180,80,80,0.4)" : ytSearching ? "rgba(217,119,6,0.5)" : "rgba(255,80,80,0.55)" }}>
-                  {Ic.yt} {ytSearching ? "searching…" : vidMissing ? "no video" : ""}
-                </span>
-              )}
-              {!useYT && <span style={{ opacity: 0.5 }}>30s preview</span>}
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <button onClick={toggleShuffle} style={{ ...S.ctrl, color: shuffle ? activeColor : "rgba(180,140,80,0.35)" }} title="Shuffle">{Ic.shuffle}</button>
-              <button onClick={handlePrev} style={S.ctrl} title="Previous">{Ic.prev}</button>
-
-              <button
-                onClick={togglePlay}
-                disabled={!canPlay}
-                title={useYT ? (ytSearching ? "Searching YouTube…" : vidMissing ? "No video found for this track" : isPlaying ? "Pause" : "Play full track") : (isPlaying ? "Pause" : track?.preview_url ? "Play 30s preview" : "No preview available")}
-                style={{ ...S.ctrl, width: 42, height: 42, borderRadius: "50%", background: canPlay ? `linear-gradient(135deg, ${activeColor}cc, ${activeColor})` : "rgba(60,40,10,0.4)", border: `1px solid ${activeColor}55`, color: canPlay ? "#000" : "rgba(120,80,20,0.3)", boxShadow: canPlay ? `0 0 16px ${activeColor}44` : "none", opacity: canPlay ? 1 : 0.5 }}
-              >
-                {ytSearching
-                  ? <div style={{ width: 14, height: 14, border: `2px solid ${activeColor}44`, borderTopColor: activeColor, borderRadius: "50%", animation: "mpSpin 0.8s linear infinite" }} />
-                  : isPlaying ? Ic.pause : Ic.play}
-              </button>
-
-              <button onClick={handleNext} style={S.ctrl} title="Next">{Ic.next}</button>
-              <button onClick={cycleRepeat} style={{ ...S.ctrl, color: repeat !== "off" ? activeColor : "rgba(180,140,80,0.35)", position: "relative" }} title={`Repeat: ${repeat}`}>
-                {Ic.repeat}
-                {repeat === "one" && <span style={{ position: "absolute", top: -4, right: -4, fontSize: 7, color: activeColor, fontWeight: "bold" }}>1</span>}
-              </button>
-            </div>
-
-            <div style={{ fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 3, color: useYT ? "rgba(255,80,80,0.5)" : "rgba(180,140,80,0.2)" }}>
-              {useYT ? <>{Ic.yt} Full length · YouTube</> : "Connect YouTube for full tracks"}
-            </div>
-          </div>
-
-          {/* Right controls */}
-          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-              <button onClick={() => setMuted(m => !m)} style={{ ...S.ctrl, color: muted ? "rgba(180,140,80,0.3)" : "rgba(180,140,80,0.6)" }}>{muted ? Ic.volMute : Ic.volHigh}</button>
-              <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={e => { setVolume(+e.target.value); setMuted(false); }} style={{ width: 55, accentColor: activeColor, cursor: "pointer" }} />
-            </div>
-
-            <button onClick={() => setShowQueue(s => !s)} style={{ ...S.ctrl, color: showQueue ? activeColor : "rgba(180,140,80,0.4)" }} title={`Queue (${queue.length})`}>{Ic.queue}</button>
-
-            {spotifyConnected && (
-              <button onClick={handleExport} disabled={exporting} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(29,185,84,0.15)", border: "1px solid rgba(29,185,84,0.4)", color: exportDone?.url ? "#34d399" : "#1db954", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 4, opacity: exporting ? 0.6 : 1 }} title="Export to Spotify">
-                {Ic.spotify} {exporting ? "…" : exportDone?.url ? "✓" : "Export"}
-              </button>
-            )}
-
-            {visibleServices?.lastfm && servicesConnected?.lastfm && (
-              <button onClick={() => serviceAction("lastfm", "love")} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(213,16,7,0.12)", border: "1px solid rgba(213,16,7,0.3)", color: "#d51007", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 3 }} title="Love on Last.fm">
-                ♥ Last.fm
-              </button>
-            )}
-
-            {serviceToast && <span style={{ fontSize: 9, color: serviceToast.startsWith("⚠") ? "#f87171" : "#34d399", fontFamily: "'DM Mono', monospace" }}>{serviceToast}</span>}
-
-            <button onClick={() => setMinimised(true)} style={{ ...S.ctrl, opacity: 0.4, transform: "rotate(180deg)" }} title="Minimise">{Ic.chevron}</button>
-            <button onClick={closePlayer} style={{ ...S.ctrl, opacity: 0.4 }} title="Close player">{Ic.close}</button>
-          </div>
+          <button title={isPlaying ? "Pause" : "Play"} disabled={!canPlay} onClick={togglePlay} style={{ ...S.ctrl, width: 28, height: 28 }}>{isPlaying ? Ic.pause : Ic.play}</button>
+          <button title="Next" onClick={handleNext} style={{ ...S.ctrl, width: 24, height: 24 }}>{Ic.next}</button>
+          <button title="Expand player" onClick={() => setMinimised(false)} style={{ ...S.ctrl, opacity: 0.5, width: 22, height: 22 }}>{Ic.chevron}</button>
         </div>
+      ) : (
+        <>
+          {/* Progress bar */}
+          <div ref={progressRef} onClick={seekTo} style={{ height: 3, background: "rgba(120,80,20,0.2)", cursor: "pointer", position: "relative" }}>
+            <div style={{ height: "100%", width: `${progress * 100}%`, background: `linear-gradient(90deg, ${activeColor}88, ${activeColor})`, transition: "width 0.5s linear" }} />
+            <div style={{ position: "absolute", top: -3, left: `${progress * 100}%`, transform: "translateX(-50%)", width: 9, height: 9, borderRadius: "50%", background: activeColor, boxShadow: `0 0 6px ${activeColor}`, transition: "left 0.5s linear" }} />
+          </div>
 
-        {/* Queue */}
-        {showQueue && (
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(120,80,20,0.2)", maxHeight: 200, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: `${activeColor}44 transparent` }}>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>
-              Queue — {queue.length} tracks {shuffle ? "· shuffled" : ""} {useYT ? "· full length · YouTube" : "· 30s previews"}
-            </div>
-            {queue.map((t, i) => {
-              const vid = _getVid(t);
-              return (
-                <div key={`${t.title}|${i}`} onClick={() => setQueueIdx(i)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", borderRadius: 6, cursor: "pointer", background: i === queueIdx ? `${activeColor}18` : "transparent", border: `1px solid ${i === queueIdx ? activeColor + "44" : "transparent"}`, transition: "all 0.15s", marginBottom: 2 }}>
-                  <span style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", width: 16, textAlign: "right", flexShrink: 0 }}>{i === queueIdx ? "▶" : i + 1}</span>
-                  {t.cover_art ? <img src={t.cover_art} alt="" style={{ width: 24, height: 24, borderRadius: 3, flexShrink: 0 }} /> : <div style={{ width: 24, height: 24, borderRadius: 3, background: "rgba(120,80,20,0.2)", flexShrink: 0 }} />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, color: i === queueIdx ? "#fde68a" : "rgba(220,190,140,0.8)", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</div>
-                    <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.artist}</div>
-                  </div>
+          <div style={{ padding: "10px 16px 12px", maxWidth: 900, margin: "0 auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap" }}>
+
+              {/* Album art */}
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                {track?.cover_art
+                  ? <img src={track.cover_art} alt="" style={{ width: 48, height: 48, borderRadius: 6, boxShadow: `0 0 12px ${activeColor}44`, border: `1px solid ${activeColor}33` }} />
+                  : <div style={{ width: 48, height: 48, borderRadius: 6, background: "rgba(120,80,20,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(180,140,80,0.4)" }}>{Ic.disc}</div>
+                }
+                {isPlaying && <div style={{ position: "absolute", inset: 0, borderRadius: 6, border: `1.5px solid ${activeColor}66`, animation: "pulseRing 2s ease infinite" }} />}
+              </div>
+
+              {/* Track info */}
+              <div style={{ flex: "0 0 auto", minWidth: 0, maxWidth: 150 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.title || "—"}</div>
+                <div style={{ fontSize: 10, color: "rgba(180,140,80,0.6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.artist || ""}</div>
+                <div style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                  {fmt(elapsed)} / {fmt(duration || 0)}
                   {useYT && (
-                    <span style={{ fontSize: 8, flexShrink: 0, color: vid ? "rgba(255,80,80,0.6)" : _busy(t) ? "rgba(217,119,6,0.4)" : vid === null ? "rgba(120,80,20,0.3)" : "rgba(120,80,20,0.2)" }}>
-                      {vid ? "▶" : _busy(t) ? "…" : vid === null ? "✕" : "–"}
+                    <span style={{ display: "flex", alignItems: "center", gap: 2, color: vidMissing ? "rgba(180,80,80,0.4)" : ytSearching ? "rgba(217,119,6,0.5)" : "rgba(255,80,80,0.55)" }}>
+                      {Ic.yt} {ytSearching ? "searching…" : vidMissing ? "no video" : ""}
                     </span>
                   )}
-                  {!useYT && !t.preview_url && <span style={{ fontSize: 8, color: "rgba(180,140,80,0.2)", flexShrink: 0 }}>no preview</span>}
+                  {!useYT && <span style={{ opacity: 0.5 }}>30s preview</span>}
                 </div>
-              );
-            })}
-          </div>
-        )}
+              </div>
 
-        {exportDone && !exportDone.error && exportDone.url && (
-          <div style={{ marginTop: 8, fontSize: 10, color: "#34d399", display: "flex", gap: 8, fontFamily: "'DM Mono', monospace" }}>
-            ✓ Exported! <a href={exportDone.url} target="_blank" rel="noopener noreferrer" style={{ color: "#1db954" }}>Open in Spotify ↗</a>
+              {/* Controls */}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button onClick={toggleShuffle} style={{ ...S.ctrl, color: shuffle ? activeColor : "rgba(180,140,80,0.35)" }} title="Shuffle">{Ic.shuffle}</button>
+                  <button onClick={handlePrev} style={S.ctrl} title="Previous">{Ic.prev}</button>
+
+                  <button
+                    onClick={togglePlay}
+                    disabled={!canPlay}
+                    title={useYT ? (ytSearching ? "Searching YouTube…" : vidMissing ? "No video found for this track" : isPlaying ? "Pause" : "Play full track") : (isPlaying ? "Pause" : track?.preview_url ? "Play 30s preview" : "No preview available")}
+                    style={{ ...S.ctrl, width: 42, height: 42, borderRadius: "50%", background: canPlay ? `linear-gradient(135deg, ${activeColor}cc, ${activeColor})` : "rgba(60,40,10,0.4)", border: `1px solid ${activeColor}55`, color: canPlay ? "#000" : "rgba(120,80,20,0.3)", boxShadow: canPlay ? `0 0 16px ${activeColor}44` : "none", opacity: canPlay ? 1 : 0.5 }}
+                  >
+                    {ytSearching
+                      ? <div style={{ width: 14, height: 14, border: `2px solid ${activeColor}44`, borderTopColor: activeColor, borderRadius: "50%", animation: "mpSpin 0.8s linear infinite" }} />
+                      : isPlaying ? Ic.pause : Ic.play}
+                  </button>
+
+                  <button onClick={handleNext} style={S.ctrl} title="Next">{Ic.next}</button>
+                  <button onClick={cycleRepeat} style={{ ...S.ctrl, color: repeat !== "off" ? activeColor : "rgba(180,140,80,0.35)", position: "relative" }} title={`Repeat: ${repeat}`}>
+                    {Ic.repeat}
+                    {repeat === "one" && <span style={{ position: "absolute", top: -4, right: -4, fontSize: 7, color: activeColor, fontWeight: "bold" }}>1</span>}
+                  </button>
+                </div>
+
+                <div style={{ fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 3, color: useYT ? "rgba(255,80,80,0.5)" : "rgba(180,140,80,0.2)" }}>
+                  {useYT ? <>{Ic.yt} Full length · YouTube</> : "Connect YouTube for full tracks"}
+                </div>
+              </div>
+
+              {/* Right controls */}
+              <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                  <button onClick={() => setMuted(m => !m)} style={{ ...S.ctrl, color: muted ? "rgba(180,140,80,0.3)" : "rgba(180,140,80,0.6)" }}>{muted ? Ic.volMute : Ic.volHigh}</button>
+                  <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={e => { setVolume(+e.target.value); setMuted(false); }} style={{ width: 55, accentColor: activeColor, cursor: "pointer" }} />
+                </div>
+
+                <button onClick={() => setShowQueue(s => !s)} style={{ ...S.ctrl, color: showQueue ? activeColor : "rgba(180,140,80,0.4)" }} title={`Queue (${queue.length})`}>{Ic.queue}</button>
+
+                {spotifyConnected && (
+                  <button onClick={handleExport} disabled={exporting} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(29,185,84,0.15)", border: "1px solid rgba(29,185,84,0.4)", color: exportDone?.url ? "#34d399" : "#1db954", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 4, opacity: exporting ? 0.6 : 1 }} title="Export to Spotify">
+                    {Ic.spotify} {exporting ? "…" : exportDone?.url ? "✓" : "Export"}
+                  </button>
+                )}
+
+                {visibleServices?.lastfm && servicesConnected?.lastfm && (
+                  <button onClick={() => serviceAction("lastfm", "love")} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(213,16,7,0.12)", border: "1px solid rgba(213,16,7,0.3)", color: "#d51007", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 3 }} title="Love on Last.fm">
+                    ♥ Last.fm
+                  </button>
+                )}
+
+                {serviceToast && <span style={{ fontSize: 9, color: serviceToast.startsWith("⚠") ? "#f87171" : "#34d399", fontFamily: "'DM Mono', monospace" }}>{serviceToast}</span>}
+
+                <button onClick={() => setMinimised(true)} style={{ ...S.ctrl, opacity: 0.4, transform: "rotate(180deg)" }} title="Minimise">{Ic.chevron}</button>
+                <button onClick={closePlayer} style={{ ...S.ctrl, opacity: 0.4 }} title="Close player">{Ic.close}</button>
+              </div>
+            </div>
+
+            {/* Queue */}
+            {showQueue && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(120,80,20,0.2)", maxHeight: 200, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: `${activeColor}44 transparent` }}>
+                <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>
+                  Queue — {queue.length} tracks {shuffle ? "· shuffled" : ""} {useYT ? "· full length · YouTube" : "· 30s previews"}
+                </div>
+                {queue.map((t, i) => {
+                  const vid = _getVid(t);
+                  return (
+                    <div key={`${t.title}|${i}`} onClick={() => setQueueIdx(i)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", borderRadius: 6, cursor: "pointer", background: i === queueIdx ? `${activeColor}18` : "transparent", border: `1px solid ${i === queueIdx ? activeColor + "44" : "transparent"}`, transition: "all 0.15s", marginBottom: 2 }}>
+                      <span style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", width: 16, textAlign: "right", flexShrink: 0 }}>{i === queueIdx ? "▶" : i + 1}</span>
+                      {t.cover_art ? <img src={t.cover_art} alt="" style={{ width: 24, height: 24, borderRadius: 3, flexShrink: 0 }} /> : <div style={{ width: 24, height: 24, borderRadius: 3, background: "rgba(120,80,20,0.2)", flexShrink: 0 }} />}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, color: i === queueIdx ? "#fde68a" : "rgba(220,190,140,0.8)", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</div>
+                        <div style={{ fontSize: 9, color: "rgba(180,140,80,0.4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.artist}</div>
+                      </div>
+                      {useYT && (
+                        <span style={{ fontSize: 8, flexShrink: 0, color: vid ? "rgba(255,80,80,0.6)" : vid === null ? "rgba(120,80,20,0.3)" : "rgba(120,80,20,0.2)" }}>
+                          {vid ? "▶" : vid === null ? "✕" : "–"}
+                        </span>
+                      )}
+                      {!useYT && !t.preview_url && <span style={{ fontSize: 8, color: "rgba(180,140,80,0.2)", flexShrink: 0 }}>no preview</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {exportDone && !exportDone.error && exportDone.url && (
+              <div style={{ marginTop: 8, fontSize: 10, color: "#34d399", display: "flex", gap: 8, fontFamily: "'DM Mono', monospace" }}>
+                ✓ Exported! <a href={exportDone.url} target="_blank" rel="noopener noreferrer" style={{ color: "#1db954" }}>Open in Spotify ↗</a>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       <style>{`
         @keyframes pulseRing { 0%,100%{opacity:.8;transform:scale(1);} 50%{opacity:.3;transform:scale(1.04);} }
