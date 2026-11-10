@@ -71,6 +71,8 @@ test('selecting a still-prefetching track awaits its video and sends the session
       token: 'test-session', buildApiUrl: api, servicesConnected: { youtube: true }, visibleServices: { youtube: true },
     }), { createNodeMock: e => e.type === 'iframe' ? iframe : {} }); });
     await act(async () => { await started.promise; });
+    await act(() => view.root.findByProps({ title: 'Queue (2)' }).props.onClick());
+    assert.match(JSON.stringify(view.toJSON()), /Prefetched race fixture/);
     await act(() => view.root.findByProps({ title: 'Next' }).props.onClick());
     assert.equal(iframe.src, 'about:blank');
     await act(async () => pending.resolve(response({ found: true, video_id: 'prefetched-video' })));
