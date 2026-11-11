@@ -611,7 +611,7 @@ export default function MusicPlayer({
 
   const compactStyle = {
     position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)",
-    zIndex: 200, width: useYT ? "min(356px, 96vw)" : "max-content", maxWidth: "96vw",
+    zIndex: 200, width: useYT ? "min(356px, calc(100% - 24px))" : "max-content", maxWidth: "calc(100% - 24px)",
     background: useYT ? "#060300" : "transparent", borderRadius: useYT ? 8 : 40, overflow: "hidden",
   };
   const expandedStyle = {
@@ -622,7 +622,7 @@ export default function MusicPlayer({
     maxHeight: "90dvh", overflowY: "auto",
   };
   return (
-    <div style={minimised ? compactStyle : expandedStyle}>
+    <div className={`mp-player ${minimised ? "mp-compact" : "mp-expanded"}`} style={minimised ? compactStyle : expandedStyle}>
       {/* Keep the media frame mounted when only the transport layout changes. */}
       {useYT && (
         <iframe
@@ -663,11 +663,11 @@ export default function MusicPlayer({
           {track?.cover_art ? <img src={track.cover_art} alt="" style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0 }} /> : <div style={{ width: 28, height: 28, borderRadius: 4, background: "rgba(120,80,20,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{Ic.disc}</div>}
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 11, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{track?.title}</div>
-            <div style={{ fontSize: 9, color: "rgba(180,140,80,0.5)", display: "flex", alignItems: "center", gap: 3 }}>{useYT && <>{Ic.yt}&nbsp;</>}{track?.artist}</div>
+            <div style={{ fontSize: 9, color: "#c5a87b", display: "flex", alignItems: "center", gap: 3 }}>{useYT && <>{Ic.yt}&nbsp;</>}{track?.artist}</div>
           </div>
           <button title={isPlaying ? "Pause" : "Play"} disabled={!canPlay} onClick={togglePlay} style={{ ...S.ctrl, width: 28, height: 28 }}>{isPlaying ? Ic.pause : Ic.play}</button>
           <button title="Next" onClick={handleNext} style={{ ...S.ctrl, width: 24, height: 24 }}>{Ic.next}</button>
-          <button title="Expand player" onClick={() => setMinimised(false)} style={{ ...S.ctrl, opacity: 0.5, width: 22, height: 22 }}>{Ic.chevron}</button>
+          <button title="Expand player" onClick={() => setMinimised(false)} style={{ ...S.ctrl, width: 28, height: 28 }}>{Ic.chevron}</button>
         </div>
       ) : (
         <>
@@ -678,7 +678,7 @@ export default function MusicPlayer({
           </div>
 
           <div style={{ padding: "10px 16px 12px", maxWidth: 900, margin: "0 auto" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap" }}>
+            <div className="mp-transport" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
 
               {/* Album art */}
               <div style={{ position: "relative", flexShrink: 0 }}>
@@ -690,10 +690,10 @@ export default function MusicPlayer({
               </div>
 
               {/* Track info */}
-              <div style={{ flex: "0 0 auto", minWidth: 0, maxWidth: 150 }}>
+              <div className="mp-track-info" style={{ flex: "0 1 150px", minWidth: 0, maxWidth: 150 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.title || "—"}</div>
-                <div style={{ fontSize: 10, color: "rgba(180,140,80,0.6)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.artist || ""}</div>
-                <div style={{ fontSize: 9, color: "rgba(180,140,80,0.3)", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ fontSize: 10, color: "#c5a87b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{track?.artist || ""}</div>
+                <div style={{ fontSize: 9, color: "#c5a87b", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
                   {fmt(elapsed)} / {fmt(duration || 0)}
                   {useYT && (
                     <span style={{ display: "flex", alignItems: "center", gap: 2, color: vidMissing ? "rgba(180,80,80,0.4)" : ytSearching ? "rgba(217,119,6,0.5)" : "rgba(255,80,80,0.55)" }}>
@@ -705,7 +705,7 @@ export default function MusicPlayer({
               </div>
 
               {/* Controls */}
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 0 }}>
+              <div className="mp-centre" style={{ flex: "1 0 186px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <button onClick={toggleShuffle} style={{ ...S.ctrl, color: shuffle ? activeColor : "rgba(180,140,80,0.35)" }} title="Shuffle">{Ic.shuffle}</button>
                   <button onClick={handlePrev} style={S.ctrl} title="Previous">{Ic.prev}</button>
@@ -734,30 +734,30 @@ export default function MusicPlayer({
               </div>
 
               {/* Right controls */}
-              <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+              <div className="mp-right-controls" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5, marginLeft: "auto", maxWidth: "100%" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <button onClick={() => setMuted(m => !m)} style={{ ...S.ctrl, color: muted ? "rgba(180,140,80,0.3)" : "rgba(180,140,80,0.6)" }}>{muted ? Ic.volMute : Ic.volHigh}</button>
-                  <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={e => { setVolume(+e.target.value); setMuted(false); }} style={{ width: 55, accentColor: activeColor, cursor: "pointer" }} />
+                  <button onClick={() => setMuted(m => !m)} title={muted ? "Unmute" : "Mute"} style={S.ctrl}>{muted ? Ic.volMute : Ic.volHigh}</button>
+                  <input aria-label="Volume" type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={e => { setVolume(+e.target.value); setMuted(false); }} style={{ width: 55, accentColor: activeColor, cursor: "pointer" }} />
                 </div>
 
                 <button onClick={() => setShowQueue(s => !s)} style={{ ...S.ctrl, color: showQueue ? activeColor : "rgba(180,140,80,0.4)" }} title={`Queue (${queue.length})`}>{Ic.queue}</button>
 
                 {spotifyConnected && (
-                  <button onClick={handleExport} disabled={exporting} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(29,185,84,0.15)", border: "1px solid rgba(29,185,84,0.4)", color: exportDone?.url ? "#34d399" : "#1db954", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 4, opacity: exporting ? 0.6 : 1 }} title="Export to Spotify">
+                  <button onClick={handleExport} disabled={exporting} style={{ ...S.ctrl, width: "auto", padding: "4px 8px", borderRadius: 6, background: "rgba(29,185,84,0.15)", border: "1px solid rgba(29,185,84,0.4)", color: exportDone?.url ? "#34d399" : "#1db954", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 4, opacity: exporting ? 0.6 : 1 }} title="Export to Spotify">
                     {Ic.spotify} {exporting ? "…" : exportDone?.url ? "✓" : "Export"}
                   </button>
                 )}
 
                 {visibleServices?.lastfm && servicesConnected?.lastfm && (
-                  <button onClick={() => serviceAction("lastfm", "love")} style={{ ...S.ctrl, padding: "4px 8px", borderRadius: 6, background: "rgba(213,16,7,0.12)", border: "1px solid rgba(213,16,7,0.3)", color: "#d51007", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 3 }} title="Love on Last.fm">
+                  <button onClick={() => serviceAction("lastfm", "love")} style={{ ...S.ctrl, width: "auto", padding: "4px 8px", borderRadius: 6, background: "rgba(213,16,7,0.12)", border: "1px solid rgba(213,16,7,0.3)", color: "#d51007", fontSize: 10, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 3 }} title="Love on Last.fm">
                     ♥ Last.fm
                   </button>
                 )}
 
                 {serviceToast && <span style={{ fontSize: 9, color: serviceToast.startsWith("⚠") ? "#f87171" : "#34d399", fontFamily: "'DM Mono', monospace" }}>{serviceToast}</span>}
 
-                <button onClick={() => setMinimised(true)} style={{ ...S.ctrl, opacity: 0.4, transform: "rotate(180deg)" }} title="Minimise">{Ic.chevron}</button>
-                <button onClick={closePlayer} style={{ ...S.ctrl, opacity: 0.4 }} title="Close player">{Ic.close}</button>
+                <button onClick={() => setMinimised(true)} style={{ ...S.ctrl, transform: "rotate(180deg)" }} title="Minimise">{Ic.chevron}</button>
+                <button onClick={closePlayer} style={S.ctrl} title="Close player">{Ic.close}</button>
               </div>
             </div>
 
@@ -799,6 +799,15 @@ export default function MusicPlayer({
       )}
 
       <style>{`
+        .mp-player { box-sizing: border-box; }
+        .mp-player button:focus-visible, .mp-player input:focus-visible {
+          outline: 2px solid #fde68a; outline-offset: 2px;
+        }
+        @media (max-width: 600px) {
+          .mp-track-info { flex: 1 1 150px !important; max-width: none !important; }
+          .mp-centre { flex-basis: 100% !important; }
+          .mp-right-controls { margin: 0 auto !important; justify-content: center; }
+        }
         @keyframes pulseRing { 0%,100%{opacity:.8;transform:scale(1);} 50%{opacity:.3;transform:scale(1.04);} }
         @keyframes mpSpin    { to{transform:rotate(360deg);} }
       `}</style>
@@ -811,7 +820,7 @@ const S = {
     display: "flex", alignItems: "center", justifyContent: "center",
     width: 32, height: 32, borderRadius: 8,
     background: "transparent", border: "none",
-    color: "rgba(180,140,80,0.7)", cursor: "pointer",
+    color: "#d9b77d", cursor: "pointer",
     transition: "all 0.15s", flexShrink: 0,
   },
 };

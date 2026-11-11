@@ -538,12 +538,8 @@ function GlobalStyles() {
         .app-track-actions .app-track-preview { display: none !important; }
       }
 
-      /* ── Mobile player adjustments ── */
+      /* ── Mobile adjustments ── */
       @media (max-width: 600px) {
-        /* Stack player controls vertically on narrow screens */
-        .mp-right-controls { display: none !important; }
-        .mp-centre { flex: 1 !important; }
-        .mp-track-info { max-width: 120px !important; }
         /* Inline facts strip stays visible on mobile */
         .vf-inline-fact { font-size: 9px !important; }
         /* Help button repositioned for mobile (clear of player) */
@@ -655,7 +651,7 @@ class ErrorBoundary extends Component {
   }
 }
 
-export default function App({ onNavigate }) {
+export default function App({ onNavigate, workspaceAction = null }) {
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem("vf_token") || null; }
     catch { return null; }
@@ -1127,7 +1123,7 @@ export default function App({ onNavigate }) {
   const S = {
     root: { minHeight: "100vh", padding: "24px 16px 60px", fontFamily: "'DM Mono', monospace" },
     inner: { maxWidth: "860px", margin: "0 auto" },
-    header: { display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "24px", borderBottom: "1px solid rgba(155,105,28,0.38)", marginBottom: "32px" },
+    header: { display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "center", justifyContent: "space-between", paddingBottom: "24px", borderBottom: "1px solid rgba(155,105,28,0.38)", marginBottom: "32px" },
     logoWrap: { display: "flex", alignItems: "center", gap: "14px" },
     logoDisc: { width: "42px", height: "42px", borderRadius: "50%", background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008, #2e1a0a, #1a1008)", border: "2px solid rgba(180,140,80,0.4)", boxShadow: `0 0 18px ${activeColor}44, inset 0 0 10px rgba(0,0,0,0.5)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "box-shadow 0.5s ease" },
     logoDiscInner: { width: "10px", height: "10px", borderRadius: "50%", background: `radial-gradient(circle, ${activeColor}, #7a4f12)`, transition: "background 0.5s ease" },
@@ -1447,9 +1443,9 @@ export default function App({ onNavigate }) {
               <div style={S.logoDisc}><div style={S.logoDiscInner} /></div>
               <div><div style={S.logoText}>VibeFinder</div><div className="app-logo-sub" style={S.logoSub}>Acoustic Intelligence Engine</div></div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div className="app-header-actions" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px" }}>
               <div className="app-header-osc"><Oscilloscope active={loading || !!playingTrack} /></div>
-
+              {workspaceAction}
 
 
               {/* ── LIBRARY / PLAYLIST PANEL BUTTON ── */}

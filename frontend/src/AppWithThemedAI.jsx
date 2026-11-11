@@ -112,20 +112,23 @@ export default function AppWithThemedAI({ onNavigate }) {
   return (
     <>
       <ThemedAIHostBridge />
-      <App onNavigate={onNavigate} />
-
-      <button
-        type="button"
-        className="vf-themedai-launcher"
-        onClick={() => setThemedOpen(true)}
-        aria-haspopup="dialog"
-        aria-expanded={themedOpen}
-        title="Open Themed.AI workspace"
-      >
-        <span aria-hidden="true">✦</span>
-        <span>Themed.AI</span>
-        {lastThemedState?.trackCount ? <small>{lastThemedState.trackCount} live</small> : <small>Ctrl⇧T</small>}
-      </button>
+      <App
+        onNavigate={onNavigate}
+        workspaceAction={
+          <button
+            type="button"
+            className="vf-themedai-launcher"
+            onClick={() => setThemedOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={themedOpen}
+            title="Open Themed.AI workspace"
+          >
+            <span aria-hidden="true">✦</span>
+            <span>Themed.AI</span>
+            {lastThemedState?.trackCount ? <small>{lastThemedState.trackCount} live</small> : <small>Ctrl⇧T</small>}
+          </button>
+        }
+      />
 
       <ThemedAIEmbed
         open={themedOpen}
