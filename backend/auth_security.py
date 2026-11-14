@@ -8,8 +8,11 @@ from fastapi import HTTPException
 
 def load_signing_key(name: str = "SECRET_KEY") -> str:
     secret = os.getenv(name, "")
-    if (len(secret.strip().encode("utf-8")) < 32
-            or secret == "super_secret_student_budget_key_dont_leak_this"):
+    if not secret.strip():
+        raise RuntimeError(f"{name} is missing or blank in the running service")
+    if secret == "super_secret_student_budget_key_dont_leak_this":
+        raise RuntimeError(f"{name} matches the public example key")
+    if len(secret.strip().encode("utf-8")) < 32:
         raise RuntimeError(f"{name} must contain a private random value of at least 32 bytes")
     # Preserve the configured bytes; do not silently trim or generate a new key.
     return secret
