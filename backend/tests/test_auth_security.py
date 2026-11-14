@@ -55,6 +55,21 @@ def client():
 STORY = {"prompt": "quiet piano", "dominant_vibe": "calm", "genres": [], "matched_keywords": []}
 
 
+def test_profile_returns_only_account_fields(client, monkeypatch):
+    profile = dict(id="user-one", username="listener", email="listener@example.invalid",
+                   avatarUrl=None, createdAt="2026-01-01T00:00:00Z")
+
+    async def find_unique(*, where):
+        assert where == {"id": "user-one"}
+        return SimpleNamespace(**profile, hashedPassword="private-test-field")
+
+    handler = next(route.endpoint for route in client.app.routes if route.path == "/users/me")
+    monkeypatch.setitem(handler.__globals__, "db", SimpleNamespace(user=SimpleNamespace(find_unique=find_unique)))
+    response = client.get("/users/me", headers={"Authorization": "Bearer " + issue()})
+    assert response.status_code == 200
+    assert response.json() == profile
+
+
 @pytest.mark.parametrize("token", [
     "not-a-jwt", issue(exp=int(time.time()) - 60), issue(sub=""), issue(sub="   "),
     jwt.encode({"sub": "user-one"}, KEY, algorithm="HS256"),
