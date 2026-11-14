@@ -1485,7 +1485,10 @@ export default function App({ onNavigate, workspaceAction = null }) {
               {/* ── SERVICES BUTTON ── */}
               {token && (
                 <button
-                  onClick={() => setShowServicesPanel(true)}
+                  onClick={() => {
+                    refreshServicesStatus();
+                    setShowServicesPanel(true);
+                  }}
                   className="dial-btn"
                   title="Connect music services"
                   style={{
