@@ -1,3 +1,4 @@
+import { startProviderLink } from "./oauthLink.js";
 /**
  * ServicesPanel.jsx
  * ─────────────────
@@ -67,15 +68,7 @@ export default function ServicesPanel({
   const connect = async (service) => {
     setLoading(l => ({ ...l, [service]: true }));
     try {
-      const res = await fetch(
-        buildApiUrl(`/api/services/${service}/authorize?token=${encodeURIComponent(token)}`)
-      );
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.detail || "Not configured");
-      }
-      const { url } = await res.json();
-      window.location.href = url;
+      await startProviderLink(buildApiUrl, `/api/services/${service}`, token);
     } catch (e) {
       showToast(`${SERVICE_META[service].label}: ${e.message}`, true);
       setLoading(l => ({ ...l, [service]: false }));
@@ -86,8 +79,8 @@ export default function ServicesPanel({
     setLoading(l => ({ ...l, [service]: true }));
     try {
       await fetch(
-        buildApiUrl(`/api/services/${service}/disconnect?authorization=${encodeURIComponent("Bearer " + token)}`),
-        { method: "DELETE" }
+        buildApiUrl(`/api/services/${service}/disconnect`),
+        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
       );
       onStatusChange?.();
       showToast(`${SERVICE_META[service].label} disconnected`);

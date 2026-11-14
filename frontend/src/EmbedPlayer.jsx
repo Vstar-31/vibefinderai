@@ -193,7 +193,7 @@ export default function EmbedPlayer() {
 
   useEffect(() => {
     if (!token) return;
-    fetch(buildApiUrl(`/api/services/status?authorization=${encodeURIComponent("Bearer " + token)}`))
+    fetch(buildApiUrl(`/api/services/status`), { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setServicesStatus(d); })
       .catch(() => {});

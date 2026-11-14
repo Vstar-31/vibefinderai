@@ -42,6 +42,7 @@ from datetime import datetime
 from typing import Optional
 
 import jwt
+from auth_security import load_signing_key, decode_access_token
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
@@ -51,7 +52,7 @@ logger = logging.getLogger("VibeFinderEngine")
 
 router = APIRouter()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "super_secret_student_budget_key_dont_leak_this")
+SECRET_KEY = load_signing_key()
 ALGORITHM  = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
@@ -73,7 +74,7 @@ def get_db() -> Prisma:
 
 async def _get_user_id(token: str) -> str:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token, SECRET_KEY)
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token payload")

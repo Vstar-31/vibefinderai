@@ -1,3 +1,4 @@
+import { startProviderLink } from "./oauthLink.js";
 import { useState, useEffect, useRef } from "react";
 import PlaylistPanel from "./PlaylistPanel.jsx";
 import ServicesPanel from "./ServicesPanel.jsx";
@@ -1199,7 +1200,7 @@ export default function App({ onNavigate }) {
       window.history.replaceState({}, "", window.location.pathname);
     }
     if (token) {
-      fetch(buildApiUrl(`/api/spotify/status?authorization=${encodeURIComponent("Bearer " + token)}`))
+      fetch(buildApiUrl(`/api/spotify/status`), { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d) setSpotifyStatus(d); })
         .catch(() => {});
@@ -1209,7 +1210,7 @@ export default function App({ onNavigate }) {
   // ── Services: fetch status on mount ────────────────────────────
   useEffect(() => {
     if (!token) return;
-    fetch(buildApiUrl(`/api/services/status?authorization=${encodeURIComponent("Bearer " + token)}`))
+    fetch(buildApiUrl(`/api/services/status`), { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setServicesStatus(d); })
       .catch(() => {});
@@ -1222,7 +1223,7 @@ export default function App({ onNavigate }) {
     if (connected) {
       window.history.replaceState({}, "", window.location.pathname);
       if (token) {
-        fetch(buildApiUrl(`/api/services/status?authorization=${encodeURIComponent("Bearer " + token)}`))
+        fetch(buildApiUrl(`/api/services/status`), { headers: { Authorization: `Bearer ${token}` } })
           .then(r => r.ok ? r.json() : null)
           .then(d => { if (d) setServicesStatus(d); })
           .catch(() => {});
@@ -1237,7 +1238,7 @@ export default function App({ onNavigate }) {
 
   const refreshServicesStatus = () => {
     if (!token) return;
-    fetch(buildApiUrl(`/api/services/status?authorization=${encodeURIComponent("Bearer " + token)}`))
+    fetch(buildApiUrl(`/api/services/status`), { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setServicesStatus(d); })
       .catch(() => {});
@@ -1253,14 +1254,13 @@ export default function App({ onNavigate }) {
 
   const handleServiceAction = async (service, action, track) => {
     if (!token || !track) return;
-    const auth    = encodeURIComponent("Bearer " + token);
     const body    = JSON.stringify({ title: track.title, artist: track.artist });
-    const headers = { "Content-Type": "application/json" };
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
     let endpoint  = "";
-    if (service === "lastfm"    && action === "love")     endpoint = `/api/services/lastfm/love?authorization=${auth}`;
-    else if (service === "lastfm"    && action === "scrobble") endpoint = `/api/services/lastfm/scrobble?authorization=${auth}`;
-    else if (service === "deezer"    && action === "love")     endpoint = `/api/services/deezer/love?authorization=${auth}`;
-    else if (service === "soundcloud" && action === "like")    endpoint = `/api/services/soundcloud/like?authorization=${auth}`;
+    if (service === "lastfm"    && action === "love")     endpoint = `/api/services/lastfm/love`;
+    else if (service === "lastfm"    && action === "scrobble") endpoint = `/api/services/lastfm/scrobble`;
+    else if (service === "deezer"    && action === "love")     endpoint = `/api/services/deezer/love`;
+    else if (service === "soundcloud" && action === "like")    endpoint = `/api/services/soundcloud/like`;
     else return;
     const res = await fetch(buildApiUrl(endpoint), { method: "POST", headers, body });
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || "Action failed"); }
@@ -1271,17 +1271,16 @@ export default function App({ onNavigate }) {
     if (!token || creatingPlaylist) return;
     setCreatingPlaylist(true);
     setServicePlaylistToast({ msg: "Creating YouTube playlist… (~15s)", url: null, isError: false });
-    const auth = encodeURIComponent("Bearer " + token);
     const name = result?.dominant_vibe
       ? `${result.dominant_vibe.charAt(0).toUpperCase() + result.dominant_vibe.slice(1)} Mix — VibeFinderAI`
       : "VibeFinderAI Playlist";
     const endpoint = service === "youtube"
-      ? `/api/services/youtube/playlist?authorization=${auth}`
+      ? `/api/services/youtube/playlist`
       : null;
     if (!endpoint) { setCreatingPlaylist(false); return; }
     try {
       const res = await fetch(buildApiUrl(endpoint), {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ name, tracks }),
       });
       if (!res.ok) {
@@ -1326,9 +1325,7 @@ export default function App({ onNavigate }) {
     if (!token) { setShowAuthModal(true); return; }
     setSpotifyLoading(true);
     try {
-      const res  = await fetch(buildApiUrl(`/api/spotify/authorize?token=${encodeURIComponent(token)}`));
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
+      await startProviderLink(buildApiUrl, "/api/spotify", token);
     } catch { setSpotifyToast("error"); }
     finally { setSpotifyLoading(false); }
   };
@@ -1336,8 +1333,8 @@ export default function App({ onNavigate }) {
   const disconnectSpotify = async () => {
     if (!token) return;
     await fetch(
-      buildApiUrl(`/api/spotify/disconnect?authorization=${encodeURIComponent("Bearer " + token)}`),
-      { method: "DELETE" }
+      buildApiUrl(`/api/spotify/disconnect`),
+      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
     ).catch(() => {});
     setSpotifyStatus({ connected: false });
   };
@@ -1351,10 +1348,10 @@ export default function App({ onNavigate }) {
         ? `${result.dominant_vibe.charAt(0).toUpperCase() + result.dominant_vibe.slice(1)} Mix — VibeFinderAI`
         : "VibeFinderAI Playlist";
       const res = await fetch(
-        buildApiUrl(`/api/spotify/export-playlist?authorization=${encodeURIComponent("Bearer " + token)}`),
+        buildApiUrl(`/api/spotify/export-playlist`),
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ name, tracks, is_public: false }),
         }
       );
@@ -1390,10 +1387,10 @@ export default function App({ onNavigate }) {
     }
     try {
       const res = await fetch(
-        buildApiUrl(`/api/spotify/save-track?authorization=${encodeURIComponent("Bearer " + token)}`),
+        buildApiUrl(`/api/spotify/save-track`),
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ spotify_uri: uri }),
         }
       );

@@ -1,14 +1,13 @@
 """Exercise the public route with local database and music-provider fixtures."""
 
+import os
 import unittest
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import jwt
 
-import main
 from analyzers import sentiment_boost
 
 
@@ -16,6 +15,12 @@ class ArtistDetectionEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.patches = ExitStack()
         self.addCleanup(self.patches.close)
+        self.patches.enter_context(patch.dict(os.environ, {
+            "SECRET_KEY": "artist-detection-test-secret-key-only",
+            "PYTHON_DOTENV_DISABLED": "1",
+        }))
+        import main
+        self.main = main
         artists = [
             {"name": "Electronic", "songs": "Get the Message"},
             {"name": "Calm", "songs": "Arlington Sunset"},
@@ -40,7 +45,7 @@ class ArtistDetectionEndpointTests(unittest.IsolatedAsyncioTestCase):
             return_value={"preview_url": None, "cover_art": None},
         )))
         self.patches.enter_context(patch.object(main, "filter_and_score_tracks", return_value=tracks))
-        token = jwt.encode({"sub": "local-artist-test"}, main.SECRET_KEY, algorithm=main.ALGORITHM)
+        token = main.create_access_token({"sub": "local-artist-test"})
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=main.app), base_url="http://test",
             headers={"Authorization": f"Bearer {token}"},
@@ -60,14 +65,14 @@ class ArtistDetectionEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_sentiment_does_not_route_known_mood_to_literal_track_search(self):
         blob = SimpleNamespace(sentiment=SimpleNamespace(polarity=0.0, subjectivity=0.0))
-        with patch.object(main, "_SENTIMENT_AVAILABLE", True), patch.object(
+        with patch.object(self.main, "_SENTIMENT_AVAILABLE", True), patch.object(
             sentiment_boost, "_TEXTBLOB_AVAILABLE", True,
         ), patch.object(sentiment_boost, "TextBlob", return_value=blob, create=True):
             data = await self.analyze(text="rainy night drive with mellow electronic music", track_limit=5)
         self.assertEqual(data["dominant_vibe"], "chill")
         self.assertGreaterEqual(data["confidence"], 0.5)
         self.assertIsNone(data["detected_artist"])
-        main.fetch_lastfm_track_search.assert_not_awaited()
+        self.main.fetch_lastfm_track_search.assert_not_awaited()
 
     async def test_curated_artist_and_explicit_ambiguous_artist(self):
         for prompt, expected in [("Taylor Swift", "Taylor Swift"), ("songs by Electronic", "Electronic")]:
@@ -76,7 +81,7 @@ class ArtistDetectionEndpointTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(data["detected_artist"], expected)
 
     async def test_dismissal_skips_directory_lookup(self):
-        with patch.object(main, "ARTIST_NAME_INDEX", {}):
+        with patch.object(self.main, "ARTIST_NAME_INDEX", {}):
             data = await self.analyze(text="Drake", dismiss_detected_artist=True)
         self.assertIsNone(data["detected_artist"])
         self.database.artistdirectory.find_many.assert_not_awaited()
@@ -84,10 +89,10 @@ class ArtistDetectionEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def test_manual_override_wins_even_with_dismissal(self):
         data = await self.analyze(text="calm music", override_artist="Electronic", dismiss_detected_artist=True)
         self.assertEqual(data["detected_artist"], "Electronic")
-        main.fetch_lastfm_artist_tracks.assert_awaited_once_with(artist="Electronic", limit=200)
+        self.main.fetch_lastfm_artist_tracks.assert_awaited_once_with(artist="Electronic", limit=200)
 
     async def test_empty_index_uses_same_rules_for_database_rows(self):
-        with patch.object(main, "ARTIST_NAME_INDEX", {}):
+        with patch.object(self.main, "ARTIST_NAME_INDEX", {}):
             data = await self.analyze(text="calm electronic music")
         self.assertIsNone(data["detected_artist"])
         self.database.artistdirectory.find_many.assert_awaited_once()
