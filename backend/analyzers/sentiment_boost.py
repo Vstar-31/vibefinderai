@@ -187,6 +187,13 @@ def apply_sentiment_boost(text: str, vibe_data: dict) -> dict:
         # Normalise to a confidence-like value (cap at 0.97)
         new_confidence = min(new_top_score / (new_top_score + 0.5), 0.97)
 
+        # Heuristic/Gemini results may not include _raw_scores. In that case
+        # scores contains only small sentiment boosts, not the original evidence.
+        # A different vibe alone must not replace a stronger result and trigger
+        # the endpoint's low-confidence literal-search fallback.
+        if new_confidence < confidence:
+            return vibe_data
+
         # Only update if sentiment actually changed the dominant vibe or improved confidence
         changed = (new_dominant != vibe_data.get("dominant_vibe"))
         improved = (new_confidence > confidence + 0.05)

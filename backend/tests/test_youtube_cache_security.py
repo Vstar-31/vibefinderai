@@ -1,5 +1,7 @@
 """Real router/cache tests with a mocked provider; no database or network."""
 import asyncio
+import time
+import jwt
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +19,8 @@ def youtube(monkeypatch):
     monkeypatch.setattr(cache, "_L1", {})
     monkeypatch.setattr(cache, "_db", None)
     monkeypatch.setattr(routes, "YOUTUBE_API_KEY", "test-provider-key")
+    key = "local-test-youtube-authentication-key-only"
+    monkeypatch.setattr(routes, "_SECRET_KEY", key)
     queries = []
 
     class Provider:
@@ -37,7 +41,17 @@ def youtube(monkeypatch):
     app = FastAPI()
     app.include_router(routes.router)
     with TestClient(app) as client:
+        token = jwt.encode({"sub": "fixture-user", "exp": int(time.time()) + 60}, key, algorithm="HS256")
+        client.headers.update({"Authorization": f"Bearer {token}"})
         yield client, cache, queries
+
+
+def test_anonymous_search_and_cache_stats_require_authentication(youtube):
+    client, _, queries = youtube
+    del client.headers["Authorization"]
+    assert client.get("/api/services/youtube/search", params={"q": "sample"}).status_code == 401
+    assert client.get("/api/services/youtube/cache-stats").status_code == 401
+    assert queries == []
 
 
 def test_unrelated_query_cannot_poison_track_lookup(youtube):

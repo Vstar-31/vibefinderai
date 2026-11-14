@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, constr
+from pydantic import BaseModel, constr, validator
 
 TTL_SECONDS = 600
 _bearer = HTTPBearer(auto_error=False)
@@ -25,7 +25,13 @@ def bearer_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer)) -
 
 
 class LinkRequest(BaseModel):
-    challenge: constr(strict=True, regex=r"^[0-9a-f]{64}$", min_length=64, max_length=64)
+    challenge: constr(strict=True, min_length=64, max_length=64)
+
+    @validator("challenge")
+    def hexadecimal_challenge(cls, value):
+        if not _verifier.fullmatch(value):
+            raise ValueError("Expected a 64-character lowercase hexadecimal challenge")
+        return value
 
 
 def _hash(value: str) -> str:

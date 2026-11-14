@@ -33,6 +33,13 @@ test('YouTube snapshots drive pause/resume UI, commands and desktop state', asyn
       }), { createNodeMock: element => element.type === 'iframe' ? iframe : {} });
     });
     await send({ event: 'infoDelivery', info: { playerState: 1, currentTime: 8, duration: 62 } });
+    const activeFrame = view.root.findByType('iframe');
+    const activeSource = iframe.src;
+    await act(() => view.root.findByProps({ title: 'Minimise' }).props.onClick());
+    assert.equal(view.root.findByType('iframe'), activeFrame);
+    await act(() => view.root.findByProps({ title: 'Expand player' }).props.onClick());
+    assert.equal(view.root.findByType('iframe'), activeFrame);
+    assert.equal(iframe.src, activeSource);
     const pause = view.root.findByProps({ title: 'Pause' });
     assert.equal(hostStates.at(-1).isPlaying, true);
     await act(() => pause.props.onClick());
@@ -50,6 +57,10 @@ test('YouTube snapshots drive pause/resume UI, commands and desktop state', asyn
     assert.ok(view.root.findByProps({ title: 'Pause' }));
     await send({ event: 'onError', info: 150 });
     assert.ok(view.root.findByProps({ title: 'Play full track' }));
+    await send({ event: 'onStateChange', info: 1 });
+    assert.equal(hostStates.at(-1).isPlaying, true);
+    await act(() => view.root.findByProps({ title: 'Close player' }).props.onClick());
+    assert.equal(hostStates.at(-1).type, 'VIBEFINDER_PLAYBACK_RESET');
   } finally {
     if (view) await act(() => view.unmount());
     globalThis.window = savedWindow;

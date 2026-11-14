@@ -14,119 +14,18 @@ const postToThemedAIHost = (message) => {
   }
 };
 
-const setReactTextAreaValue = (element, value) => {
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-  if (setter) setter.call(element, value);
-  else element.value = value;
-  element.dispatchEvent(new Event("input", { bubbles: true }));
-  element.dispatchEvent(new Event("change", { bubbles: true }));
-};
-
-// The VibeFinder app can have either its YouTube iframe player or its HTML-audio preview
-// fallback active. Before replacing the recommendation set, always pause the current player so
-// an old track cannot continue underneath the new analysis.
-const pauseCurrentPlayer = () => {
-  const buttons = [...document.querySelectorAll("button")];
-  const pauseButton = buttons.find((button) =>
-    button.title === "Pause" ||
-    button.title === "Playing" ||
-    button.textContent?.trim() === "Pause"
-  );
-  if (pauseButton instanceof HTMLButtonElement && !pauseButton.disabled) {
-    pauseButton.click();
-    return true;
-  }
-
-  const audio = [...document.querySelectorAll("audio")].find((element) => !element.paused);
-  if (audio instanceof HTMLAudioElement) {
-    audio.pause();
-    return true;
-  }
-
-  return false;
-};
+// Read the settled input only when a consumer needs it. Rendering this parent
+// during the input capture phase can restore the previous controlled value.
+const readPrompt = () => document.querySelector(".app-panel textarea")?.value || "";
 
 export default function AppWithThemedAI({ onNavigate }) {
   const [themedOpen, setThemedOpen] = useState(false);
   const [currentPrompt, setCurrentPrompt] = useState("");
   const [lastThemedState, setLastThemedState] = useState(null);
 
+  // App is the sole owner of the WebView command listener and ready handshake.
   useEffect(() => {
-    postToThemedAIHost({
-      type: "VIBEFINDER_APP_READY",
-      hasToken: (() => {
-        try { return Boolean(localStorage.getItem("vf_token")); }
-        catch { return false; }
-      })(),
-    });
     postToThemedAIHost({ type: "VIBEFINDER_PROFILE", profile: profileSummary(loadPersonalizationProfile()) });
-
-    const onHostMessage = (event) => {
-      let message = event?.data;
-      if (typeof message === "string") {
-        try { message = JSON.parse(message); } catch { return; }
-      }
-      if (!message || typeof message !== "object") return;
-
-      const command = message.command || message.type;
-      if (command === "setPrompt") {
-        const textarea = document.querySelector(".app-panel textarea");
-        if (textarea instanceof HTMLTextAreaElement && typeof message.text === "string") {
-          setReactTextAreaValue(textarea, message.text);
-          textarea.focus();
-          setCurrentPrompt(message.text);
-          postToThemedAIHost({ type: "VIBEFINDER_COMMAND_RESULT", command: "setPrompt", success: true });
-        } else {
-          postToThemedAIHost({ type: "VIBEFINDER_COMMAND_RESULT", command: "setPrompt", success: false, reason: "input_not_ready" });
-        }
-        return;
-      }
-
-      if (command === "setTrackLimit") {
-        const value = Number(message.value);
-        if (!Number.isFinite(value)) return;
-        const buttons = [...document.querySelectorAll(".app-track-controls button")];
-        const trackButton = buttons.find((button) => button.textContent?.trim() === String(value));
-        if (trackButton instanceof HTMLButtonElement && !trackButton.disabled) trackButton.click();
-        return;
-      }
-
-      if (command === "runAnalysis") {
-        // Stop every VibeFinder playback layer before replacing the recommendation set.
-        window.dispatchEvent(new Event("vibefinder:stop-playback"));
-        const stopped = pauseCurrentPlayer();
-        if (stopped) postToThemedAIHost({ type: "VIBEFINDER_PLAYBACK_RESET", reason: "analysis" });
-
-        const runButton = document.querySelector(".app-run-btn");
-        if (runButton instanceof HTMLButtonElement) {
-          if (runButton.disabled) {
-            postToThemedAIHost({ type: "VIBEFINDER_COMMAND_RESULT", command: "runAnalysis", success: false, reason: "not_ready" });
-          } else {
-            runButton.click();
-            postToThemedAIHost({ type: "VIBEFINDER_COMMAND_RESULT", command: "runAnalysis", success: true });
-          }
-        }
-      }
-    };
-
-    if (window.chrome?.webview) window.chrome.webview.addEventListener("message", onHostMessage);
-    else window.addEventListener("message", onHostMessage);
-
-    return () => {
-      if (window.chrome?.webview) window.chrome.webview.removeEventListener("message", onHostMessage);
-      else window.removeEventListener("message", onHostMessage);
-    };
-  }, []);
-
-  useEffect(() => {
-    const syncPrompt = (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLTextAreaElement)) return;
-      if (!target.closest(".app-panel")) return;
-      setCurrentPrompt(target.value);
-    };
-    document.addEventListener("input", syncPrompt, true);
-    return () => document.removeEventListener("input", syncPrompt, true);
   }, []);
 
   useEffect(() => {
@@ -148,19 +47,18 @@ export default function AppWithThemedAI({ onNavigate }) {
       if (!signal) return;
       const updated = recordPersonalizationSignal(loadPersonalizationProfile(), {
         ...signal,
-        context: currentPrompt.trim() || undefined,
+        context: readPrompt().trim() || undefined,
       });
       postToThemedAIHost({ type: "VIBEFINDER_PROFILE", profile: profileSummary(updated) });
     };
 
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [currentPrompt]);
+  }, []);
 
   useEffect(() => {
     if (!themedOpen) return;
-    const textarea = document.querySelector(".app-panel textarea");
-    if (textarea instanceof HTMLTextAreaElement) setCurrentPrompt(textarea.value);
+    setCurrentPrompt(readPrompt());
   }, [themedOpen]);
 
   useEffect(() => {
@@ -214,20 +112,23 @@ export default function AppWithThemedAI({ onNavigate }) {
   return (
     <>
       <ThemedAIHostBridge />
-      <App onNavigate={onNavigate} />
-
-      <button
-        type="button"
-        className="vf-themedai-launcher"
-        onClick={() => setThemedOpen(true)}
-        aria-haspopup="dialog"
-        aria-expanded={themedOpen}
-        title="Open Themed.AI workspace"
-      >
-        <span aria-hidden="true">✦</span>
-        <span>Themed.AI</span>
-        {lastThemedState?.trackCount ? <small>{lastThemedState.trackCount} live</small> : <small>Ctrl⇧T</small>}
-      </button>
+      <App
+        onNavigate={onNavigate}
+        workspaceAction={
+          <button
+            type="button"
+            className="vf-themedai-launcher"
+            onClick={() => setThemedOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={themedOpen}
+            title="Open Themed.AI workspace"
+          >
+            <span aria-hidden="true">✦</span>
+            <span>Themed.AI</span>
+            {lastThemedState?.trackCount ? <small>{lastThemedState.trackCount} live</small> : <small>Ctrl⇧T</small>}
+          </button>
+        }
+      />
 
       <ThemedAIEmbed
         open={themedOpen}
