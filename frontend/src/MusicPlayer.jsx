@@ -156,7 +156,9 @@ export default function MusicPlayer({
         `&artist=${encodeURIComponent(t.artist)}` +
         `&q=${encodeURIComponent(`${t.title} ${t.artist} official audio`)}`
       );
-      const res  = await fetch(url);
+      if (!token) return null;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) return null;
       if (res.ok) {
         const data = await res.json();
         const vid  = data.found ? data.video_id : null;
@@ -173,7 +175,7 @@ export default function MusicPlayer({
       _VID_FETCHING.delete(_key(t));
       if (isPriority) setYtSearching(false);
     }
-  }, [buildApiUrl]);
+  }, [buildApiUrl, token]);
 
   /* ── Pre-fetch next 4 ───────────────────────────────────────── */
   useEffect(() => {

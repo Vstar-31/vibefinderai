@@ -39,6 +39,7 @@ import jwt as _jwt
 from auth_security import decode_access_token
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 import oauth_link
+from routes.metrics_auth import require_metrics_token
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from core.youtube_cache import (
@@ -640,13 +641,14 @@ async def soundcloud_create_playlist(body: SCPlaylistRequest, token: str = Depen
 # ═══════════════════════════════════════════════════════════════════
 
 @router.get("/api/services/youtube/cache-stats")
-async def youtube_cache_stats():
+async def youtube_cache_stats(_=Depends(require_metrics_token)):
     """Returns YouTube search cache stats."""
     return await get_youtube_cache_stats()
 
 
 @router.get("/api/services/youtube/search")
 async def youtube_search(
+    token: str = Depends(oauth_link.bearer_token),
     q: Optional[str] = Query(None, min_length=1, max_length=500),
     title: Optional[str] = Query(None, min_length=1, max_length=200),
     artist: Optional[str] = Query(None, min_length=1, max_length=200),
@@ -655,6 +657,7 @@ async def youtube_search(
     Search YouTube for a track. Checks persistent cache (L1 + DB) before
     hitting the API. Cache survives Render deploys.
     """
+    _get_user_id(token)
     if title is not None or artist is not None:
         if not title or not title.strip() or not artist or not artist.strip():
             raise HTTPException(status_code=422, detail="Both title and artist are required for track lookup")

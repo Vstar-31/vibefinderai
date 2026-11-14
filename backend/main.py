@@ -23,6 +23,7 @@ import hashlib
 import httpx
 import contextlib
 from core.vibe_engine import LANGUAGE_TAG_MAP
+from core.artist_detection import detect_entities, normalize_for_matching as _normalize_for_matching
 
 # ---------------------------------------------------------
 # Logging Configuration
@@ -352,14 +353,6 @@ def normalize_input(text: str) -> str:
         _log.getLogger(__name__).info(f"normalize_input: '{text}' → '{result}'")
     return result
 
-import unicodedata
-
-def _normalize_for_matching(text: str) -> str:
-    nfkd  = unicodedata.normalize("NFD", text)
-    clean = "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
-    clean = clean.replace("$", "s")
-    clean = re.sub(r'[^\w\s]', '', clean)
-    return clean.strip()
 
 app = FastAPI(title="VibeFinderAI API", description="Core backend for music discovery", lifespan=lifespan)
 
@@ -401,31 +394,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 pwd_context   = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-COMMON_WORDS_BLACKLIST = {
-    "alone","beautiful","water","time","burn","lights","independent","deep","passion",
-    "holiday","eve","chicago","slow","love","night","good","bad","happy","sad","summer",
-    "rain","coffee","drive","party","chill","focus","work","sleep","wake","morning",
-    "midnight","fire","magic","dream","smooth","fragile","resolute","kiss","paralyzed",
-    "ready","electric","bright","warm","cold","sweet","bitter","lost","found","free",
-    "bound","broken","whole","still","moving","running","falling","rising","flying",
-    "paris","london","tokyo","berlin","miami","california","vegas","brooklyn","texas",
-    "heaven","hell","home","stay","leave","run","go","come","back","waiting","gone",
-    "over","forever","again","always","never","heart","soul","mind","eyes","hands",
-    "voice","tears","perfect","wonderful","amazing","dangerous","crazy","wild",
-    "indian","scene","crying","peace","live","talk","terror","harvest","down","hyper",
-    "wheat","confession","song","sun","and","her","main","era","self","class","numb",
-    "stars","mirror","guitar","beast","chai","focus","sur","dhun","taal","bol","dil",
-    "raat","din","waqt","geet","ishq","pyaar","yaad","good","bad","big","little","new",
-    "old","real","true","white","black","blue","red","green","gold","silver","hot","cool",
-    "raw","dark","light","high","low","city","town","road","street","window","door","room",
-    "wave","beat","sound","noise","vibe","energy","mood","summer","winter","spring",
-    "autumn","rain","snow","wind","live","dead","born","young","old","fast","slow",
-    "loop","mix","set","jam","flow","groove","drop","bounce","blend","cut","run",
-    "session","playlist","queue","ke","liye","ke liye","chahiye","thoda",
-    "texture","future","p.o.p","pop","on","film","rock","sad","dance","classic","art",
-    "soul","fusion","acoustic","ambient","indie","folk","jazz","house","trap","bass",
-    "vocal","vocals","instrumental",
-}
 
 TRACK_BLOCKLIST: set[str] = {
     "trap queen|fetty wap","circumambient|grimes","slow|my bloody valentine",
@@ -1788,79 +1756,20 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         except Exception as _se:
             logger.warning(f"[Sentiment] Boost skipped: {_se}")
 
-    prompt_lower      = request.text.lower()
-    detected_artist   = request.override_artist
-    detected_song     = None
-    prompt_word_count = len(prompt_lower.split())
-
-    NEGATION_TOKENS = {"not","no","don't","dont","nothing","avoid","except","without","skip","never"}
-
-    def _is_negated_entity(entity: str, text: str) -> bool:
-        pattern = rf'\b({"|".join(re.escape(n) for n in NEGATION_TOKENS)})\s+{re.escape(entity)}\b'
-        return bool(re.search(pattern, text, re.IGNORECASE))
-
-    # PATCH 3: Entity scanner uses O(1) ARTIST_NAME_INDEX instead of db.find_many()
-    if not detected_artist:
+    detected_artist = request.override_artist
+    detected_song = None
+    if not detected_artist and not request.dismiss_detected_artist:
         try:
-            _artist_source = list(ARTIST_NAME_INDEX.values()) if ARTIST_NAME_INDEX else []
-            if not _artist_source:
+            artist_source = list(ARTIST_NAME_INDEX.values())
+            if not artist_source:
                 logger.warning("[EntityScanner] ARTIST_NAME_INDEX empty — falling back to DB query")
-                _artist_source = await db.artistdirectory.find_many()
-
-            _prompt_norm = _normalize_for_matching(request.text)
-
-            for a in _artist_source:
-                # Support both slim dicts (ARTIST_NAME_INDEX) and full Prisma rows (DB fallback)
-                _a_name  = a["name"]  if isinstance(a, dict) else a.name
-                _a_songs = a.get("songs", "") if isinstance(a, dict) else (a.songs or "")
-                if not _a_name or not re.search(r"\w", _a_name):
-                    continue
-                artist_name = _normalize_for_matching(_a_name)
-                if len(artist_name) <= 10 and artist_name in COMMON_WORDS_BLACKLIST:
-                    continue
-                artist_pattern = rf'\b{re.escape(artist_name)}\b'
-                if re.search(artist_pattern, _prompt_norm):
-                    if _is_negated_entity(artist_name, prompt_lower):
-                        continue
-                    detected_artist = _a_name
-                    logger.info(f"Entity Scanner Locked Artist: {detected_artist}")
-                    if _a_songs:
-                        song_list = [s.strip().lower() for s in _a_songs.split(",")]
-                        for s in song_list:
-                            if s and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
-                                if _is_negated_entity(s, prompt_lower):
-                                    continue
-                                detected_song = s
-                                logger.info(f"Entity Scanner Locked Song: {detected_song}")
-                                break
-                    break
-                elif _a_songs:
-                    song_list = [s.strip().lower() for s in _a_songs.split(",")]
-                    for s in song_list:
-                        if len(s) > 3 and s not in COMMON_WORDS_BLACKLIST and re.search(rf'\b{re.escape(s)}\b', prompt_lower):
-                            if _is_negated_entity(s, prompt_lower):
-                                continue
-                            if prompt_word_count >= 10:
-                                continue
-                            detected_artist = _a_name
-                            detected_song   = s
-                            logger.info(f"Entity Scanner Locked Song independently: {detected_song} by {detected_artist}")
-                            break
-                    if detected_artist:
-                        break
-        except Exception as e:
-            logger.error(f"Entity Scan Error: {e}")
+                artist_source = await db.artistdirectory.find_many()
+            detected_artist, detected_song = detect_entities(request.text, artist_source)
+        except Exception as error:
+            logger.error(f"Entity Scan Error: {error}")
 
     vibe_data["detected_artist"] = detected_artist
-    vibe_data["detected_song"]   = detected_song
-
-    if request.dismiss_detected_artist and not request.override_artist:
-        if detected_artist:
-            logger.info(f"User dismissed detected artist lock '{detected_artist}' — clearing.")
-        detected_artist = None
-        detected_song   = None
-        vibe_data["detected_artist"] = None
-        vibe_data["detected_song"]   = None
+    vibe_data["detected_song"] = detected_song
 
     if detected_song and not detected_artist and vibe_data.get("confidence", 0) >= 0.30:
         vibe_data["detected_song"] = None
