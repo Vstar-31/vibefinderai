@@ -1,4 +1,5 @@
 import { useHostPrompt } from "./useHostPrompt.js";
+import { createDesktopSessionClient } from "./desktopSession.js";
 import { useState, useEffect, useRef } from "react";
 import PlaylistPanel from "./PlaylistPanel.jsx";
 import ServicesPanel from "./ServicesPanel.jsx";
@@ -152,7 +153,7 @@ function Oscilloscope({ active }) {
       userSelect: "none",
       pointerEvents: "none",
     }}>
-      <span style={{ fontSize: "9px", fontFamily: "monospace", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>OSC</span>
+      <span style={{ fontSize: "9px", fontFamily: "monospace", color: "#c5af86", letterSpacing: "0.1em", textTransform: "uppercase" }}>OSC</span>
       <canvas ref={canvasRef} width={180} height={36} style={{ display: "block" }} />
     </div>
   );
@@ -212,7 +213,7 @@ function AudioInput({ icon, ...props }) {
       <div style={{
         position: "absolute", top: "50%", left: "14px",
         transform: "translateY(-50%)",
-        color: "rgba(180,140,80,0.5)", pointerEvents: "none",
+        color: "#c5af86", pointerEvents: "none",
       }}>
         {icon}
       </div>
@@ -347,7 +348,7 @@ function Knob({ label, value, onChange }) {
           title={`${label}: ${Math.round(localVal)} — drag up/down or left/right`}
         />
       </div>
-      <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.6)", letterSpacing: "0.15em", textTransform: "uppercase", userSelect: "none", fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: "10px", color: "#c5af86", letterSpacing: "0.15em", textTransform: "uppercase", userSelect: "none", fontWeight: 600 }}>{label}</span>
     </div>
   );
 }
@@ -412,8 +413,8 @@ function GlobalStyles() {
 
       ::selection { background: rgba(217,119,6,0.25); color: #fde68a; }
 
-      input::placeholder { color: rgba(180,140,80,0.25); }
-      textarea::placeholder { color: rgba(180,140,80,0.25); }
+      input::placeholder { color: #a99573; }
+      textarea::placeholder { color: #a99573; }
       textarea { resize: none; }
 
       .dial-btn {
@@ -573,7 +574,7 @@ function GlobalStyles() {
         width: 36px; height: 36px; border-radius: 50%;
         background: rgba(20,12,4,0.85);
         border: 1px solid rgba(155,105,28,0.35);
-        color: rgba(180,140,80,0.5); font-size: 14px;
+        color: #c5af86; font-size: 14px;
         display: flex; align-items: center; justify-content: center;
         cursor: pointer; transition: all 0.2s;
         box-shadow: 0 2px 12px rgba(0,0,0,0.5);
@@ -652,10 +653,13 @@ class ErrorBoundary extends Component {
 }
 
 export default function App({ onNavigate, workspaceAction = null }) {
+  const [sessionClient] = useState(() => createDesktopSessionClient());
+  useEffect(() => () => sessionClient.cancel(), [sessionClient]);
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem("vf_token") || null; }
     catch { return null; }
   });
+  const hasSession = Boolean(token);
   const { prompt, setPrompt, applyHostPrompt, canRunHostAnalysis } = useHostPrompt();
   const [lastPrompt, setLastPrompt]   = useState("");
   const [result, setResult]           = useState(null);
@@ -828,6 +832,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
 
   const submitAuth = async (e) => {
     e.preventDefault();
+    sessionClient.cancel();
     setLoading(true); setError("");
     try {
       if (!isLoginView) {
@@ -854,6 +859,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
   };
 
   const handleLogout = () => {
+    sessionClient.cancel();
     window.dispatchEvent(new Event("vibefinder:stop-playback"));
     try { localStorage.removeItem("vf_token"); } catch {}
     setToken(null); setResult(null); setPrompt(""); setVuLevel(0);
@@ -892,7 +898,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
       setOverrideArtist(finalArtist);
       setLastPrompt(effectivePrompt);
 
-      const res = await fetch(buildApiUrl("/api/vibe/analyze"), {
+      const res = await sessionClient.request(buildApiUrl("/api/vibe/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
@@ -914,9 +920,14 @@ export default function App({ onNavigate, workspaceAction = null }) {
           refinement_of: config.refinement_of || null,
           refinement_instruction: config.refinement_instruction || null,
         }),
-      });
+      }, setToken);
 
-      if (res.status === 401) { handleLogout(); throw new Error("Session expired — re-authenticate"); }
+      if (res.status === 401) {
+        // Keep the input and filters so manual reconnection never loses the user's work.
+        try { localStorage.removeItem("vf_token"); } catch { /* unavailable storage */ }
+        setToken(null);
+        throw new Error("Session expired — reconnect to try again. Your prompt is preserved.");
+      }
 
       if (!res.ok) {
         const errData = await res.json().catch(() => null);
@@ -944,7 +955,10 @@ export default function App({ onNavigate, workspaceAction = null }) {
       setSelectedTracks(new Set());
       setSelectionMode(false);
       setTimeout(() => { document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }); }, 150);
-    } catch (err) { setError(err.message); setIsSkeletonLoading(false); }
+    } catch (err) {
+      if (err.name !== 'AbortError') setError(err.message);
+      setIsSkeletonLoading(false);
+    }
     finally { setLoading(false); setLoadReason(null); }
   };
 
@@ -1015,11 +1029,12 @@ export default function App({ onNavigate, workspaceAction = null }) {
     window.chrome.webview.addEventListener("message", handleMessage);
     window.chrome.webview.postMessage(JSON.stringify({
       type: "VIBEFINDER_APP_READY",
-      hasToken: !!token
+      hasToken: hasSession
     }));
 
     return () => window.chrome.webview.removeEventListener("message", handleMessage);
-  }, [token]);
+  // Refreshing a token in-place must not trigger another native initial analysis.
+  }, [hasSession]);
 
   // Push the exact result set shown in the UI to the native widget host.
   useEffect(() => {
@@ -1037,6 +1052,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
 
   // FULL ENGINE KILL SWITCH
   const resetEngine = () => {
+      sessionClient.cancel();
       window.dispatchEvent(new Event("vibefinder:stop-playback"));
       setPrompt("");
       setLastPrompt("");
@@ -1128,27 +1144,27 @@ export default function App({ onNavigate, workspaceAction = null }) {
     logoDisc: { width: "42px", height: "42px", borderRadius: "50%", background: "conic-gradient(from 0deg, #1a1008, #3d2510, #1a1008, #2e1a0a, #1a1008)", border: "2px solid rgba(180,140,80,0.4)", boxShadow: `0 0 18px ${activeColor}44, inset 0 0 10px rgba(0,0,0,0.5)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "box-shadow 0.5s ease" },
     logoDiscInner: { width: "10px", height: "10px", borderRadius: "50%", background: `radial-gradient(circle, ${activeColor}, #7a4f12)`, transition: "background 0.5s ease" },
     logoText: { fontFamily: "'Playfair Display', serif", fontSize: "22px", fontWeight: 900, color: "#e8d5a3", letterSpacing: "-0.01em", lineHeight: 1.1 },
-    logoSub: { fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)", letterSpacing: "0.25em", textTransform: "uppercase" },
-    authBtn: (hasToken) => ({ display: "flex", alignItems: "center", gap: "8px", padding: "8px 18px", borderRadius: "8px", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s", background: hasToken ? "rgba(40,20,5,0.8)" : "linear-gradient(135deg, #92400e, #d97706)", color: hasToken ? "rgba(180,140,80,0.7)" : "#fef3c7", border: hasToken ? "1px solid rgba(120,80,20,0.4)" : "1px solid rgba(251,191,36,0.3)", boxShadow: hasToken ? "none" : "0 0 20px rgba(217,119,6,0.25)" }),
+    logoSub: { fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "#c5af86", letterSpacing: "0.25em", textTransform: "uppercase" },
+    authBtn: (hasToken) => ({ display: "flex", alignItems: "center", gap: "8px", padding: "8px 18px", borderRadius: "8px", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s", background: hasToken ? "rgba(40,20,5,0.8)" : "linear-gradient(135deg, #92400e, #d97706)", color: hasToken ? "#c5af86" : "#fef3c7", border: hasToken ? "1px solid rgba(120,80,20,0.4)" : "1px solid rgba(251,191,36,0.3)", boxShadow: hasToken ? "none" : "0 0 20px rgba(217,119,6,0.25)" }),
     signalRow: { display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" },
     signalDot: (on) => ({ width: "7px", height: "7px", borderRadius: "50%", background: on ? activeColor : "rgba(80,50,10,0.5)", boxShadow: on ? `0 0 8px ${activeColor}` : "none", flexShrink: 0, transition: "background 0.3s, box-shadow 0.3s" }),
-    signalLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)" },
+    signalLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "#c5af86" },
     errorBox: { display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "rgba(60,10,10,0.5)", border: "1px solid rgba(180,40,40,0.3)", borderRadius: "10px", color: "#f87171", fontSize: "12px", marginBottom: "20px", lineHeight: "1.4" },
     textareaWrap: { position: "relative" },
     textarea: { width: "100%", height: "130px", background: "rgba(5,3,1,0.8)", border: "1px solid rgba(160,110,30,0.42)", borderRadius: "10px", padding: "16px", color: "#e8d5a3", fontFamily: "'DM Mono', monospace", fontSize: "14px", lineHeight: "1.6", outline: "none", transition: "border-color 0.2s, box-shadow 0.2s" },
     lockOverlay: { position: "absolute", inset: 0, background: "rgba(5,3,1,0.75)", backdropFilter: "blur(4px)", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 },
-    lockBtn: { display: "flex", alignItems: "center", gap: "8px", padding: "10px 22px", background: "rgba(20,12,4,0.9)", border: "1px solid rgba(180,120,40,0.35)", borderRadius: "30px", color: "rgba(180,140,80,0.8)", fontSize: "12px", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "'DM Mono', monospace", transition: "border-color 0.2s, color 0.2s" },
+    lockBtn: { display: "flex", alignItems: "center", gap: "8px", padding: "10px 22px", background: "rgba(20,12,4,0.9)", border: "1px solid rgba(180,120,40,0.35)", borderRadius: "30px", color: "#c5af86", fontSize: "12px", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "'DM Mono', monospace", transition: "border-color 0.2s, color 0.2s" },
     runBtn: (disabled) => ({ display: "flex", alignItems: "center", gap: "10px", padding: "12px 28px", background: disabled ? "rgba(50,30,8,0.4)" : "linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%)", border: "1px solid " + (disabled ? "rgba(80,50,10,0.3)" : "rgba(251,191,36,0.3)"), borderRadius: "10px", color: disabled ? "rgba(120,80,20,0.5)" : "#fef3c7", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.15em", textTransform: "uppercase", cursor: disabled ? "not-allowed" : "pointer", boxShadow: disabled ? "none" : `0 4px 20px ${activeColor}44`, transition: "all 0.2s" }),
     grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" },
     resultCard: { padding: "24px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "8px" },
-    cardLabel: { fontSize: "10px", letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(180,140,80,0.45)" },
+    cardLabel: { fontSize: "10px", letterSpacing: "0.25em", textTransform: "uppercase", color: "#c5af86" },
     cardValue: { fontFamily: "'Playfair Display', serif", fontSize: "30px", fontWeight: 700, color: "#fde68a", textShadow: `0 0 20px ${activeColor}44` },
-    cardSub: { fontSize: "11px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.1em" },
+    cardSub: { fontSize: "11px", color: "#c5af86", letterSpacing: "0.1em" },
     modalOverlay: { position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", background: "rgba(4,2,1,0.88)", backdropFilter: "blur(8px)" },
     modal: { width: "100%", maxWidth: "420px", padding: "36px 32px 28px", position: "relative" },
     modalTitle: { fontFamily: "'Playfair Display', serif", fontSize: "24px", fontWeight: 900, color: "#fde68a", marginBottom: "8px" },
-    modalSub: { fontSize: "11px", color: "rgba(180,140,80,0.45)", letterSpacing: "0.1em", marginBottom: "28px" },
-    formLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.5)", marginBottom: "6px", display: "block" },
+    modalSub: { fontSize: "11px", color: "#c5af86", letterSpacing: "0.1em", marginBottom: "28px" },
+    formLabel: { fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "#c5af86", marginBottom: "6px", display: "block" },
     submitBtn: { width: "100%", padding: "12px", marginTop: "24px", background: "linear-gradient(135deg, #92400e, #d97706)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "8px", color: "#fef3c7", fontFamily: "'DM Mono', monospace", fontSize: "12px", fontWeight: 500, letterSpacing: "0.18em", textTransform: "uppercase", cursor: "pointer", boxShadow: "0 4px 20px rgba(180,100,10,0.3)", transition: "opacity 0.2s" },
   };
 
@@ -1398,7 +1414,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
         {showAuthModal && (
           <div style={S.modalOverlay}>
             <div className="panel-card screws animate-in" style={S.modal}>
-              <button onClick={() => setShowAuthModal(false)} style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", color: "rgba(180,140,80,0.4)", cursor: "pointer" }}><IconX /></button>
+              <button onClick={() => setShowAuthModal(false)} style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", color: "#c5af86", cursor: "pointer" }}><IconX /></button>
               <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 5px, rgba(120,80,20,0.04) 5px, rgba(120,80,20,0.04) 6px)", borderRadius: "16px", pointerEvents: "none" }} />
               <div style={{ position: "relative" }}>
                 <p style={S.modalTitle}>{isLoginView ? "Welcome Back" : "Create Account"}</p>
@@ -1410,7 +1426,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                   <div><label style={S.formLabel}>Passphrase</label><AudioInput icon={<IconLock />} type="password" name="password" value={authForm.password} onChange={handleAuthChange} required placeholder="••••••••••••" /></div>
                   <button type="submit" disabled={loading} className="dial-btn" style={{ ...S.submitBtn, opacity: loading ? 0.5 : 1 }}>{loading ? "Handshaking..." : isLoginView ? "Sign In" : "Create Account"}</button>
                 </form>
-                <p style={{ textAlign: "center", marginTop: "18px", fontSize: "11px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.05em" }}>
+                <p style={{ textAlign: "center", marginTop: "18px", fontSize: "11px", color: "#c5af86", letterSpacing: "0.05em" }}>
                   {isLoginView ? "New here? " : "Already have an account? "}
                   <button type="button" onClick={() => { setIsLoginView(!isLoginView); setError(""); setAuthForm({ email: "", username: "", password: "" }); }} style={{ background: "none", border: "none", color: "#d97706", cursor: "pointer", fontFamily: "'DM Mono', monospace", fontSize: "11px" }}>{isLoginView ? "Create one" : "Sign in"}</button>
                 </p>
@@ -1430,13 +1446,13 @@ export default function App({ onNavigate, workspaceAction = null }) {
                 title="Back to Home"
                 style={{
                   background: "none", border: "none", cursor: "pointer",
-                  color: "rgba(180,140,80,0.45)", fontSize: "11px",
+                  color: "#c5af86", fontSize: "11px",
                   fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em",
                   textTransform: "uppercase", display: "flex", alignItems: "center",
                   gap: "5px", padding: "4px 10px 4px 0", transition: "color 0.2s",
                 }}
                 onMouseOver={e => e.currentTarget.style.color = "#e8d5a3"}
-                onMouseOut={e => e.currentTarget.style.color = "rgba(180,140,80,0.45)"}
+                onMouseOut={e => e.currentTarget.style.color = "#c5af86"}
               >
                 &#8592; Home
               </button>
@@ -1461,7 +1477,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                     fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase",
                     cursor: "pointer", transition: "all 0.2s",
                     background: "rgba(40,20,5,0.8)",
-                    color: "rgba(180,140,80,0.7)",
+                    color: "#c5af86",
                     border: "1px solid rgba(120,80,20,0.4)",
                   }}
                 >
@@ -1509,7 +1525,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                   fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase",
                   cursor: "pointer", transition: "all 0.2s",
                   background: "rgba(40,20,5,0.8)",
-                  color: "rgba(180,140,80,0.7)",
+                  color: "#c5af86",
                   border: "1px solid rgba(120,80,20,0.4)",
                 }}
               >
@@ -1538,7 +1554,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                   </div>
                   <div className="app-knob-label" style={{ marginLeft: "8px" }}>
                     <div style={{ fontSize: "15px", fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, color: "#e8d5a3", letterSpacing: "0.04em" }}>Describe the Vibe</div>
-                    <div style={{ fontSize: "10px", color: "rgba(180,140,80,0.4)", letterSpacing: "0.15em", textTransform: "uppercase" }}>// Acoustic descriptor input</div>
+                    <div style={{ fontSize: "10px", color: "#c5af86", letterSpacing: "0.15em", textTransform: "uppercase" }}>// Acoustic descriptor input</div>
                   </div>
                 </div>
                 <div className="app-vumeter"><VuMeter value={vuLevel} vibeColor={activeColor} /></div>
@@ -1599,7 +1615,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                 <button
                   onClick={() => setShowOverrides(!showOverrides)}
                   disabled={!token}
-                  style={{ background: "none", border: "none", color: "rgba(180,140,80,0.6)", fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px", cursor: token ? "pointer" : "default", fontFamily: "'DM Mono', monospace", alignSelf: "flex-start", opacity: token ? 1 : 0.5 }}
+                  style={{ background: "none", border: "none", color: "#c5af86", fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px", cursor: token ? "pointer" : "default", fontFamily: "'DM Mono', monospace", alignSelf: "flex-start", opacity: token ? 1 : 0.5 }}
                 >
                   <IconFilter /> {showOverrides ? "Hide Overrides" : "Manual Overrides // Pro Mode"}
                 </button>
@@ -1609,11 +1625,11 @@ export default function App({ onNavigate, workspaceAction = null }) {
                 {showOverrides && token && (
                   <div className="animate-in app-overrides" style={{ display: "flex", gap: "16px", flexWrap: "wrap", padding: "16px", background: "rgba(10,5,2,0.6)", border: "1px dashed rgba(180,140,80,0.25)", borderRadius: "8px" }}>
                     <div style={{ flex: 1, minWidth: "160px" }}>
-                       <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Artist Filter</label>
+                       <label style={{ fontSize: "9px", color: "#c5af86", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Artist Filter</label>
                        <input type="text" value={overrideArtist} onChange={e => setOverrideArtist(e.target.value)} placeholder="e.g. Deftones" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
                     </div>
                     <div style={{ flex: 1, minWidth: "160px" }}>
-                       <label style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Genre Filter</label>
+                       <label style={{ fontSize: "9px", color: "#c5af86", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px", display: "block" }}>Force Genre Filter</label>
                        <input type="text" value={overrideGenre} onChange={e => setOverrideGenre(e.target.value)} placeholder="e.g. shoegaze" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(120,80,20,0.4)", borderRadius: "6px", padding: "8px 12px", color: "#e8d5a3", fontSize: "12px", fontFamily: "'DM Mono', monospace", outline: "none", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#d97706"} onBlur={e => e.target.style.borderColor = "rgba(120,80,20,0.4)"} />
                     </div>
 
@@ -1643,7 +1659,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                           onClick={resetEngine}
                           disabled={loading}
                           title="Clear all filters and drop results"
-                          style={{ background: "none", border: "none", color: "rgba(180,140,80,0.4)", fontSize: "10px", textTransform: "uppercase", cursor: "pointer", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: "4px", padding: "8px", transition: "color 0.2s" }}
+                          style={{ background: "none", border: "none", color: "#c5af86", fontSize: "10px", textTransform: "uppercase", cursor: "pointer", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: "4px", padding: "8px", transition: "color 0.2s" }}
                           onMouseOver={e => e.currentTarget.style.color = "#ef4444"}
                           onMouseOut={e => e.currentTarget.style.color = "rgba(180,140,80,0.4)"}
                       >
@@ -1652,7 +1668,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                   )}
 
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "10px", color: "rgba(180,140,80,0.5)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tracks:</span>
+                    <span style={{ fontSize: "10px", color: "#c5af86", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tracks:</span>
                     <div style={{ display: "flex", background: "rgba(10,5,2,0.6)", border: "1px solid rgba(155,105,28,0.38)", borderRadius: "6px", overflow: "hidden" }}>
                       {[5, 10, 20, 50].map(num => (
                         <button
@@ -1689,7 +1705,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
             <div className="animate-in" style={{ marginTop: "16px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", paddingLeft: "4px" }}>
                 <div style={{ width: "24px", height: "1px", background: "rgba(217,119,6,0.4)" }} />
-                <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)" }}>Processing Signal…</span>
+                <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "#c5af86" }}>Processing Signal…</span>
                 <div style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, rgba(217,119,6,0.4), transparent)" }} />
               </div>
               <div className="panel-card screws" style={{ padding: "24px" }}>
@@ -1708,7 +1724,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
             <div id="results-section" className="animate-in" style={{ scrollMarginTop: "24px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", paddingLeft: "4px" }}>
                 <div style={{ width: "24px", height: "1px", background: `${activeColor}88` }} />
-                <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(180,140,80,0.4)" }}>Analysis Complete</span>
+                <span style={{ fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", color: "#c5af86" }}>Analysis Complete</span>
                 {tasteProfile.totalSignals >= 2 && (
                   <span style={{ fontSize: "9px", display: "flex", alignItems: "center", gap: "4px", padding: "2px 8px", background: `${activeColor}11`, border: `1px solid ${activeColor}33`, borderRadius: "20px", color: activeColor, fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em", flexShrink: 0 }}>
                     <IconBrain /> PERSONALISED
@@ -1731,7 +1747,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                       Artist detected: {result.detected_artist}
                     </span>
                     {result.detected_song && (
-                      <span style={{ color: "rgba(180,140,80,0.7)", marginLeft: "6px" }}>
+                      <span style={{ color: "#c5af86", marginLeft: "6px" }}>
                         ({result.detected_song})
                       </span>
                     )}
@@ -1774,7 +1790,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                    result.dominant_vibe !== 'Direct Search' &&
                    (useSecondaryVibe || (result.secondary_confidence || 0) >= 0.50) && (
                     <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(180,140,80,0.15)", width: "100%", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}>
-                      <span style={{ fontSize: "9px", textTransform: "uppercase", color: "rgba(180,140,80,0.4)", letterSpacing: "0.1em" }}>
+                      <span style={{ fontSize: "9px", textTransform: "uppercase", color: "#c5af86", letterSpacing: "0.1em" }}>
                         {useSecondaryVibe ? "Primary Signature Available" : "Secondary Signature Detected"}
                       </span>
                       <button
@@ -1799,13 +1815,13 @@ export default function App({ onNavigate, workspaceAction = null }) {
                 <div className="panel-card" style={S.resultCard}>
                   <div style={{ marginBottom: "4px" }}><Vinyl spinning={!!playingTrack || loading} labelColor={activeColor} /></div>
                   <span style={S.cardLabel}>Target Tempo</span>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}><span style={S.cardValue}>{result.bpm_range}</span><span style={{ fontSize: "13px", color: "rgba(180,140,80,0.5)" }}>BPM</span></div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}><span style={S.cardValue}>{result.bpm_range}</span><span style={{ fontSize: "13px", color: "#c5af86" }}>BPM</span></div>
                   <div style={S.cardSub}>Rhythmic Pulse</div>
                 </div>
 
                 <div className="panel-card" style={{ ...S.resultCard, justifyContent: "flex-start", paddingTop: "28px" }}>
                   <span style={S.cardLabel}>Engine State</span>
-                  <span style={{ fontSize: "9px", color: "rgba(180,140,80,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "-4px" }}>[ Click Genres to Hard-Filter ]</span>
+                  <span style={{ fontSize: "9px", color: "#c5af86", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "-4px" }}>[ Click Genres to Hard-Filter ]</span>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px", width: "100%", alignItems: "center" }}>
                     {result.detected_artist && !artistUnlocked && (
@@ -1853,7 +1869,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                         })}
                     </div>
                     {result.genres.length > 0 && result.dominant_vibe !== 'Direct Search' && !loading && (
-                      <span style={{ fontSize: "8px", color: "rgba(180,140,80,0.3)", letterSpacing: "0.08em", marginTop: "2px" }}>
+                      <span style={{ fontSize: "8px", color: "#c5af86", letterSpacing: "0.08em", marginTop: "2px" }}>
                         ↑ click any genre to re-run with that filter
                       </span>
                     )}
@@ -1912,7 +1928,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                         )}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                        <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "rgba(180,140,80,0.5)" }}>
+                        <span style={{ fontSize: "10px", fontFamily: "'DM Mono', monospace", color: "#c5af86" }}>
                           {selectionMode && selectedTracks.size > 0
                             ? `${selectedTracks.size} / ${result.tracks.length} SELECTED`
                             : `${result.tracks.length} TRACKS`}
@@ -2122,7 +2138,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                             <strong style={{ color: "#fde68a" }}>Limited {selectedLang} pool for this vibe.</strong>
                             {" "}The "{result.dominant_vibe}" mood has sparse coverage in {selectedLang} on Last.fm — showing closest global matches instead.
                             <br />
-                            <span style={{ color: "rgba(180,140,80,0.6)", fontSize: "10px" }}>
+                            <span style={{ color: "#c5af86", fontSize: "10px" }}>
                               Try: switching Language → <strong>Any</strong>, or use Pro Mode to force a {selectedLang} artist directly.
                             </span>
                           </div>
@@ -2203,7 +2219,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                                 boxShadow: `0 4px 20px rgba(0,0,0,0.8), 0 0 10px ${activeColor}22`,
                                 pointerEvents: "none",
                               }}>
-                                <div style={{ fontSize: "9px", color: "rgba(180,140,80,0.5)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "6px", display: "flex", alignItems: "center", gap: "5px" }}>
+                                <div style={{ fontSize: "9px", color: "#c5af86", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "6px", display: "flex", alignItems: "center", gap: "5px" }}>
                                   <IconHelpCircle /> Why this track?
                                 </div>
                                 {whyReasons.map((r, ri) => (
@@ -2230,7 +2246,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                               )}
                               <div style={{ display: "flex", flexDirection: "column", gap: "3px", minWidth: 0, flex: 1, overflow: "hidden" }}>
                                 <span style={{ fontSize: "14px", fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{track.title}</span>
-                                <span style={{ fontSize: "11px", color: "rgba(180,140,80,0.7)", letterSpacing: "0.05em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{track.artist}</span>
+                                <span style={{ fontSize: "11px", color: "#c5af86", letterSpacing: "0.05em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{track.artist}</span>
                               </div>
                             </div>
 
@@ -2461,7 +2477,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                                 borderRadius: "6px",
                                 fontSize: "11px",
                                 fontFamily: "'DM Mono', monospace",
-                                color: "rgba(180,140,80,0.75)",
+                                color: "#c5af86",
                                 letterSpacing: "0.05em",
                               }}>
                                 #{kw}
@@ -2480,12 +2496,12 @@ export default function App({ onNavigate, workspaceAction = null }) {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       <span style={{ color: activeColor }}><IconBrain /></span>
-                      <span style={{ fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(180,140,80,0.6)", fontFamily: "'DM Mono', monospace" }}>Session Taste Profile</span>
+                      <span style={{ fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "#c5af86", fontFamily: "'DM Mono', monospace" }}>Session Taste Profile</span>
                     </div>
                     <button
                       onClick={() => setShowTasteProfile(p => !p)}
                       className="dial-btn"
-                      style={{ background: "none", border: `1px solid rgba(120,80,20,0.3)`, borderRadius: "4px", padding: "3px 8px", fontSize: "9px", color: "rgba(180,140,80,0.5)", fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em", cursor: "pointer" }}
+                      style={{ background: "none", border: `1px solid rgba(120,80,20,0.3)`, borderRadius: "4px", padding: "3px 8px", fontSize: "9px", color: "#c5af86", fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em", cursor: "pointer" }}
                     >
                       {showTasteProfile ? "HIDE" : "SHOW"}
                     </button>
@@ -2669,11 +2685,11 @@ export default function App({ onNavigate, workspaceAction = null }) {
                 <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600, color: "#ead9a8", letterSpacing: "0.06em", textTransform: "uppercase" }}>
                   Music Services
                 </div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "rgba(180,140,80,0.4)", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 2 }}>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "#c5af86", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 2 }}>
                   Connect to love tracks · build playlists
                 </div>
               </div>
-              <button onClick={() => setShowServicesPanel(false)} style={{ background: "none", border: "none", color: "rgba(180,140,80,0.4)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 4 }}>✕</button>
+              <button onClick={() => setShowServicesPanel(false)} style={{ background: "none", border: "none", color: "#c5af86", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 4 }}>✕</button>
             </div>
 
             {/* ServicesPanel content */}
@@ -2763,7 +2779,7 @@ function InlineFact({ activeColor }) {
       }}
     >
       <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1.6 }}>{f.icon}</span>
-      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(180,140,80,0.55)", lineHeight: 1.65 }}>
+      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#c5af86", lineHeight: 1.65 }}>
         <span style={{ color: `${activeColor}88`, marginRight: 5, fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase" }}>tip ·</span>
         {f.text}
       </span>
@@ -2842,7 +2858,7 @@ function TutorialOverlay({ onDismiss }) {
           {step > 0 && (
             <button onClick={() => setStep(s => s - 1)} style={{
               padding: "9px 20px", borderRadius: 8, background: "rgba(40,20,5,0.8)",
-              border: "1px solid rgba(120,80,20,0.4)", color: "rgba(180,140,80,0.6)",
+              border: "1px solid rgba(120,80,20,0.4)", color: "#c5af86",
               fontFamily: mono, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer",
             }}>← Back</button>
           )}
@@ -2865,7 +2881,7 @@ function TutorialOverlay({ onDismiss }) {
 
         <button onClick={onDismiss} style={{
           position: "absolute", top: 16, right: 16, background: "none", border: "none",
-          color: "rgba(180,140,80,0.3)", cursor: "pointer", fontSize: 16, padding: 4,
+          color: "#c5af86", cursor: "pointer", fontSize: 16, padding: 4,
         }}>✕</button>
 
         <p style={{ textAlign: "center", marginTop: 14, fontFamily: mono, fontSize: 9, color: "rgba(120,80,20,0.4)", letterSpacing: "0.08em" }}>
