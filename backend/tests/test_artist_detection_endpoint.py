@@ -7,8 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import jwt
 
+from analyzers import sentiment_boost
 
 
 class ArtistDetectionEndpointTests(unittest.IsolatedAsyncioTestCase):
@@ -62,6 +62,17 @@ class ArtistDetectionEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(data["detected_artist"])
         self.assertNotEqual(data["dominant_vibe"], "artist_driven")
         self.assertIsNone(self.database.viberequest.create.call_args.kwargs["data"]["detectedArtist"])
+
+    async def test_sentiment_does_not_route_known_mood_to_literal_track_search(self):
+        blob = SimpleNamespace(sentiment=SimpleNamespace(polarity=0.0, subjectivity=0.0))
+        with patch.object(self.main, "_SENTIMENT_AVAILABLE", True), patch.object(
+            sentiment_boost, "_TEXTBLOB_AVAILABLE", True,
+        ), patch.object(sentiment_boost, "TextBlob", return_value=blob, create=True):
+            data = await self.analyze(text="rainy night drive with mellow electronic music", track_limit=5)
+        self.assertEqual(data["dominant_vibe"], "chill")
+        self.assertGreaterEqual(data["confidence"], 0.5)
+        self.assertIsNone(data["detected_artist"])
+        self.main.fetch_lastfm_track_search.assert_not_awaited()
 
     async def test_curated_artist_and_explicit_ambiguous_artist(self):
         for prompt, expected in [("Taylor Swift", "Taylor Swift"), ("songs by Electronic", "Electronic")]:

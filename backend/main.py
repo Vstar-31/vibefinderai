@@ -1729,9 +1729,9 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
     # Phase 9: Refinement merge
     if request.refinement_of and request.refinement_instruction:
         _merged = f"{request.refinement_of}, {request.refinement_instruction}"
-        request = request.model_copy(update={"text": _merged})
+        request = request.copy(update={"text": _merged})
 
-    request = request.model_copy(update={"text": normalize_input(request.text)})
+    request = request.copy(update={"text": normalize_input(request.text)})
 
     vibe_data = vibe_engine.analyze_vibe_algorithm(
         text=request.text, artist_focus=request.artist_focus,
@@ -1745,7 +1745,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             if _enhanced:
                 vibe_data = _enhanced
                 if (not request.language or request.language == "Any") and vibe_data.get("_gemini_detected_language"):
-                    request = request.model_copy(update={"language": vibe_data["_gemini_detected_language"]})
+                    request = request.copy(update={"language": vibe_data["_gemini_detected_language"]})
         except Exception as _ge:
             logger.warning(f"[Gemini] Enhancement skipped: {_ge}")
 
@@ -1789,13 +1789,13 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
         if _boosted_nicheness != request.nicheness:
             logger.info(f"[v6.0] Discovery modifier boost: nicheness {request.nicheness} → {_boosted_nicheness}")
             _original_nicheness = request.nicheness
-            request = request.model_copy(update={"nicheness": _boosted_nicheness})
+            request = request.copy(update={"nicheness": _boosted_nicheness})
             vibe_data["_original_nicheness"] = _original_nicheness
             vibe_data["_boosted_nicheness"]  = _boosted_nicheness
 
     if _direct_tag and "bhojpuri" in _direct_tag and _lang in ("Hindi", "Any"):
         _lang = "Bhojpuri"
-        request = request.model_copy(update={"language": "Bhojpuri"})
+        request = request.copy(update={"language": "Bhojpuri"})
 
     if detected_artist and vibe_data.get("confidence", 0) < 0.10:
         vibe_data["dominant_vibe"] = "artist_driven"
@@ -1815,7 +1815,7 @@ async def analyze_vibe(request: VibeRequest, token: str = Depends(oauth2_scheme)
             target_genre = _direct_tag
             if _direct_lang and _lang == "Any":
                 _lang = _direct_lang
-                request = request.model_copy(update={"language": _direct_lang})
+                request = request.copy(update={"language": _direct_lang})
             vibe_data["genres"] = [_direct_tag.title()]
     elif request.use_secondary_vibe and vibe_data.get("secondary_vibe"):
         sec_vibe_name = vibe_data["secondary_vibe"]
