@@ -1850,7 +1850,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                                     className="freq-tag dial-btn"
                                     title={isSelected ? "Click to remove filter — will re-run" : `Re-run filtered strictly by ${g}`}
                                     style={{
-                                        color: isSelected ? "#1a0e04" : "rgba(180,140,80,0.7)",
+                                        color: isSelected ? "#1a0e04" : "#c5af86",
                                         borderColor: isSelected ? "#d97706" : "rgba(180,140,80,0.3)",
                                         background: isSelected ? "#d97706" : "transparent",
                                         cursor: loading ? "default" : "pointer",
@@ -1869,7 +1869,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                         })}
                     </div>
                     {result.genres.length > 0 && result.dominant_vibe !== 'Direct Search' && !loading && (
-                      <span style={{ fontSize: "8px", color: "#c5af86", letterSpacing: "0.08em", marginTop: "2px" }}>
+                      <span style={{ fontSize: "11px", color: "#c5af86", letterSpacing: "0.04em", marginTop: "2px" }}>
                         ↑ click any genre to re-run with that filter
                       </span>
                     )}
