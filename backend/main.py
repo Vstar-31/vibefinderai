@@ -1692,13 +1692,17 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.get("/users/me")
 async def read_users_me(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = decode_access_token(token, SECRET_KEY)
-        user_id = payload.get("sub")
-        user    = await db.user.find_unique(where={"id": user_id})
-        return user
-    except:
-        raise HTTPException(status_code=401)
+    user_id = decode_access_token(token, SECRET_KEY)["sub"]
+    user = await db.user.find_unique(where={"id": user_id})
+    if user is None:
+        raise HTTPException(status_code=401, detail="Account unavailable")
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "avatarUrl": user.avatarUrl,
+        "createdAt": user.createdAt,
+    }
 
 
 # ---------------------------------------------------------
