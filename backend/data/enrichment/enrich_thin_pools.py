@@ -93,7 +93,7 @@ load_dotenv()
 LB_BASE      = "https://api.listenbrainz.org/1"
 MB_BASE      = "https://musicbrainz.org/ws/2"
 TADB_BASE    = "https://www.theaudiodb.com/api/v1/json"
-LASTFM_BASE  = "http://ws.audioscrobbler.com/2.0"
+LASTFM_BASE  = "https://ws.audioscrobbler.com/2.0"
 
 LB_TOKEN     = os.getenv("LISTENBRAINZ_TOKEN", "")
 TADB_KEY     = os.getenv("THEAUDIODB_KEY", "2")

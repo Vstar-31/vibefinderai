@@ -1,3 +1,4 @@
+import { startProviderLink } from "./oauthLink.js";
 /**
  * ServicesPanel.jsx
  * ─────────────────
@@ -58,6 +59,7 @@ export default function ServicesPanel({
 }) {
   const [loading, setLoading] = useState({});
   const [toast,   setToast]   = useState(null);
+  const insideDesktop = Boolean(window.chrome?.webview);
 
   const showToast = (msg, isError = false) => {
     setToast({ msg, isError });
@@ -67,15 +69,7 @@ export default function ServicesPanel({
   const connect = async (service) => {
     setLoading(l => ({ ...l, [service]: true }));
     try {
-      const res = await fetch(
-        buildApiUrl(`/api/services/${service}/authorize?token=${encodeURIComponent(token)}`)
-      );
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.detail || "Not configured");
-      }
-      const { url } = await res.json();
-      window.location.href = url;
+      await startProviderLink(buildApiUrl, `/api/services/${service}`, token);
     } catch (e) {
       showToast(`${SERVICE_META[service].label}: ${e.message}`, true);
       setLoading(l => ({ ...l, [service]: false }));
@@ -85,10 +79,11 @@ export default function ServicesPanel({
   const disconnect = async (service) => {
     setLoading(l => ({ ...l, [service]: true }));
     try {
-      await fetch(
-        buildApiUrl(`/api/services/${service}/disconnect?authorization=${encodeURIComponent("Bearer " + token)}`),
-        { method: "DELETE" }
+      const response = await fetch(
+        buildApiUrl(`/api/services/${service}/disconnect`),
+        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
       );
+      if (!response.ok) throw new Error("Disconnect failed");
       onStatusChange?.();
       showToast(`${SERVICE_META[service].label} disconnected`);
     } catch (e) {
@@ -110,6 +105,13 @@ export default function ServicesPanel({
       }}>
         Connect services to love tracks, play full-length, and build playlists
       </div>
+      {insideDesktop && Object.keys(SERVICE_META).some(key => !servicesStatus[key]?.connected) && (
+        <p style={{ fontSize: 13, lineHeight: 1.5, color: "#ead9a8" }}>
+          To connect a service, choose “Open web version” under Connection &amp; widgets.
+          Sign in to the same VibeFinder account in your browser, link the service,
+          then reopen Music Services here.
+        </p>
+      )}
 
       {Object.entries(SERVICE_META).map(([key, meta]) => {
         const status    = servicesStatus[key] || { connected: false };
@@ -156,7 +158,7 @@ export default function ServicesPanel({
               </div>
 
               {/* Connect / Disconnect */}
-              <button
+              {(!insideDesktop || status.connected) && <button
                 onClick={() => status.connected ? disconnect(key) : connect(key)}
                 disabled={isLoading}
                 style={{
@@ -171,7 +173,7 @@ export default function ServicesPanel({
                 }}
               >
                 {isLoading ? "…" : status.connected ? "Disconnect" : "Connect"}
-              </button>
+              </button>}
             </div>
 
             {/* Show on tracks toggle — only when connected */}

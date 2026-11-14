@@ -5,7 +5,8 @@ VibeFinderAI — Spotify OAuth 2.0 + Playlist Export + Track Search
 
 ENDPOINTS
 ─────────
-  GET  /api/spotify/authorize          → redirect URL for Spotify OAuth
+  POST /api/spotify/authorize          → create browser-bound OAuth transaction
+  POST /api/spotify/start              → top-level form redirect to Spotify
   GET  /api/spotify/callback           → handles Spotify redirect, stores tokens
   GET  /api/spotify/status             → check if user has connected Spotify
   DELETE /api/spotify/disconnect       → revoke stored tokens
@@ -29,12 +30,14 @@ import logging
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+import oauth_link
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from urllib.parse import urlencode, quote
 import httpx
 import jwt as _jwt
+from auth_security import decode_access_token
 
 logger = logging.getLogger("VibeFinderEngine.Spotify")
 
@@ -75,7 +78,7 @@ SPOTIFY_SCOPES = " ".join([
 # ── auth helper ───────────────────────────────────────────────────────────────
 def _get_user_id(token: str) -> str:
     try:
-        payload = _jwt.decode(token, _SECRET_KEY, algorithms=[_ALGORITHM])
+        payload = decode_access_token(token, _SECRET_KEY)
         uid = payload.get("sub")
         if not uid:
             raise HTTPException(status_code=401, detail="Invalid token")
@@ -144,33 +147,32 @@ async def _get_valid_spotify_token(user_id: str) -> Optional[str]:
 # ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════
 
-@router.get("/api/spotify/authorize")
-async def spotify_authorize(token: str = Query(..., description="VibeFinder JWT")):
-    """
-    Returns a Spotify OAuth authorization URL.
-    Frontend redirects user there; Spotify sends them back to /callback.
-    """
-    if not SPOTIFY_CLIENT_ID:
-        raise HTTPException(status_code=503, detail="Spotify not configured — add SPOTIFY_CLIENT_ID to env")
+@router.post("/api/spotify/authorize")
+async def spotify_authorize(body: oauth_link.LinkRequest, token: str = Depends(oauth_link.bearer_token)):
+    user_id = _get_user_id(token)
+    if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
+        raise HTTPException(503, "Spotify not configured")
+    return await oauth_link.authorize(_db, user_id, "spotify", body.challenge, SPOTIFY_REDIRECT_URI)
 
-    logger.info(f"[Spotify] OAuth authorize requested (client_id={SPOTIFY_CLIENT_ID[:8]}...)")
-    # Encode VibeFinder token in state so we know who to store tokens for
-    state = base64.urlsafe_b64encode(token.encode()).decode()
 
+@router.post("/api/spotify/start")
+async def spotify_start(request: Request, ticket: str = Form(..., max_length=43),
+                        verifier: str = Form(..., max_length=64)):
+    if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
+        raise HTTPException(503, "Spotify not configured")
+    state = await oauth_link.start(_db, request, "spotify", ticket, verifier, FRONTEND_URL, SPOTIFY_REDIRECT_URI)
     params = {
-        "response_type": "code",
-        "client_id":     SPOTIFY_CLIENT_ID,
-        "scope":         SPOTIFY_SCOPES,
-        "redirect_uri":  SPOTIFY_REDIRECT_URI,
-        "state":         state,
-        "show_dialog":   "true",  # Force account picker — avoids stale session bugs
+        "response_type": "code", "client_id": SPOTIFY_CLIENT_ID, "scope": SPOTIFY_SCOPES,
+        "redirect_uri": SPOTIFY_REDIRECT_URI, "state": state, "show_dialog": "true",
+        "code_challenge_method": "S256", "code_challenge": oauth_link.pkce_challenge(verifier),
     }
-    url = "https://accounts.spotify.com/authorize?" + urlencode(params)
-    return {"url": url}
+    return oauth_link.redirect_to_provider("https://accounts.spotify.com/authorize?" + urlencode(params),
+                                          "spotify", verifier, SPOTIFY_REDIRECT_URI)
 
 
 @router.get("/api/spotify/callback")
 async def spotify_callback(
+    request: Request,
     code:  str = Query(None),
     state: str = Query(None),
     error: str = Query(None),
@@ -179,22 +181,18 @@ async def spotify_callback(
     Spotify OAuth callback. Exchanges code for tokens, stores in OAuthIdentity.
     Redirects to frontend with ?spotify=connected or ?spotify=error.
     """
-    logger.info(f"[Spotify] OAuth callback received — code={'present' if code else 'MISSING'} error={error or 'none'}")
+    try:
+        user_id, verifier = await oauth_link.consume(_db, request, "spotify", state, SPOTIFY_REDIRECT_URI)
+    except HTTPException:
+        return oauth_link.finish(f"{FRONTEND_URL}?spotify=error&reason=bad_state", "spotify", SPOTIFY_REDIRECT_URI)
+
+    def redirect(url):
+        return oauth_link.finish(url, "spotify", SPOTIFY_REDIRECT_URI)
 
     if error:
-        logger.warning(f"[Spotify] OAuth error from Spotify: {error}")
-        return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason={error}")
-
-    if not code or not state:
-        logger.warning("[Spotify] Missing code or state in callback")
-        return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason=missing_params")
-
-    # Decode VibeFinder user token from state
-    try:
-        vf_token = base64.urlsafe_b64decode(state.encode()).decode()
-        user_id  = _get_user_id(vf_token)
-    except Exception:
-        return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason=bad_state")
+        return redirect(f"{FRONTEND_URL}?spotify=error&reason=access_denied")
+    if not code:
+        return redirect(f"{FRONTEND_URL}?spotify=error&reason=missing_params")
 
     # Exchange code for Spotify tokens
     try:
@@ -211,13 +209,14 @@ async def spotify_callback(
                 data={
                     "grant_type":   "authorization_code",
                     "code":         code,
+                    "code_verifier": verifier,
                     "redirect_uri": SPOTIFY_REDIRECT_URI,
                 },
                 timeout=15,
             )
             if resp.status_code != 200:
-                logger.error(f"[Spotify] Token exchange failed: {resp.text}")
-                return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason=token_exchange")
+                logger.error(f"[Spotify] Token exchange failed: {resp.status_code}")
+                return redirect(f"{FRONTEND_URL}?spotify=error&reason=token_exchange")
 
             tokens = resp.json()
 
@@ -228,12 +227,12 @@ async def spotify_callback(
                 timeout=10,
             )
             if profile_resp.status_code != 200:
-                # Log the full response — critical for debugging Dev Mode 5-user limit issues
+                # Status is sufficient to diagnose the Dev Mode test-user limit.
                 # 403 = user not added to app's authorized test users in Spotify Dashboard
                 logger.error(
-                    f"[Spotify] Profile fetch failed {profile_resp.status_code}: {profile_resp.text[:400]}"
+                    f"[Spotify] Profile fetch failed {profile_resp.status_code}: [response omitted]"
                 )
-                return RedirectResponse(
+                return redirect(
                     f"{FRONTEND_URL}?spotify=error&reason=profile_fetch_{profile_resp.status_code}"
                 )
 
@@ -242,8 +241,8 @@ async def spotify_callback(
             display_name    = profile.get("display_name", "")
 
     except Exception as e:
-        logger.error(f"[Spotify] Callback error: {e}")
-        return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason=server_error")
+        logger.error("[Spotify] Callback error (%s)", type(e).__name__)
+        return redirect(f"{FRONTEND_URL}?spotify=error&reason=server_error")
 
     # Upsert OAuthIdentity
     try:
@@ -269,21 +268,20 @@ async def spotify_callback(
             })
         logger.info(f"[Spotify] Connected for user {user_id} → Spotify {spotify_user_id} ({display_name})")
     except Exception as e:
-        logger.error(f"[Spotify] DB upsert error: {e}")
-        return RedirectResponse(f"{FRONTEND_URL}?spotify=error&reason=db_error")
+        logger.error("[Spotify] DB upsert error (%s)", type(e).__name__)
+        return redirect(f"{FRONTEND_URL}?spotify=error&reason=db_error")
 
-    return RedirectResponse(f"{FRONTEND_URL}?spotify=connected&name={quote(display_name, safe='')}")
+    return redirect(f"{FRONTEND_URL}?spotify=connected&name={quote(display_name, safe='')}")
 
 
 @router.get("/api/spotify/status")
-async def spotify_status(authorization: str = Query(...)):
+async def spotify_status(token: str = Depends(oauth_link.bearer_token)):
     """
     Returns whether the current user has Spotify connected.
     Checks DB only — does NOT call Spotify live on every page load.
     Token validity is checked lazily when the user exports/saves.
     This keeps status checks fast and avoids false negatives from expired tokens.
     """
-    token   = authorization.replace("Bearer ", "")
     user_id = _get_user_id(token)
 
     identity = await _db.oauthidentity.find_first(
@@ -302,9 +300,8 @@ async def spotify_status(authorization: str = Query(...)):
 
 
 @router.delete("/api/spotify/disconnect")
-async def spotify_disconnect(authorization: str = Query(...)):
+async def spotify_disconnect(token: str = Depends(oauth_link.bearer_token)):
     """Remove stored Spotify tokens."""
-    token   = authorization.replace("Bearer ", "")
     user_id = _get_user_id(token)
 
     await _db.oauthidentity.delete_many(
@@ -321,13 +318,12 @@ class ExportPlaylistRequest(BaseModel):
 
 
 @router.post("/api/spotify/export-playlist")
-async def export_to_spotify(body: ExportPlaylistRequest, authorization: str = Query(...)):
+async def export_to_spotify(body: ExportPlaylistRequest, token: str = Depends(oauth_link.bearer_token)):
     """
     Create a real Spotify playlist and add tracks to it.
     Tracks with spotify:track:ID uris are added directly.
     Tracks with spotify:search: uris are resolved via Spotify search first.
     """
-    token   = authorization.replace("Bearer ", "")
     user_id = _get_user_id(token)
 
     identity = await _db.oauthidentity.find_first(
@@ -451,13 +447,12 @@ class SaveTrackRequest(BaseModel):
 
 
 @router.post("/api/spotify/save-track")
-async def save_track_to_library(body: SaveTrackRequest, authorization: str = Query(...)):
+async def save_track_to_library(body: SaveTrackRequest, token: str = Depends(oauth_link.bearer_token)):
     """
     Save a single track to the user's Spotify library (Liked Songs).
     Uses PUT /me/library — the Feb 2026 replacement for the removed PUT /me/tracks.
     Requires user-library-modify scope.
     """
-    token   = authorization.replace("Bearer ", "")
     user_id = _get_user_id(token)
 
     identity = await _db.oauthidentity.find_first(
@@ -514,10 +509,9 @@ async def save_track_to_library(body: SaveTrackRequest, authorization: str = Que
 @router.get("/api/spotify/search")
 async def spotify_search(
     q:             str = Query(...),
-    authorization: str = Query(...),
+    token: str = Depends(oauth_link.bearer_token),
 ):
     """Search Spotify for a track. Returns URI, preview_url, and album art."""
-    token   = authorization.replace("Bearer ", "")
     user_id = _get_user_id(token)
 
     sp_token = await _get_valid_spotify_token(user_id)

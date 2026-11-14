@@ -389,9 +389,9 @@ Add these lines to main.py AFTER the existing NLP analysis in analyze_vibe():
   if (not request.language or request.language == 'Any') and not vibe_data.get('_gemini_detected_language'):
       detected_lang = await gemini_enhancer.detect_language(request.text)
       if detected_lang:
-          request = request.model_copy(update={'language': detected_lang})
+          request = request.copy(update={'language': detected_lang})
           logger.info(f"[Gemini] Auto-detected language: {detected_lang}")
   elif vibe_data.get('_gemini_detected_language') and (not request.language or request.language == 'Any'):
-      request = request.model_copy(update={'language': vibe_data['_gemini_detected_language']})
+      request = request.copy(update={'language': vibe_data['_gemini_detected_language']})
   # --- END PASTE ---
 """

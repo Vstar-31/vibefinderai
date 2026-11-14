@@ -36,13 +36,17 @@ from urllib.parse import urlencode, quote
 
 import httpx
 import jwt as _jwt
-from fastapi import APIRouter, HTTPException, Query
+from auth_security import decode_access_token
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+import oauth_link
+from routes.metrics_auth import require_metrics_token
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from core.youtube_cache import (
     init as init_youtube_cache,
     yt_cache_get,
     yt_cache_set,
+    youtube_search_query,
     yt_cache_stats as get_youtube_cache_stats,
 )
 
@@ -82,7 +86,7 @@ SUPPORTED_SERVICES = ["lastfm", "deezer", "soundcloud", "youtube"]
 # ── auth helper ───────────────────────────────────────────────────────────────
 def _get_user_id(token: str) -> str:
     try:
-        payload = _jwt.decode(token, _SECRET_KEY, algorithms=[_ALGORITHM])
+        payload = decode_access_token(token, _SECRET_KEY)
         uid = payload.get("sub")
         if not uid:
             raise HTTPException(status_code=401, detail="Invalid token")
@@ -105,8 +109,7 @@ def _lastfm_sign(params: dict) -> str:
 # ═══════════════════════════════════════════════════════════════════
 
 @router.get("/api/services/status")
-async def services_status(authorization: str = Query(...)):
-    token   = authorization.replace("Bearer ", "")
+async def services_status(token: str = Depends(oauth_link.bearer_token)):
     user_id = _get_user_id(token)
 
     identities = await _db.oauthidentity.find_many(
@@ -124,26 +127,51 @@ async def services_status(authorization: str = Query(...)):
 # AUTHORIZE — per service
 # ═══════════════════════════════════════════════════════════════════
 
-@router.get("/api/services/{service}/authorize")
-async def service_authorize(service: str, token: str = Query(...)):
+def _require_service(service: str):
     if service not in SUPPORTED_SERVICES:
-        raise HTTPException(status_code=404, detail=f"Unknown service: {service}")
+        raise HTTPException(404, "Unknown service")
+    configured = {
+        "lastfm": LASTFM_API_KEY and LASTFM_SHARED_SECRET,
+        "deezer": DEEZER_APP_ID and DEEZER_APP_SECRET,
+        "soundcloud": SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET,
+        "youtube": GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET,
+    }
+    if not configured[service]:
+        raise HTTPException(503, "Service not configured")
 
-    state = base64.urlsafe_b64encode(token.encode()).decode()
-    cb    = _callback_url(service)
 
+@router.post("/api/services/{service}/authorize")
+async def service_authorize(service: str, body: oauth_link.LinkRequest,
+                            token: str = Depends(oauth_link.bearer_token)):
+    user_id = _get_user_id(token)
+    _require_service(service)
+    return await oauth_link.authorize(_db, user_id, service, body.challenge, _callback_url(service))
+
+
+@router.post("/api/services/{service}/start")
+async def service_start(service: str, request: Request, ticket: str = Form(..., max_length=43),
+                        verifier: str = Form(..., max_length=64)):
+    _require_service(service)
+    cb = _callback_url(service)
+    state = await oauth_link.start(_db, request, service, ticket, verifier, FRONTEND_URL, cb)
+    url = _provider_url(service, state, verifier)
+    return oauth_link.redirect_to_provider(url, service, verifier, cb)
+
+
+def _provider_url(service: str, state: str, verifier: str):
+    cb = _callback_url(service)
     if service == "lastfm":
         if not LASTFM_API_KEY:
             raise HTTPException(status_code=503, detail="Last.fm not configured")
         url = f"https://www.last.fm/api/auth/?api_key={LASTFM_API_KEY}&cb={quote(cb + '?state=' + state, safe='')}"
-        return {"url": url}
+        return url
 
     if service == "deezer":
         if not DEEZER_APP_ID:
             raise HTTPException(status_code=503, detail="Deezer not configured")
         perms = "basic_access,email,offline_access,manage_library,manage_playlist,listening_history"
         params = {"app_id": DEEZER_APP_ID, "redirect_uri": cb, "perms": perms, "state": state}
-        return {"url": "https://connect.deezer.com/oauth/auth.php?" + urlencode(params)}
+        return "https://connect.deezer.com/oauth/auth.php?" + urlencode(params)
 
     if service == "soundcloud":
         if not SOUNDCLOUD_CLIENT_ID:
@@ -152,10 +180,11 @@ async def service_authorize(service: str, token: str = Query(...)):
             "client_id":     SOUNDCLOUD_CLIENT_ID,
             "redirect_uri":  cb,
             "response_type": "code",
-            "scope":         "non-expiring",
+            "code_challenge_method": "S256",
+            "code_challenge": oauth_link.pkce_challenge(verifier),
             "state":         state,
         }
-        return {"url": "https://soundcloud.com/connect?" + urlencode(params)}
+        return "https://secure.soundcloud.com/authorize?" + urlencode(params)
 
     if service == "youtube":
         if not GOOGLE_CLIENT_ID:
@@ -164,12 +193,14 @@ async def service_authorize(service: str, token: str = Query(...)):
             "client_id":     GOOGLE_CLIENT_ID,
             "redirect_uri":  cb,
             "response_type": "code",
-            "scope":         "https://www.googleapis.com/auth/youtube",
+            "scope":         "openid https://www.googleapis.com/auth/youtube",
+            "code_challenge_method": "S256",
+            "code_challenge": oauth_link.pkce_challenge(verifier),
             "access_type":   "offline",
             "prompt":        "consent",
             "state":         state,
         }
-        return {"url": "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)}
+        return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -179,22 +210,24 @@ async def service_authorize(service: str, token: str = Query(...)):
 @router.get("/api/services/{service}/callback")
 async def service_callback(
     service: str,
+    request: Request,
     code:    str = Query(None),
     token:   str = Query(None),
     state:   str = Query(None),
     error:   str = Query(None),
 ):
     if service not in SUPPORTED_SERVICES:
-        return RedirectResponse(f"{FRONTEND_URL}?service_error={service}&reason=unknown_service")
+        raise HTTPException(404, "Unknown service")
+    try:
+        user_id, verifier = await oauth_link.consume(_db, request, service, state, _callback_url(service))
+    except HTTPException:
+        return oauth_link.finish(f"{FRONTEND_URL}?service_error={service}&reason=bad_state", service, _callback_url(service))
+
+    def redirect(url):
+        return oauth_link.finish(url, service, _callback_url(service))
 
     if error:
-        return RedirectResponse(f"{FRONTEND_URL}?service_error={service}&reason={error}")
-
-    try:
-        vf_token = base64.urlsafe_b64decode(state.encode()).decode()
-        user_id  = _get_user_id(vf_token)
-    except Exception:
-        return RedirectResponse(f"{FRONTEND_URL}?service_error={service}&reason=bad_state")
+        return redirect(f"{FRONTEND_URL}?service_error={service}&reason=access_denied")
 
     provider_id   = ""
     access_token  = ""
@@ -204,7 +237,7 @@ async def service_callback(
     if service == "lastfm":
         auth_token = token or code
         if not auth_token:
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=lastfm&reason=no_token")
+            return redirect(f"{FRONTEND_URL}?service_error=lastfm&reason=no_token")
         try:
             params = {
                 "method":  "auth.getSession",
@@ -217,19 +250,19 @@ async def service_callback(
                 resp = await client.get("https://ws.audioscrobbler.com/2.0/", params=params, timeout=10)
             data = resp.json()
             if "error" in data:
-                logger.error(f"[Services] Last.fm getSession error: {data}")
-                return RedirectResponse(f"{FRONTEND_URL}?service_error=lastfm&reason=session_failed")
+                logger.error(f"[Services] Last.fm getSession error: [response omitted]")
+                return redirect(f"{FRONTEND_URL}?service_error=lastfm&reason=session_failed")
             session      = data["session"]
             provider_id  = session["name"]
             access_token = session["key"]
         except Exception as e:
-            logger.error(f"[Services] Last.fm callback error: {e}")
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=lastfm&reason=server_error")
+            logger.error(f"[Services] Last.fm callback error: {type(e).__name__}")
+            return redirect(f"{FRONTEND_URL}?service_error=lastfm&reason=server_error")
 
     # ── Deezer ────────────────────────────────────────────────────
     elif service == "deezer":
         if not code:
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=deezer&reason=no_code")
+            return redirect(f"{FRONTEND_URL}?service_error=deezer&reason=no_code")
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
@@ -243,8 +276,8 @@ async def service_callback(
                 from urllib.parse import parse_qs
                 data = {k: v[0] for k, v in parse_qs(resp.text).items()}
             if "access_token" not in data:
-                logger.error(f"[Services] Deezer token exchange failed: {resp.text[:200]}")
-                return RedirectResponse(f"{FRONTEND_URL}?service_error=deezer&reason=token_exchange")
+                logger.error(f"[Services] Deezer token exchange failed: {resp.status_code}")
+                return redirect(f"{FRONTEND_URL}?service_error=deezer&reason=token_exchange")
             access_token = data["access_token"]
             me_resp = await httpx.AsyncClient().get(
                 "https://api.deezer.com/user/me",
@@ -254,29 +287,30 @@ async def service_callback(
             me = me_resp.json()
             provider_id = str(me.get("id", ""))
         except Exception as e:
-            logger.error(f"[Services] Deezer callback error: {e}")
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=deezer&reason=server_error")
+            logger.error(f"[Services] Deezer callback error: {type(e).__name__}")
+            return redirect(f"{FRONTEND_URL}?service_error=deezer&reason=server_error")
 
     # ── SoundCloud ────────────────────────────────────────────────
     elif service == "soundcloud":
         if not code:
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=soundcloud&reason=no_code")
+            return redirect(f"{FRONTEND_URL}?service_error=soundcloud&reason=no_code")
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    "https://api.soundcloud.com/oauth2/token",
+                    "https://secure.soundcloud.com/oauth/token",
                     data={
                         "client_id":     SOUNDCLOUD_CLIENT_ID,
                         "client_secret": SOUNDCLOUD_CLIENT_SECRET,
                         "grant_type":    "authorization_code",
                         "code":          code,
+                        "code_verifier": verifier,
                         "redirect_uri":  _callback_url(service),
                     },
                     timeout=10,
                 )
             data = resp.json()
             if "access_token" not in data:
-                return RedirectResponse(f"{FRONTEND_URL}?service_error=soundcloud&reason=token_exchange")
+                return redirect(f"{FRONTEND_URL}?service_error=soundcloud&reason=token_exchange")
             access_token  = data["access_token"]
             refresh_token = data.get("refresh_token")
             me_resp = await httpx.AsyncClient().get(
@@ -287,13 +321,13 @@ async def service_callback(
             me = me_resp.json()
             provider_id = str(me.get("id", ""))
         except Exception as e:
-            logger.error(f"[Services] SoundCloud callback error: {e}")
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=soundcloud&reason=server_error")
+            logger.error(f"[Services] SoundCloud callback error: {type(e).__name__}")
+            return redirect(f"{FRONTEND_URL}?service_error=soundcloud&reason=server_error")
 
     # ── YouTube / Google ─────────────────────────────────────────
     elif service == "youtube":
         if not code:
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=youtube&reason=no_code")
+            return redirect(f"{FRONTEND_URL}?service_error=youtube&reason=no_code")
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -302,6 +336,7 @@ async def service_callback(
                         "client_id":     GOOGLE_CLIENT_ID,
                         "client_secret": GOOGLE_CLIENT_SECRET,
                         "code":          code,
+                        "code_verifier": verifier,
                         "grant_type":    "authorization_code",
                         "redirect_uri":  _callback_url(service),
                     },
@@ -309,7 +344,7 @@ async def service_callback(
                 )
             data = resp.json()
             if "access_token" not in data:
-                return RedirectResponse(f"{FRONTEND_URL}?service_error=youtube&reason=token_exchange")
+                return redirect(f"{FRONTEND_URL}?service_error=youtube&reason=token_exchange")
             access_token  = data["access_token"]
             refresh_token = data.get("refresh_token")
             me_resp = await httpx.AsyncClient().get(
@@ -320,8 +355,11 @@ async def service_callback(
             me = me_resp.json()
             provider_id = me.get("sub", "")
         except Exception as e:
-            logger.error(f"[Services] YouTube callback error: {e}")
-            return RedirectResponse(f"{FRONTEND_URL}?service_error=youtube&reason=server_error")
+            logger.error(f"[Services] YouTube callback error: {type(e).__name__}")
+            return redirect(f"{FRONTEND_URL}?service_error=youtube&reason=server_error")
+
+    if not provider_id or not access_token:
+        return redirect(f"{FRONTEND_URL}?service_error={service}&reason=invalid_profile")
 
     # ── Upsert OAuthIdentity ──────────────────────────────────────
     try:
@@ -347,10 +385,10 @@ async def service_callback(
             })
         logger.info(f"[Services] {service} connected for user {user_id[:8]}... (id={provider_id})")
     except Exception as e:
-        logger.error(f"[Services] DB upsert error for {service}: {e}")
-        return RedirectResponse(f"{FRONTEND_URL}?service_error={service}&reason=db_error")
+        logger.error(f"[Services] DB upsert error for {service}: {type(e).__name__}")
+        return redirect(f"{FRONTEND_URL}?service_error={service}&reason=db_error")
 
-    return RedirectResponse(f"{FRONTEND_URL}?service_connected={service}&provider_id={quote(provider_id, safe='')}")
+    return redirect(f"{FRONTEND_URL}?service_connected={service}&provider_id={quote(provider_id, safe='')}")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -358,8 +396,7 @@ async def service_callback(
 # ═══════════════════════════════════════════════════════════════════
 
 @router.delete("/api/services/{service}/disconnect")
-async def service_disconnect(service: str, authorization: str = Query(...)):
-    token   = authorization.replace("Bearer ", "")
+async def service_disconnect(service: str, token: str = Depends(oauth_link.bearer_token)):
     user_id = _get_user_id(token)
     await _db.oauthidentity.delete_many(
         where={"userId": user_id, "providerName": service}
@@ -376,8 +413,7 @@ class LastfmTrackRequest(BaseModel):
     artist: str
 
 @router.post("/api/services/lastfm/love")
-async def lastfm_love_track(body: LastfmTrackRequest, authorization: str = Query(...)):
-    token    = authorization.replace("Bearer ", "")
+async def lastfm_love_track(body: LastfmTrackRequest, token: str = Depends(oauth_link.bearer_token)):
     user_id  = _get_user_id(token)
     identity = await _db.oauthidentity.find_first(
         where={"userId": user_id, "providerName": "lastfm"}
@@ -404,9 +440,8 @@ async def lastfm_love_track(body: LastfmTrackRequest, authorization: str = Query
     return {"loved": True}
 
 @router.post("/api/services/lastfm/scrobble")
-async def lastfm_scrobble(body: LastfmTrackRequest, authorization: str = Query(...)):
+async def lastfm_scrobble(body: LastfmTrackRequest, token: str = Depends(oauth_link.bearer_token)):
     import time as _t
-    token    = authorization.replace("Bearer ", "")
     user_id  = _get_user_id(token)
     identity = await _db.oauthidentity.find_first(
         where={"userId": user_id, "providerName": "lastfm"}
@@ -461,8 +496,7 @@ async def _deezer_search_track(access_token: str, title: str, artist: str) -> Op
         return None
 
 @router.post("/api/services/deezer/love")
-async def deezer_love_track(body: DeezerTrackRequest, authorization: str = Query(...)):
-    token    = authorization.replace("Bearer ", "")
+async def deezer_love_track(body: DeezerTrackRequest, token: str = Depends(oauth_link.bearer_token)):
     user_id  = _get_user_id(token)
     identity = await _db.oauthidentity.find_first(
         where={"userId": user_id, "providerName": "deezer"}
@@ -485,8 +519,7 @@ async def deezer_love_track(body: DeezerTrackRequest, authorization: str = Query
     return {"loved": True, "deezer_id": track_id}
 
 @router.post("/api/services/deezer/playlist")
-async def deezer_create_playlist(body: DeezerPlaylistRequest, authorization: str = Query(...)):
-    token    = authorization.replace("Bearer ", "")
+async def deezer_create_playlist(body: DeezerPlaylistRequest, token: str = Depends(oauth_link.bearer_token)):
     user_id  = _get_user_id(token)
     identity = await _db.oauthidentity.find_first(
         where={"userId": user_id, "providerName": "deezer"}
@@ -553,8 +586,7 @@ async def _sc_search_track(access_token: str, title: str, artist: str) -> Option
         return None
 
 @router.post("/api/services/soundcloud/like")
-async def soundcloud_like_track(body: SCTrackRequest, authorization: str = Query(...)):
-    token    = authorization.replace("Bearer ", "")
+async def soundcloud_like_track(body: SCTrackRequest, token: str = Depends(oauth_link.bearer_token)):
     user_id  = _get_user_id(token)
     identity = await _db.oauthidentity.find_first(
         where={"userId": user_id, "providerName": "soundcloud"}
@@ -577,8 +609,7 @@ async def soundcloud_like_track(body: SCTrackRequest, authorization: str = Query
     return {"liked": True, "sc_track_id": track_id}
 
 @router.post("/api/services/soundcloud/playlist")
-async def soundcloud_create_playlist(body: SCPlaylistRequest, authorization: str = Query(...)):
-    token    = authorization.replace("Bearer ", "")
+async def soundcloud_create_playlist(body: SCPlaylistRequest, token: str = Depends(oauth_link.bearer_token)):
     user_id  = _get_user_id(token)
     identity = await _db.oauthidentity.find_first(
         where={"userId": user_id, "providerName": "soundcloud"}
@@ -610,17 +641,32 @@ async def soundcloud_create_playlist(body: SCPlaylistRequest, authorization: str
 # ═══════════════════════════════════════════════════════════════════
 
 @router.get("/api/services/youtube/cache-stats")
-async def youtube_cache_stats():
+async def youtube_cache_stats(_=Depends(require_metrics_token)):
     """Returns YouTube search cache stats."""
     return await get_youtube_cache_stats()
 
 
 @router.get("/api/services/youtube/search")
-async def youtube_search(q: str = Query(...), title: str = Query(None), artist: str = Query(None)):
+async def youtube_search(
+    token: str = Depends(oauth_link.bearer_token),
+    q: Optional[str] = Query(None, min_length=1, max_length=500),
+    title: Optional[str] = Query(None, min_length=1, max_length=200),
+    artist: Optional[str] = Query(None, min_length=1, max_length=200),
+):
     """
     Search YouTube for a track. Checks persistent cache (L1 + DB) before
     hitting the API. Cache survives Render deploys.
     """
+    _get_user_id(token)
+    if title is not None or artist is not None:
+        if not title or not title.strip() or not artist or not artist.strip():
+            raise HTTPException(status_code=422, detail="Both title and artist are required for track lookup")
+        # Cache identity and provider query must describe the same track. An
+        # arbitrary q may only be used for uncached free-text searches.
+        q = youtube_search_query(title, artist)
+    elif not q or not q.strip():
+        raise HTTPException(status_code=422, detail="A nonblank search query is required")
+
     if not YOUTUBE_API_KEY:
         raise HTTPException(status_code=503, detail="YouTube API key not configured")
 
@@ -699,11 +745,10 @@ async def _yt_refresh_token(identity) -> Optional[str]:
 
 
 @router.post("/api/services/youtube/playlist")
-async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = Query(...)):
+async def youtube_create_playlist(body: YTPlaylistRequest, token: str = Depends(oauth_link.bearer_token)):
     """Create a YouTube playlist and add matching videos."""
     import asyncio
 
-    token    = authorization.replace("Bearer ", "")
     user_id  = _get_user_id(token)
     identity = await _db.oauthidentity.find_first(
         where={"userId": user_id, "providerName": "youtube"}
@@ -754,7 +799,7 @@ async def youtube_create_playlist(body: YTPlaylistRequest, authorization: str = 
             cached = await yt_cache_get(title, artist)
             if cached:
                 return cached
-            q = f"{title} {artist} official audio"
+            q = youtube_search_query(title, artist)
             try:
                 resp = await client.get(
                     "https://www.googleapis.com/youtube/v3/search",

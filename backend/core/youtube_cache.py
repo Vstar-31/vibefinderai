@@ -16,6 +16,7 @@ Usage in services_routes.py:
 """
 
 import json
+import hashlib
 import logging
 import time as _time
 from datetime import datetime, timezone, timedelta
@@ -39,8 +40,20 @@ def init(db) -> None:
     _db = db
 
 
+def _track_identity(title: str, artist: str) -> tuple[str, str]:
+    return title.strip().lower(), artist.strip().lower()
+
+
+def youtube_search_query(title: str, artist: str) -> str:
+    title, artist = _track_identity(title, artist)
+    return f"{title} {artist} official audio"
+
+
 def _cache_key(title: str, artist: str) -> str:
-    return "yt:" + f"{title.strip().lower()}|{artist.strip().lower()}".replace(" ", "_")
+    identity = json.dumps(_track_identity(title, artist), ensure_ascii=False, separators=(",", ":"))
+    # A new namespace avoids reusing entries written by the old unrestricted
+    # query route. Encoding the pair before hashing prevents delimiter collisions.
+    return "yt:v2:" + hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 # ── L1 helpers ────────────────────────────────────────────────────────────────
@@ -153,7 +166,7 @@ async def yt_cache_stats() -> dict:
     if _db is not None:
         try:
             db_count = await _db.thinpoolcache.count(
-                where={"cacheKey": {"startswith": "yt:"}}
+                where={"cacheKey": {"startswith": "yt:v2:"}}
             )
         except Exception:
             pass
