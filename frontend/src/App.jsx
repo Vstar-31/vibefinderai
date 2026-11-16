@@ -504,6 +504,36 @@ function GlobalStyles() {
         to   { opacity: 1; }
       }
 
+      .app-track-list {
+        container: playlist-tracks / inline-size;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .app-track-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) fit-content(60%);
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+      }
+      .app-track-row.is-selecting {
+        grid-template-columns: auto minmax(0, 1fr) fit-content(60%);
+      }
+      .app-track-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        min-width: 0;
+      }
+      @container playlist-tracks (max-width: 44rem) {
+        .app-track-row { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+        .app-track-row.is-selecting { grid-template-columns: auto minmax(0, 1fr); }
+        .app-track-actions { grid-column: 1 / -1; justify-content: flex-start; }
+      }
+
       /* ── MOBILE RESPONSIVE ─────────────────────────────────── */
       @media (max-width: 600px) {
         .app-header { padding-bottom: 16px !important; margin-bottom: 20px !important; }
@@ -524,19 +554,8 @@ function GlobalStyles() {
         .app-result-grid { grid-template-columns: 1fr !important; }
         .app-result-stat-grid { grid-template-columns: 1fr 1fr !important; }
 
-        .app-track-row { flex-wrap: wrap !important; gap: 8px !important; padding: 12px 14px !important; }
-        .app-track-meta { flex: 1 1 calc(100% - 60px) !important; order: -1 !important; min-width: 0 !important; overflow: hidden !important; }
-        .app-track-art { width: 36px !important; height: 36px !important; flex-shrink: 0 !important; }
-        .app-track-actions { width: 100% !important; justify-content: flex-end !important; gap: 5px !important; flex-wrap: wrap !important; flex-shrink: 0 !important; }
-        .app-track-actions button,
-        .app-track-actions a { padding: 6px 10px !important; font-size: 9px !important; }
-
         .app-overrides { flex-direction: column !important; }
         .app-overrides input { width: 100% !important; box-sizing: border-box !important; }
-      }
-
-      @media (max-width: 380px) {
-        .app-track-actions .app-track-preview { display: none !important; }
       }
 
       /* ── Mobile adjustments ── */
@@ -2151,10 +2170,10 @@ export default function App({ onNavigate, workspaceAction = null }) {
                     {/* ── Inline facts rotator ── */}
                     <InlineFact activeColor={activeColor} />
 
-                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <div className="app-track-list">
                       {result.tracks.map((track, i) => {
                         const trackKey    = `${track.title}|${track.artist}`;
-                        const isPlaying   = playingTrack === track.preview_url;
+                        const isPlaying   = Boolean(track.preview_url) && playingTrack === track.preview_url;
                         const isSelected  = selectedTracks.has(trackKey);
                         const isSuppressed  = (tasteProfile.suppressedTracks[trackKey] || 0) >= 3;
                         const isLikedArtist = (tasteProfile.likedArtists[track.artist] || 0) >= 2;
@@ -2168,12 +2187,10 @@ export default function App({ onNavigate, workspaceAction = null }) {
                         return (
                           <div
                             key={trackKey}
-                            className="app-track-row"
+                            className={selectionMode ? "app-track-row is-selecting" : "app-track-row"}
                             onMouseEnter={() => setHoveredTrackIdx(i)}
                             onMouseLeave={() => setHoveredTrackIdx(null)}
                             style={{
-                              display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap",
-                              padding: "12px 16px",
                               background: isSelected ? `${activeColor}0d` : isSuppressed ? "rgba(60,10,10,0.4)" : "rgba(8,5,2,0.6)",
                               border: `1px solid ${isPlaying ? activeColor : isSelected ? activeColor : isLikedArtist ? `${activeColor}55` : isSuppressed ? 'rgba(180,40,40,0.2)' : 'rgba(120,80,20,0.25)'}`,
                               borderRadius: "10px", transition: "all 0.2s", minHeight: 0, position: "relative",
@@ -2182,6 +2199,9 @@ export default function App({ onNavigate, workspaceAction = null }) {
                             {/* ── CHECKBOX (selection mode only) ── */}
                             {selectionMode && (
                               <button
+                                type="button"
+                                aria-label={`Select ${track.title} by ${track.artist}`}
+                                aria-pressed={isSelected}
                                 onClick={() => setSelectedTracks(prev => {
                                   const next = new Set(prev);
                                   next.has(trackKey) ? next.delete(trackKey) : next.add(trackKey);
@@ -2197,18 +2217,6 @@ export default function App({ onNavigate, workspaceAction = null }) {
                               >
                                 {isSelected && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
                               </button>
-                            )}
-                            {/* PHASE 8: Personalisation badges */}
-                            {isLikedArtist && (
-                              <div style={{ position: "absolute", top: 6, right: 8, display: "flex", gap: "4px", alignItems: "center" }}>
-                                <span style={{ fontSize: "9px", color: activeColor, fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em", opacity: 0.8 }}>LIKED ARTIST</span>
-                                <span style={{ color: "#fbbf24" }}><IconStar /></span>
-                              </div>
-                            )}
-                            {isSuppressed && (
-                              <div style={{ position: "absolute", top: 6, right: 8 }}>
-                                <span style={{ fontSize: "9px", color: "#f87171", fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em" }}>AUTO-SUPPRESSED</span>
-                              </div>
                             )}
                             {/* PHASE 8: Why this track tooltip */}
                             {isHovered && whyReasons.length > 0 && (
@@ -2232,7 +2240,7 @@ export default function App({ onNavigate, workspaceAction = null }) {
                             {/* Track Info & Cover Art */}
                             <div
                               className="app-track-meta"
-                              style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 0", minWidth: 0, overflow: "hidden", cursor: selectionMode ? "pointer" : "default" }}
+                              style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, cursor: selectionMode ? "pointer" : "default" }}
                               onClick={selectionMode ? () => setSelectedTracks(prev => {
                                 const next = new Set(prev);
                                 next.has(trackKey) ? next.delete(trackKey) : next.add(trackKey);
@@ -2245,13 +2253,21 @@ export default function App({ onNavigate, workspaceAction = null }) {
                                 <div className="app-track-art" style={{ width: 44, height: 44, borderRadius: 6, background: 'rgba(120,80,20,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IconDisc /></div>
                               )}
                               <div style={{ display: "flex", flexDirection: "column", gap: "3px", minWidth: 0, flex: 1, overflow: "hidden" }}>
-                                <span style={{ fontSize: "14px", fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{track.title}</span>
-                                <span style={{ fontSize: "11px", color: "#c5af86", letterSpacing: "0.05em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{track.artist}</span>
+                                <span title={track.title} style={{ fontSize: "14px", fontWeight: 700, color: "#fde68a", fontFamily: "'Playfair Display', serif", overflowWrap: "anywhere" }}>{track.title}</span>
+                                <span title={track.artist} style={{ fontSize: "11px", color: "#c5af86", letterSpacing: "0.05em", overflowWrap: "anywhere" }}>{track.artist}</span>
+                                {isLikedArtist && (
+                                  <span style={{ fontSize: "9px", color: activeColor, fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em" }}>
+                                    LIKED ARTIST <IconStar />
+                                  </span>
+                                )}
+                                {isSuppressed && (
+                                  <span style={{ fontSize: "9px", color: "#f87171", fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em" }}>AUTO-SUPPRESSED</span>
+                                )}
                               </div>
                             </div>
 
                             {/* Track Actions */}
-                            <div className="app-track-actions" style={{ display: "flex", gap: "6px", alignItems: "center", flexShrink: 0, flexWrap: "nowrap" }}>
+                            <div className="app-track-actions">
                               {(() => {
                                 const fbKey = `${track.title}|${track.artist}`;
                                 const given = feedbackGiven[fbKey];
